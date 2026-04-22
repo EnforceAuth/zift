@@ -14,7 +14,7 @@ query = """
 """
 
 [rule.predicates.decorator_name]
-match = "^(Roles|SetMetadata)$"
+match = "^Roles$"
 
 [rule.rego_template]
 template = """

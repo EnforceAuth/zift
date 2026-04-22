@@ -74,6 +74,8 @@ pub fn scan(
     let mut ts_parser = tree_sitter::Parser::new();
     let mut all_findings = Vec::new();
     let mut enforcement_points: usize = 0;
+    let mut seen_enforcement: std::collections::HashSet<(std::path::PathBuf, usize)> =
+        std::collections::HashSet::new();
 
     for file in &files {
         let source = match std::fs::read_to_string(&file.path) {
@@ -122,12 +124,15 @@ pub fn scan(
             } else {
                 for finding in findings {
                     if imports::is_enforcement_point(&finding.code_snippet, &policy_imports) {
-                        enforcement_points += 1;
-                        tracing::debug!(
-                            "skipping enforcement point: {}:{}",
-                            finding.file.display(),
-                            finding.line_start,
-                        );
+                        let key = (finding.file.clone(), finding.line_start);
+                        if seen_enforcement.insert(key) {
+                            enforcement_points += 1;
+                            tracing::debug!(
+                                "skipping enforcement point: {}:{}",
+                                finding.file.display(),
+                                finding.line_start,
+                            );
+                        }
                     } else {
                         all_findings.push(finding);
                     }

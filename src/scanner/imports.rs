@@ -96,9 +96,12 @@ pub fn find_policy_imports(
 
 /// Check if a finding's code snippet references any of the policy-imported names.
 pub fn is_enforcement_point(code_snippet: &str, policy_imports: &HashSet<String>) -> bool {
-    policy_imports
-        .iter()
-        .any(|name| code_snippet.contains(name.as_str()))
+    policy_imports.iter().any(|name| {
+        let pattern = format!(r"\b{}\b", regex::escape(name));
+        regex::Regex::new(&pattern)
+            .map(|re| re.is_match(code_snippet))
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]

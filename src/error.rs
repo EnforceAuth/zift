@@ -21,9 +21,6 @@ pub enum ZiftError {
     #[error("invalid tree-sitter query in rule {rule_id}: {message}")]
     QueryError { rule_id: String, message: String },
 
-    #[error("failed to parse {}: {message}", path.display())]
-    ParseError { path: PathBuf, message: String },
-
     #[error("{0}")]
     General(String),
 }

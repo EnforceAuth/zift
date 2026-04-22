@@ -121,8 +121,9 @@ fn build_rego_content(package_name: &str, source_file: &Path, findings: &[&Findi
 
         // Show the original code as a comment
         let first_line = finding.code_snippet.lines().next().unwrap_or("");
-        let truncated = if first_line.len() > 80 {
-            format!("{}...", &first_line[..77])
+        let truncated = if first_line.chars().count() > 80 {
+            let s: String = first_line.chars().take(77).collect();
+            format!("{s}...")
         } else {
             first_line.to_string()
         };
