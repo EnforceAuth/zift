@@ -30,12 +30,22 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
             let loaded = rules::load_rules(None, &config)?;
             let mut errors = 0;
             for rule in &loaded {
+                // Validate tree-sitter queries
                 for lang in &rule.languages {
                     let ts_lang = ts_parser::get_language(*lang, false);
                     if let Err(e) =
                         tree_sitter::Query::new(&ts_lang, &rule.query_source)
                     {
-                        eprintln!("FAIL  {}  ({lang}): {e}", rule.id);
+                        eprintln!("FAIL  {}  ({lang}): query: {e}", rule.id);
+                        errors += 1;
+                    }
+                }
+                // Validate Rego template if present
+                if let Some(ref tmpl) = rule.rego_template {
+                    let result = crate::rego::validator::validate_template(tmpl);
+                    if !result.valid {
+                        let err = result.error.unwrap_or_default();
+                        eprintln!("FAIL  {}  rego_template: {err}", rule.id);
                         errors += 1;
                     }
                 }

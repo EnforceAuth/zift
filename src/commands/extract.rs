@@ -59,26 +59,40 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
     // Group and generate files
     let rego_files = rego::group_findings(&findings, package_prefix, &output_dir);
 
-    // Write files
+    // Write files and validate
     let mut total_files = 0;
+    let mut validation_warnings = 0;
     for rego_file in &rego_files {
+        // Validate generated Rego syntax
+        let validation = rego::validator::validate_rego(&rego_file.content);
+        let status = if validation.valid { "OK" } else { "WARN" };
+
         if let Some(parent) = rego_file.output_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&rego_file.output_path, &rego_file.content)?;
         total_files += 1;
         eprintln!(
-            "  {} ({} findings) → {}",
+            "  [{status}] {} ({} findings) → {}",
             rego_file.package_name,
             rego_file.finding_count,
             rego_file.output_path.display(),
         );
+        if let Some(err) = validation.error {
+            eprintln!("       ⚠ Rego parse warning: {err}");
+            validation_warnings += 1;
+        }
     }
 
     eprintln!(
         "\nGenerated {total_files} Rego files from {} findings.",
         findings.len(),
     );
+    if validation_warnings > 0 {
+        eprintln!(
+            "{validation_warnings} file(s) have Rego syntax warnings — review before deploying.",
+        );
+    }
 
     Ok(())
 }
