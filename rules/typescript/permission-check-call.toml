@@ -1,0 +1,25 @@
+[rule]
+id = "ts-permission-check-call"
+languages = ["typescript", "javascript"]
+category = "abac"
+confidence = "high"
+description = "Permission or capability check function call"
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (string) @permission)
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(can|cannot|hasPermission|checkPermission|isAllowed|allows|denies|hasAccess|checkAccess|hasClaim)$"
+
+[[rule.tests]]
+input = """
+if (user.can("delete", resource)) {
+  deleteResource();
+}
+"""
+expect_match = true

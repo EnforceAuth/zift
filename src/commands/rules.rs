@@ -1,0 +1,112 @@
+use crate::cli::{RulesAction, RulesArgs};
+use crate::config::ZiftConfig;
+use crate::error::Result;
+use crate::rules;
+use crate::scanner::parser as ts_parser;
+
+pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
+    match args.action {
+        RulesAction::List => {
+            let loaded = rules::load_rules(None, &config)?;
+            if loaded.is_empty() {
+                println!("No pattern rules loaded.");
+                return Ok(());
+            }
+            println!("{:<35} {:<15} {:<10} Languages", "ID", "Category", "Confidence");
+            println!("{}", "-".repeat(80));
+            for rule in &loaded {
+                let langs: Vec<String> = rule.languages.iter().map(|l| l.to_string()).collect();
+                println!(
+                    "{:<35} {:<15} {:<10} {}",
+                    rule.id,
+                    rule.category.to_string(),
+                    rule.confidence.to_string(),
+                    langs.join(", "),
+                );
+            }
+            println!("\n{} rules loaded.", loaded.len());
+        }
+        RulesAction::Validate => {
+            let loaded = rules::load_rules(None, &config)?;
+            let mut errors = 0;
+            for rule in &loaded {
+                for lang in &rule.languages {
+                    let ts_lang = ts_parser::get_language(*lang, false);
+                    if let Err(e) =
+                        tree_sitter::Query::new(&ts_lang, &rule.query_source)
+                    {
+                        eprintln!("FAIL  {}  ({lang}): {e}", rule.id);
+                        errors += 1;
+                    }
+                }
+            }
+            if errors == 0 {
+                println!("All {} rules validated successfully.", loaded.len());
+            } else {
+                eprintln!("{errors} rule(s) failed validation.");
+                std::process::exit(1);
+            }
+        }
+        RulesAction::Test => {
+            let loaded = rules::load_rules(None, &config)?;
+            let mut passed = 0;
+            let mut failed = 0;
+
+            for rule in &loaded {
+                for (i, test) in rule.tests.iter().enumerate() {
+                    let lang = test.language.unwrap_or(rule.languages[0]);
+                    let ts_lang = ts_parser::get_language(lang, false);
+
+                    let mut parser = tree_sitter::Parser::new();
+                    let tree = match ts_parser::parse_source(
+                        &mut parser,
+                        test.input.as_bytes(),
+                        lang,
+                        false,
+                    ) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("FAIL  {}[{i}]: parse error: {e}", rule.id);
+                            failed += 1;
+                            continue;
+                        }
+                    };
+
+                    let compiled = match crate::scanner::matcher::compile_rule(rule, &ts_lang) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("FAIL  {}[{i}]: compile error: {e}", rule.id);
+                            failed += 1;
+                            continue;
+                        }
+                    };
+
+                    let findings = crate::scanner::matcher::execute_query(
+                        &compiled,
+                        &tree,
+                        test.input.as_bytes(),
+                        std::path::Path::new("test"),
+                        lang,
+                    );
+
+                    let matched = !findings.is_empty();
+                    if matched == test.expect_match {
+                        passed += 1;
+                    } else {
+                        eprintln!(
+                            "FAIL  {}[{i}]: expected match={}, got match={}",
+                            rule.id, test.expect_match, matched,
+                        );
+                        failed += 1;
+                    }
+                }
+            }
+
+            println!("{passed} passed, {failed} failed.");
+            if failed > 0 {
+                std::process::exit(1);
+            }
+        }
+    }
+    Ok(())
+}

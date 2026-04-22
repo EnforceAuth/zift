@@ -1,0 +1,23 @@
+[rule]
+id = "ts-session-auth-check"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "medium"
+description = "Session/request authentication status check"
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method)
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(isAuthenticated|isLoggedIn|isAuthorized)$"
+
+[[rule.tests]]
+input = """
+if (req.isAuthenticated()) {
+  next();
+}
+"""
+expect_match = true

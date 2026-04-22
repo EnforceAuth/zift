@@ -1,0 +1,30 @@
+[rule]
+id = "ts-role-includes-check"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Role array inclusion check (e.g., user.roles.includes(\"admin\"))"
+query = """
+(call_expression
+  function: (member_expression
+    object: (member_expression
+      property: (property_identifier) @obj_prop)
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (string) @role_value)
+) @match
+"""
+
+[rule.predicates.obj_prop]
+match = "^(roles|userRoles)$"
+
+[rule.predicates.method]
+match = "^(includes|indexOf|contains|some)$"
+
+[[rule.tests]]
+input = """
+if (user.roles.includes("admin")) {
+  doAdminThing();
+}
+"""
+expect_match = true

@@ -1,0 +1,45 @@
+[rule]
+id = "ts-role-check-conditional"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Direct role comparison in conditional expression"
+query = """
+(if_statement
+  condition: (parenthesized_expression
+    (binary_expression
+      left: (member_expression
+        property: (property_identifier) @prop)
+      right: (string) @role_value))
+) @match
+"""
+
+[rule.predicates.prop]
+match = "^(role|roles|userRole|userType)$"
+
+[rule.predicates.role_value]
+not_match = "^[\"'](assistant|user|system|tool|function)[\"']$"
+
+[[rule.tests]]
+input = """
+if (user.role === "admin") {
+  deleteUser(id);
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (user.name === "admin") {
+  greet();
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if (msg.role === "assistant") {
+  processResponse();
+}
+"""
+expect_match = false

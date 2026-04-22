@@ -1,0 +1,25 @@
+[rule]
+id = "ts-nestjs-roles-decorator"
+languages = ["typescript"]
+category = "rbac"
+confidence = "high"
+description = "NestJS @Roles() decorator for role-based access"
+query = """
+(decorator
+  (call_expression
+    function: (identifier) @decorator_name
+    arguments: (arguments
+      (string) @role_value))
+) @match
+"""
+
+[rule.predicates.decorator_name]
+match = "^(Roles|SetMetadata)$"
+
+[[rule.tests]]
+input = """
+@Roles("admin")
+getAdminData() {}
+"""
+language = "typescript"
+expect_match = true

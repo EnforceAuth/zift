@@ -1,0 +1,26 @@
+[rule]
+id = "ts-nestjs-use-guards"
+languages = ["typescript"]
+category = "middleware"
+confidence = "high"
+description = "NestJS @UseGuards() decorator for auth guard"
+query = """
+(decorator
+  (call_expression
+    function: (identifier) @decorator_name
+    arguments: (arguments
+      (_) @guard_name))
+) @match
+"""
+
+[rule.predicates.decorator_name]
+eq = "UseGuards"
+
+[[rule.tests]]
+input = """
+@UseGuards(AuthGuard)
+@Controller("users")
+class UsersController {}
+"""
+language = "typescript"
+expect_match = true
