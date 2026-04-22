@@ -1,4 +1,5 @@
 pub mod discovery;
+pub mod imports;
 pub mod matcher;
 pub mod parser;
 
@@ -11,12 +12,18 @@ use crate::error::Result;
 use crate::rules::PatternRule;
 use crate::types::{Finding, Language};
 
+/// Result of a scan, including findings and enforcement point count.
+pub struct ScanResult {
+    pub findings: Vec<Finding>,
+    pub enforcement_points: usize,
+}
+
 pub fn scan(
     root: &Path,
     rules: &[PatternRule],
     args: &ScanArgs,
     config: &ZiftConfig,
-) -> Result<Vec<Finding>> {
+) -> Result<ScanResult> {
     // Merge exclude patterns from config and CLI
     let mut excludes = config.scan.exclude.clone();
     excludes.extend(args.exclude.iter().cloned());
@@ -26,7 +33,10 @@ pub fn scan(
     tracing::info!("discovered {} files to scan", files.len());
 
     if files.is_empty() {
-        return Ok(Vec::new());
+        return Ok(ScanResult {
+            findings: Vec::new(),
+            enforcement_points: 0,
+        });
     }
 
     // Pre-compile queries per (language, tsx/jsx) variant to avoid recompiling per file
@@ -63,6 +73,7 @@ pub fn scan(
 
     let mut ts_parser = tree_sitter::Parser::new();
     let mut all_findings = Vec::new();
+    let mut enforcement_points: usize = 0;
 
     for file in &files {
         let source = match std::fs::read_to_string(&file.path) {
@@ -92,6 +103,9 @@ pub fn scan(
 
         let rel_path = file.path.strip_prefix(root).unwrap_or(&file.path);
 
+        // Check for policy-engine imports in this file
+        let policy_imports = imports::find_policy_imports(&tree, source.as_bytes(), file.language);
+
         let compiled_rules = &compiled_cache[&(file.language, file.is_tsx_jsx)];
         for compiled in compiled_rules {
             let findings = matcher::execute_query(
@@ -101,7 +115,24 @@ pub fn scan(
                 rel_path,
                 file.language,
             );
-            all_findings.extend(findings);
+
+            // Separate enforcement points from inline auth findings
+            if policy_imports.is_empty() {
+                all_findings.extend(findings);
+            } else {
+                for finding in findings {
+                    if imports::is_enforcement_point(&finding.code_snippet, &policy_imports) {
+                        enforcement_points += 1;
+                        tracing::debug!(
+                            "skipping enforcement point: {}:{}",
+                            finding.file.display(),
+                            finding.line_start,
+                        );
+                    } else {
+                        all_findings.push(finding);
+                    }
+                }
+            }
         }
     }
 
@@ -122,6 +153,13 @@ pub fn scan(
     // Sort by file, then line
     all_findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line_start.cmp(&b.line_start)));
 
-    tracing::info!("found {} findings", all_findings.len());
-    Ok(all_findings)
+    tracing::info!(
+        "found {} findings, {} enforcement points",
+        all_findings.len(),
+        enforcement_points,
+    );
+    Ok(ScanResult {
+        findings: all_findings,
+        enforcement_points,
+    })
 }

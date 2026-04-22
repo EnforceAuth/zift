@@ -16,7 +16,7 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     let loaded_rules = rules::load_rules(args.rules_dir.as_deref(), &config)?;
     tracing::info!("loaded {} pattern rules", loaded_rules.len());
 
-    let findings = scanner::scan(&path, &loaded_rules, &args, &config)?;
+    let result = scanner::scan(&path, &loaded_rules, &args, &config)?;
 
     let stdout = std::io::stdout();
     let mut writer: Box<dyn std::io::Write> = if let Some(ref out_path) = args.output {
@@ -26,8 +26,12 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     };
 
     match args.format {
-        OutputFormat::Text => output::text::print(&findings, &path, &mut writer)?,
-        OutputFormat::Json => output::json::print(&findings, &path, &mut writer)?,
+        OutputFormat::Text => {
+            output::text::print(&result.findings, &path, result.enforcement_points, &mut writer)?
+        }
+        OutputFormat::Json => {
+            output::json::print(&result.findings, &path, result.enforcement_points, &mut writer)?
+        }
         OutputFormat::Sarif => {
             return Err(ZiftError::General(
                 "SARIF output not yet implemented".into(),

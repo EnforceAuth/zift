@@ -18,12 +18,19 @@ struct ScanReport<'a> {
 #[derive(Serialize)]
 struct Summary {
     total_findings: usize,
+    enforcement_points: usize,
+    externalized_pct: usize,
     by_category: HashMap<String, usize>,
     by_confidence: HashMap<String, usize>,
     files_with_findings: usize,
 }
 
-pub fn print(findings: &[Finding], scan_root: &Path, writer: &mut dyn Write) -> Result<()> {
+pub fn print(
+    findings: &[Finding],
+    scan_root: &Path,
+    enforcement_points: usize,
+    writer: &mut dyn Write,
+) -> Result<()> {
     let mut by_category: HashMap<String, usize> = HashMap::new();
     let mut by_confidence: HashMap<String, usize> = HashMap::new();
     let mut files = std::collections::HashSet::new();
@@ -44,6 +51,13 @@ pub fn print(findings: &[Finding], scan_root: &Path, writer: &mut dyn Write) -> 
         findings,
         summary: Summary {
             total_findings: findings.len(),
+            enforcement_points,
+            externalized_pct: if findings.is_empty() && enforcement_points == 0 {
+                0
+            } else {
+                let total = findings.len() + enforcement_points;
+                (enforcement_points as f64 / total as f64 * 100.0).round() as usize
+            },
             by_category,
             by_confidence,
             files_with_findings: files.len(),

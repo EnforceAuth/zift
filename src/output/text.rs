@@ -4,7 +4,12 @@ use std::path::Path;
 use crate::error::Result;
 use crate::types::Finding;
 
-pub fn print(findings: &[Finding], _scan_root: &Path, writer: &mut dyn Write) -> Result<()> {
+pub fn print(
+    findings: &[Finding],
+    _scan_root: &Path,
+    enforcement_points: usize,
+    writer: &mut dyn Write,
+) -> Result<()> {
     if findings.is_empty() {
         writeln!(writer, "No authorization patterns found.")?;
         return Ok(());
@@ -70,6 +75,15 @@ pub fn print(findings: &[Finding], _scan_root: &Path, writer: &mut dyn Write) ->
         write!(writer, " ({})", parts.join(", "))?;
     }
     writeln!(writer)?;
+
+    if enforcement_points > 0 {
+        let total = findings.len() + enforcement_points;
+        let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
+        writeln!(
+            writer,
+            "       {enforcement_points} enforcement points (already using OPA/policy engine, not flagged) — {pct}% externalized",
+        )?;
+    }
 
     Ok(())
 }
