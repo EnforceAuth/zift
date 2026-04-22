@@ -21,6 +21,15 @@ match = "^(roles|userRoles)$"
 [rule.predicates.method]
 match = "^(includes|indexOf|contains|some)$"
 
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
 [[rule.tests]]
 input = """
 if (user.roles.includes("admin")) {

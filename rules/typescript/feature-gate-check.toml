@@ -17,6 +17,15 @@ query = """
 [rule.predicates.prop]
 match = "^(plan|tier|subscription|license|edition|featureFlag|feature)$"
 
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.plan in {"{{plan_value}}"}
+}
+"""
+
 [[rule.tests]]
 input = """
 if (user.plan === "enterprise") {

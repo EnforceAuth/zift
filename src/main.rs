@@ -4,6 +4,7 @@ mod config;
 mod error;
 mod logging;
 mod output;
+mod rego;
 mod rules;
 mod scanner;
 mod types;

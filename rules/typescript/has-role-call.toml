@@ -15,6 +15,15 @@ query = """
 [rule.predicates.fn_name]
 match = "^(hasRole|checkRole|isRole|requireRole|hasPermission|checkPermission|isAuthorized|authorize)$"
 
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
 [[rule.tests]]
 input = """
 if (hasRole("manager")) {

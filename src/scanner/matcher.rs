@@ -103,7 +103,11 @@ pub fn execute_query(
             confidence: compiled.rule.confidence,
             description: compiled.rule.description.clone(),
             pattern_rule: Some(compiled.rule.id.clone()),
-            rego_stub: None,
+            rego_stub: compiled.rule.rego_template.as_ref().map(|tmpl| {
+                let owned: HashMap<String, String> =
+                    captures.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+                crate::rego::render_template(tmpl, &owned)
+            }),
             pass: ScanPass::Structural,
         });
     }

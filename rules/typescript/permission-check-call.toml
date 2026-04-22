@@ -16,6 +16,15 @@ query = """
 [rule.predicates.method]
 match = "^(can|cannot|hasPermission|checkPermission|isAllowed|allows|denies|hasAccess|checkAccess|hasClaim)$"
 
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.action == "{{permission}}"
+}
+"""
+
 [[rule.tests]]
 input = """
 if (user.can("delete", resource)) {
