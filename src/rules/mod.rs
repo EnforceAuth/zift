@@ -138,7 +138,19 @@ pub fn parse_rule_for_test(toml_str: &str) -> PatternRule {
     parse_rule(toml_str, "test").unwrap()
 }
 
+const MAX_RULES_DIR_DEPTH: usize = 10;
+
 fn load_external_rules(dir: &Path) -> Result<Vec<PatternRule>> {
+    load_external_rules_inner(dir, 0)
+}
+
+fn load_external_rules_inner(dir: &Path, depth: usize) -> Result<Vec<PatternRule>> {
+    if depth > MAX_RULES_DIR_DEPTH {
+        return Err(ZiftError::General(format!(
+            "rules directory exceeds max depth ({MAX_RULES_DIR_DEPTH}): {}",
+            dir.display()
+        )));
+    }
     let mut rules = Vec::new();
     if !dir.exists() {
         return Ok(rules);
@@ -146,12 +158,16 @@ fn load_external_rules(dir: &Path) -> Result<Vec<PatternRule>> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
+        if entry.file_type().is_ok_and(|ft| ft.is_symlink()) {
+            tracing::debug!("skipping symlink: {}", path.display());
+            continue;
+        }
         if path.extension().is_some_and(|e| e == "toml") {
             let content = std::fs::read_to_string(&path)?;
             let rule = parse_rule(&content, &path.display().to_string())?;
             rules.push(rule);
         } else if path.is_dir() {
-            rules.extend(load_external_rules(&path)?);
+            rules.extend(load_external_rules_inner(&path, depth + 1)?);
         }
     }
     Ok(rules)

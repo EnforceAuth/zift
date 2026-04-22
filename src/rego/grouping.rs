@@ -55,7 +55,12 @@ fn derive_output_path(file_path: &Path, output_dir: &Path) -> PathBuf {
             break;
         }
     }
-    output_dir.join(stem)
+    // Filter out path traversal components
+    let safe_stem: PathBuf = stem
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::ParentDir))
+        .collect();
+    output_dir.join(safe_stem)
 }
 
 /// Group findings by source file and generate RegoFile structs.

@@ -61,7 +61,9 @@ pub fn execute_query(
         let mut match_node = None;
 
         for capture in query_match.captures {
-            let name = &compiled.capture_names[capture.index as usize];
+            let Some(name) = compiled.capture_names.get(capture.index as usize) else {
+                continue;
+            };
             let text = capture
                 .node
                 .utf8_text(source)

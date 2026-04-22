@@ -6,7 +6,12 @@ use crate::rules;
 use crate::scanner;
 
 pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
-    let path = args.path.canonicalize().unwrap_or(args.path.clone());
+    let path = args.path.canonicalize().map_err(|e| {
+        ZiftError::General(format!(
+            "failed to resolve path '{}': {e}",
+            args.path.display()
+        ))
+    })?;
     tracing::info!("scanning {}", path.display());
 
     if args.deep {
