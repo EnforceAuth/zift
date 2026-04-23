@@ -19,6 +19,7 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "tsx" => Some((Language::TypeScript, true)),
         "js" | "mjs" | "cjs" => Some((Language::JavaScript, false)),
         "jsx" => Some((Language::JavaScript, true)),
+        "java" => Some((Language::Java, false)),
         _ => None,
     }
 }
@@ -100,6 +101,14 @@ mod tests {
         assert_eq!(
             detect_language(Path::new("foo.jsx")),
             Some((Language::JavaScript, true))
+        );
+    }
+
+    #[test]
+    fn detect_java_extension() {
+        assert_eq!(
+            detect_language(Path::new("Foo.java")),
+            Some((Language::Java, false))
         );
     }
 

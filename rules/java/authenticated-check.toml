@@ -1,0 +1,35 @@
+[rule]
+id = "java-authenticated-check"
+languages = ["java"]
+category = "middleware"
+confidence = "medium"
+description = "Authentication status check (isAuthenticated, isAnonymous, etc.)"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+  arguments: (argument_list)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(isAuthenticated|isAnonymous|isFullyAuthenticated|isRememberMe)$"
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (authentication.isAuthenticated()) { allow(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (request.isSecure()) { allow(); }
+    }
+}
+"""
+expect_match = false

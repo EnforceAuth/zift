@@ -26,6 +26,15 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
         );
     }
 
+    // Warn about explicitly requested languages that lack parser support
+    for lang in &args.language {
+        if !scanner::parser::is_language_supported(*lang) {
+            eprintln!(
+                "warning: {lang} scanning is not yet supported — {lang} files will be skipped"
+            );
+        }
+    }
+
     let loaded_rules = rules::load_rules(args.rules_dir.as_deref(), &config)?;
     tracing::info!("loaded {} pattern rules", loaded_rules.len());
 

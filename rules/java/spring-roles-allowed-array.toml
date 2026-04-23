@@ -1,0 +1,35 @@
+[rule]
+id = "java-roles-allowed-array"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Jakarta/JSR-250 @RolesAllowed annotation with array of roles"
+query = """
+(annotation
+  name: (identifier) @anno_name
+  arguments: (annotation_argument_list
+    (element_value_array_initializer
+      (string_literal) @role_value))
+) @match
+"""
+
+[rule.predicates.anno_name]
+eq = "RolesAllowed"
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @RolesAllowed({"admin", "manager"})
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Transactional
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = false

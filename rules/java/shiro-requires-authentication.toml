@@ -1,0 +1,41 @@
+[rule]
+id = "java-shiro-requires-authentication"
+languages = ["java"]
+category = "middleware"
+confidence = "high"
+description = "Apache Shiro @RequiresAuthentication or @RequiresGuest annotation"
+query = """
+(marker_annotation
+  name: (identifier) @anno_name
+) @match
+"""
+
+[rule.predicates.anno_name]
+match = "^(RequiresAuthentication|RequiresGuest|RequiresUser)$"
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @RequiresAuthentication
+    public void secureAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @RequiresGuest
+    public void guestAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Controller {
+    @Override
+    public void action() { }
+}
+"""
+expect_match = false

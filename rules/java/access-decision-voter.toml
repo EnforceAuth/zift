@@ -1,0 +1,31 @@
+[rule]
+id = "java-access-decision-voter"
+languages = ["java"]
+category = "custom"
+confidence = "medium"
+description = "Custom AccessDecisionVoter or security interceptor implementation"
+query = """
+(class_declaration
+  (superclass
+    (type_identifier) @parent_class)
+) @match
+"""
+
+[rule.predicates.parent_class]
+match = "^(AccessDecisionVoter|AbstractAccessDecisionManager|SecurityInterceptor|AbstractSecurityInterceptor|PermissionEvaluator)$"
+
+[[rule.tests]]
+input = """
+public class CustomVoter extends AccessDecisionVoter<Object> {
+    public int vote() { return 0; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyService extends BaseService {
+    public void doWork() { }
+}
+"""
+expect_match = false
