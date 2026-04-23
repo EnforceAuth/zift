@@ -21,7 +21,7 @@ template = """
 default allow := false
 
 allow if {
-    input.user.role in {"{{role_value}}"}
+    input.user.granted_authority in {"{{role_value}}"}
 }
 """
 
@@ -50,6 +50,16 @@ input = """
 public class SecurityConfig {
     public void configure() {
         http.authorizeRequests().antMatchers("/api/**").hasAnyAuthority("SCOPE_read", "SCOPE_write");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/reports/**").hasAuthority("SCOPE_reports.read");
     }
 }
 """

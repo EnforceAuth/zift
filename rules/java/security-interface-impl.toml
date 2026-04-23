@@ -10,6 +10,13 @@ query = """
     (type_list
       (type_identifier) @iface_name))
 ) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (generic_type
+        (type_identifier) @iface_name)))
+) @match
 """
 
 [rule.predicates.iface_name]
@@ -27,6 +34,14 @@ expect_match = true
 input = """
 public class MyUserService implements Serializable, UserDetailsService {
     public UserDetails loadUserByUsername(String username) { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyAuthManager implements AuthorizationManager<RequestAuthorizationContext> {
+    public AuthorizationDecision check() { return null; }
 }
 """
 expect_match = true
