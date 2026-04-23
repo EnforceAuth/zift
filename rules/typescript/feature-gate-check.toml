@@ -1,0 +1,35 @@
+[rule]
+id = "ts-feature-gate-check"
+languages = ["typescript", "javascript"]
+category = "feature_gate"
+confidence = "medium"
+description = "Feature flag or plan-based access gating"
+query = """
+(if_statement
+  condition: (parenthesized_expression
+    (binary_expression
+      left: (member_expression
+        property: (property_identifier) @prop)
+      right: (string) @plan_value))
+) @match
+"""
+
+[rule.predicates.prop]
+match = "^(plan|tier|subscription|license|edition|featureFlag|feature)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.plan in {"{{plan_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+if (user.plan === "enterprise") {
+  enableAdvancedFeature();
+}
+"""
+expect_match = true

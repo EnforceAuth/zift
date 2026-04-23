@@ -1,0 +1,39 @@
+[rule]
+id = "ts-jwt-token-check"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "medium"
+description = "JWT token verification or authorization header access"
+query = """
+(call_expression
+  function: (member_expression
+    object: (identifier) @obj
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (_) @arg)
+) @match
+"""
+
+[rule.predicates.obj]
+match = "(?i)^(jwt|jsonwebtoken|jose|token|auth)$"
+
+[rule.predicates.method]
+match = "^(verify|decode|sign)$"
+
+[[rule.tests]]
+input = """
+const decoded = jwt.verify(token, secret);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+signer.sign(httpRequest);
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+decoder.decode(value, { stream: true });
+"""
+expect_match = false

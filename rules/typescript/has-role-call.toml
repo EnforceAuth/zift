@@ -1,0 +1,33 @@
+[rule]
+id = "ts-has-role-call"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Role-checking function call (e.g., hasRole(\"admin\"), checkRole(...))"
+query = """
+(call_expression
+  function: (identifier) @fn_name
+  arguments: (arguments
+    (string) @role_value)
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(hasRole|checkRole|isRole|requireRole)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+if (hasRole("manager")) {
+  approveRequest();
+}
+"""
+expect_match = true

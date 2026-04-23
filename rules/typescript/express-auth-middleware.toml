@@ -1,0 +1,32 @@
+[rule]
+id = "ts-express-auth-middleware"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "high"
+description = "Express/Connect auth middleware registration (e.g., app.use(authMiddleware))"
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (identifier) @middleware_name)
+) @match
+"""
+
+[rule.predicates.method]
+eq = "use"
+
+[rule.predicates.middleware_name]
+match = "(?i)(auth|authenticate|requireAuth|requireLogin|ensureAuth|ensureLoggedIn|isAuthenticated|protect|secured|guard|verifyToken|checkAuth|passport)"
+
+[[rule.tests]]
+input = """
+app.use(requireAuth);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+app.use(cors());
+"""
+expect_match = false

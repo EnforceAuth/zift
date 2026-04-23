@@ -1,0 +1,46 @@
+[rule]
+id = "ts-ownership-check"
+languages = ["typescript", "javascript"]
+category = "ownership"
+confidence = "medium"
+description = "Resource ownership comparison (e.g., resource.ownerId === user.id)"
+query = """
+(binary_expression
+  left: (member_expression
+    property: (property_identifier) @left_prop)
+  operator: ["==" "==="]
+  right: (member_expression
+    property: (property_identifier) @right_prop)
+) @match
+"""
+
+[rule.predicates.left_prop]
+match = "(?i)(owner_?id|user_?id|created_?by|author_?id)"
+
+[rule.predicates.right_prop]
+match = "(?i)(id|user_?id|sub)"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.resource.owner == input.user.id
+}
+"""
+
+[[rule.tests]]
+input = """
+if (resource.ownerId === user.id) {
+  allowEdit();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (resource.ownerId !== user.id) {
+  denyAccess();
+}
+"""
+expect_match = false

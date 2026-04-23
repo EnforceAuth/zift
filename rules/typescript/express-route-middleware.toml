@@ -1,0 +1,29 @@
+[rule]
+id = "ts-express-route-middleware"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "medium"
+description = "Auth middleware in Express route handler registration"
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (string)
+    (identifier) @middleware_name
+    .
+    (_))
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(get|post|put|patch|delete|all)$"
+
+[rule.predicates.middleware_name]
+match = "(?i)(auth|authenticate|requireAuth|requireLogin|ensureAuth|isAuthenticated|protect|guard|verifyToken|checkAuth|requireRole|requirePermission|authorize)"
+
+[[rule.tests]]
+input = """
+router.get("/admin", requireAuth, adminController);
+"""
+expect_match = true

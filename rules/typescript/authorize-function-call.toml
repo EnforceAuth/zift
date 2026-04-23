@@ -1,0 +1,49 @@
+[rule]
+id = "ts-authorize-function-call"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Standalone authorization function call (e.g., hasPermission(\"orders:read\"), authorize(...))"
+query = """
+(call_expression
+  function: (identifier) @fn_name
+  arguments: (arguments
+    (string) @perm_value)
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(hasPermission|checkPermission|isAuthorized|authorize)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{perm_value}}" in input.user.permissions
+}
+"""
+
+[[rule.tests]]
+input = """
+if (hasPermission("orders:read")) {
+  listOrders();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (authorize("admin")) {
+  deleteAll();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (hasRole("admin")) {
+  deleteAll();
+}
+"""
+expect_match = false
