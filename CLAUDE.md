@@ -36,7 +36,7 @@ cargo clippy -- -D warnings
 
 ### Language support
 
-- v0.1: Java, TypeScript, JavaScript
+- v0.1: TypeScript, JavaScript (Java in progress)
 - v0.2: Python, Go
 - v0.3: C#, Kotlin, Ruby, PHP
 
@@ -51,7 +51,7 @@ Trigger prefixes (cause version bump):
 - `perf:` — performance improvement (patch)
 
 Skipped prefixes (no version bump):
-- `doc:`, `test:`, `ci:`, `chore:`, `style:`, `build:`
+- `docs:`, `test:`, `ci:`, `chore:`, `style:`, `build:`
 
 PR titles must use a conventional commit prefix.
 

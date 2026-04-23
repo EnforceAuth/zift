@@ -7,4 +7,7 @@ cargo fmt -- --check
 echo "Running cargo clippy..."
 cargo clippy -- -D warnings
 
+echo "Running cargo test..."
+cargo test
+
 echo "Pre-commit checks passed."

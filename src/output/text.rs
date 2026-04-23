@@ -49,9 +49,18 @@ pub fn print(
     }
 
     // Summary
-    let high = findings.iter().filter(|f| f.confidence == crate::types::Confidence::High).count();
-    let medium = findings.iter().filter(|f| f.confidence == crate::types::Confidence::Medium).count();
-    let low = findings.iter().filter(|f| f.confidence == crate::types::Confidence::Low).count();
+    let high = findings
+        .iter()
+        .filter(|f| f.confidence == crate::types::Confidence::High)
+        .count();
+    let medium = findings
+        .iter()
+        .filter(|f| f.confidence == crate::types::Confidence::Medium)
+        .count();
+    let low = findings
+        .iter()
+        .filter(|f| f.confidence == crate::types::Confidence::Low)
+        .count();
     let file_count = {
         let mut files = std::collections::HashSet::new();
         for f in findings {
@@ -68,9 +77,15 @@ pub fn print(
     )?;
 
     let mut parts = Vec::new();
-    if high > 0 { parts.push(format!("{high} high")); }
-    if medium > 0 { parts.push(format!("{medium} medium")); }
-    if low > 0 { parts.push(format!("{low} low")); }
+    if high > 0 {
+        parts.push(format!("{high} high"));
+    }
+    if medium > 0 {
+        parts.push(format!("{medium} medium"));
+    }
+    if low > 0 {
+        parts.push(format!("{low} low"));
+    }
     if !parts.is_empty() {
         write!(writer, " ({})", parts.join(", "))?;
     }

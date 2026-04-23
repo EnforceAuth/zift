@@ -214,10 +214,8 @@ mod tests {
 
     #[test]
     fn derive_output_path() {
-        let path = super::derive_output_path(
-            Path::new("src/api/orders.ts"),
-            Path::new("./policies"),
-        );
+        let path =
+            super::derive_output_path(Path::new("src/api/orders.ts"), Path::new("./policies"));
         assert_eq!(path, PathBuf::from("./policies/api/orders.rego"));
     }
 

@@ -20,13 +20,16 @@ pub fn compile_rule<'a>(
     rule: &'a PatternRule,
     ts_lang: &tree_sitter::Language,
 ) -> Result<CompiledRule<'a>> {
-    let query =
-        Query::new(ts_lang, &rule.query_source).map_err(|e| ZiftError::QueryError {
-            rule_id: rule.id.clone(),
-            message: e.to_string(),
-        })?;
+    let query = Query::new(ts_lang, &rule.query_source).map_err(|e| ZiftError::QueryError {
+        rule_id: rule.id.clone(),
+        message: e.to_string(),
+    })?;
 
-    let capture_names: Vec<String> = query.capture_names().iter().map(|s| s.to_string()).collect();
+    let capture_names: Vec<String> = query
+        .capture_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
 
     let match_index = capture_names
         .iter()
@@ -61,14 +64,17 @@ pub fn execute_query(
         let mut match_node = None;
 
         for capture in query_match.captures {
-            let name = compiled.capture_names.get(capture.index as usize).ok_or_else(|| {
-                ZiftError::General(format!(
-                    "rule '{}': capture index {} out of range (max {})",
-                    compiled.rule.id,
-                    capture.index,
-                    compiled.capture_names.len(),
-                ))
-            })?;
+            let name = compiled
+                .capture_names
+                .get(capture.index as usize)
+                .ok_or_else(|| {
+                    ZiftError::General(format!(
+                        "rule '{}': capture index {} out of range (max {})",
+                        compiled.rule.id,
+                        capture.index,
+                        compiled.capture_names.len(),
+                    ))
+                })?;
             let text = capture
                 .node
                 .utf8_text(source)
@@ -92,12 +98,15 @@ pub fn execute_query(
 
         let line_start = matched.start_position().row + 1;
         let line_end = matched.end_position().row + 1;
-        let code_snippet = matched
-            .utf8_text(source)
-            .unwrap_or_default()
-            .to_string();
+        let code_snippet = matched.utf8_text(source).unwrap_or_default().to_string();
 
-        let id = compute_finding_id(&compiled.rule.id, file_path, line_start, line_end, &code_snippet);
+        let id = compute_finding_id(
+            &compiled.rule.id,
+            file_path,
+            line_start,
+            line_end,
+            &code_snippet,
+        );
 
         findings.push(Finding {
             id,
@@ -111,8 +120,10 @@ pub fn execute_query(
             description: compiled.rule.description.clone(),
             pattern_rule: Some(compiled.rule.id.clone()),
             rego_stub: compiled.rule.rego_template.as_ref().map(|tmpl| {
-                let owned: HashMap<String, String> =
-                    captures.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+                let owned: HashMap<String, String> = captures
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
                 crate::rego::render_template(tmpl, &owned)
             }),
             pass: ScanPass::Structural,
@@ -211,7 +222,14 @@ mod tests {
         let ts_lang = parser::get_language(lang, false).unwrap();
         let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
         let compiled = compile_rule(&rule, &ts_lang).unwrap();
-        execute_query(&compiled, &tree, source.as_bytes(), Path::new("test.ts"), lang).unwrap()
+        execute_query(
+            &compiled,
+            &tree,
+            source.as_bytes(),
+            Path::new("test.ts"),
+            lang,
+        )
+        .unwrap()
     }
 
     #[test]

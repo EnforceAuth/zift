@@ -192,10 +192,7 @@ fn load_external_rules_inner(dir: &Path, depth: usize) -> Result<Vec<PatternRule
     Ok(rules)
 }
 
-pub fn load_rules(
-    extra_rules_dir: Option<&Path>,
-    config: &ZiftConfig,
-) -> Result<Vec<PatternRule>> {
+pub fn load_rules(extra_rules_dir: Option<&Path>, config: &ZiftConfig) -> Result<Vec<PatternRule>> {
     let mut rules = embedded::load_embedded_rules()?;
 
     // Load from config additional dirs

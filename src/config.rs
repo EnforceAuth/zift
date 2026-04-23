@@ -49,11 +49,10 @@ pub fn load_config(path: &Path) -> Result<ZiftConfig> {
     }
 
     let content = std::fs::read_to_string(path)?;
-    let config: ZiftConfig =
-        toml::from_str(&content).map_err(|e| ZiftError::ConfigParse {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+    let config: ZiftConfig = toml::from_str(&content).map_err(|e| ZiftError::ConfigParse {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
 
     tracing::debug!("loaded config from {}", path.display());
     Ok(config)

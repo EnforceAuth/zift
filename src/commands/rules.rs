@@ -13,7 +13,10 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                 println!("No pattern rules loaded.");
                 return Ok(());
             }
-            println!("{:<35} {:<15} {:<10} Languages", "ID", "Category", "Confidence");
+            println!(
+                "{:<35} {:<15} {:<10} Languages",
+                "ID", "Category", "Confidence"
+            );
             println!("{}", "-".repeat(80));
             for rule in &loaded {
                 let langs: Vec<String> = rule.languages.iter().map(|l| l.to_string()).collect();
@@ -40,9 +43,7 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                     };
                     for &is_tsx_jsx in variants {
                         let ts_lang = ts_parser::get_language(*lang, is_tsx_jsx)?;
-                        if let Err(e) =
-                            tree_sitter::Query::new(&ts_lang, &rule.query_source)
-                        {
+                        if let Err(e) = tree_sitter::Query::new(&ts_lang, &rule.query_source) {
                             let suffix = if is_tsx_jsx { "/tsx" } else { "" };
                             eprintln!("FAIL  {}  ({lang}{suffix}): query: {e}", rule.id);
                             errors += 1;
@@ -97,7 +98,10 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                             Ok(t) => t,
                             Err(e) => {
                                 let suffix = if is_tsx_jsx { "/tsx" } else { "" };
-                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): parse error: {e}", rule.id);
+                                eprintln!(
+                                    "FAIL  {}[{i}] ({lang}{suffix}): parse error: {e}",
+                                    rule.id
+                                );
                                 failed += 1;
                                 continue;
                             }
@@ -107,7 +111,10 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                             Ok(c) => c,
                             Err(e) => {
                                 let suffix = if is_tsx_jsx { "/tsx" } else { "" };
-                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): compile error: {e}", rule.id);
+                                eprintln!(
+                                    "FAIL  {}[{i}] ({lang}{suffix}): compile error: {e}",
+                                    rule.id
+                                );
                                 failed += 1;
                                 continue;
                             }
@@ -123,7 +130,10 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                             Ok(f) => f,
                             Err(e) => {
                                 let suffix = if is_tsx_jsx { "/tsx" } else { "" };
-                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): query error: {e}", rule.id);
+                                eprintln!(
+                                    "FAIL  {}[{i}] ({lang}{suffix}): query error: {e}",
+                                    rule.id
+                                );
                                 failed += 1;
                                 continue;
                             }
