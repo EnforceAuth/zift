@@ -94,9 +94,10 @@ gh api "repos/{owner}/{repo}/pulls/{pr}/reviews/{review_id}" \
 Parse each fetched review body for:
 - **"Nitpick comments (N)"** — valid code quality items; fix them
 - **"Duplicate comments (N)"** — re-raised from prior reviews; fix them
+- **"Outside diff range comments (N)"** — comments on code outside the changed lines; triage these the same as inline comments
 - **"Prompt for AI Agents"** — structured fix instructions with file paths and line numbers
 
-**The inline comments (3a) are only the Critical/Major items. Nitpicks and duplicates stay in the review body (3b).** If the user says "5 comments and 3 comments", those numbers come from "Actionable comments posted: N" in separate review bodies.
+**The inline comments (3a) are only the Critical/Major items. Nitpicks, duplicates, and outside-diff-range items stay in the review body (3b).** If the user says "5 comments and 3 comments", those numbers come from "Actionable comments posted: N" in separate review bodies.
 
 #### 3c. Amazon Q general comments (if any)
 

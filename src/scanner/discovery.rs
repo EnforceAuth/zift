@@ -13,8 +13,8 @@ pub struct DiscoveredFile {
 }
 
 pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
-    let ext = path.extension()?.to_str()?;
-    match ext {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
         "ts" => Some((Language::TypeScript, false)),
         "tsx" => Some((Language::TypeScript, true)),
         "js" | "mjs" | "cjs" => Some((Language::JavaScript, false)),

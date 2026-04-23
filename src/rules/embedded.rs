@@ -94,6 +94,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/java/shiro-requires-roles.toml"),
     ),
     (
+        "java-shiro-requires-roles-array",
+        include_str!("../../rules/java/shiro-requires-roles-array.toml"),
+    ),
+    (
         "java-shiro-requires-authentication",
         include_str!("../../rules/java/shiro-requires-authentication.toml"),
     ),

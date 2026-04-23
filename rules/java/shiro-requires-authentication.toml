@@ -33,6 +33,15 @@ expect_match = true
 
 [[rule.tests]]
 input = """
+public class SecureController {
+    @RequiresUser
+    public void userAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
 public class Controller {
     @Override
     public void action() { }

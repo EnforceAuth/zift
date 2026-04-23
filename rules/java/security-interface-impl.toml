@@ -25,6 +25,14 @@ expect_match = true
 
 [[rule.tests]]
 input = """
+public class MyUserService implements Serializable, UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
 public class MyService implements Serializable {
     public void doWork() { }
 }

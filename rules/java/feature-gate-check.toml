@@ -30,6 +30,26 @@ expect_match = true
 input = """
 public class Service {
     public void check() {
+        if (featureFlags.isFeatureEnabled("beta-dashboard")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (subscription.hasPlan("pro")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
         if (validator.isEnabled("field")) { validate(); }
     }
 }

@@ -39,6 +39,26 @@ expect_match = true
 input = """
 public class SecurityConfig {
     public void configure() {
+        http.authorizeRequests().antMatchers("/ops/**").hasAnyRole("ADMIN", "OPS");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/api/**").hasAnyAuthority("SCOPE_read", "SCOPE_write");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
         http.authorizeRequests().antMatchers("/public/**").permitAll();
     }
 }
