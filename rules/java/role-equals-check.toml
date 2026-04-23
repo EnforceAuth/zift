@@ -19,7 +19,7 @@ query = """
 match = "^(getRole|getRoles|getAuthority|getAuthorities)$"
 
 [rule.predicates.method_name]
-match = "^(equals|contains|equalsIgnoreCase)$"
+match = "^(equals|equalsIgnoreCase)$"
 
 [rule.rego_template]
 template = """
@@ -39,6 +39,16 @@ public class Service {
 }
 """
 expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getRole().contains("ad")) { doSomething(); }
+    }
+}
+"""
+expect_match = false
 
 [[rule.tests]]
 input = """
