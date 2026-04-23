@@ -1,5 +1,6 @@
 # .coderabbit.yaml
 reviews:
+  request_changes_workflow: true
   instructions: |
     - Surface ALL findings in round 1. Never trickle comments across multiple rounds.
       If uncertain whether something is worth flagging, include it in round 1 or skip it entirely.
