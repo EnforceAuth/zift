@@ -54,7 +54,7 @@ allow if {
 
 allow if {
     # TODO: verify attribute check
-    input.user.{{attribute}} == {{value}}
+    input.user.{{attribute}} == "{{value}}"
 }"#
         }
         AuthCategory::Middleware => {
@@ -154,10 +154,7 @@ pub fn generate_default_stub(
             );
             vars.insert(
                 "value".to_string(),
-                literals
-                    .get(1)
-                    .map(|v| format!("\"{v}\""))
-                    .unwrap_or("\"TODO\"".into()),
+                literals.get(1).cloned().unwrap_or("TODO".into()),
             );
         }
         _ => {}

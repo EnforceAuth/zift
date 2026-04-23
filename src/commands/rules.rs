@@ -39,7 +39,7 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                         &[false]
                     };
                     for &is_tsx_jsx in variants {
-                        let ts_lang = ts_parser::get_language(*lang, is_tsx_jsx);
+                        let ts_lang = ts_parser::get_language(*lang, is_tsx_jsx)?;
                         if let Err(e) =
                             tree_sitter::Query::new(&ts_lang, &rule.query_source)
                         {
@@ -73,14 +73,19 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
 
             for rule in &loaded {
                 for (i, test) in rule.tests.iter().enumerate() {
-                    let lang = test.language.unwrap_or(rule.languages[0]);
+                    let Some(default_lang) = rule.languages.first().copied() else {
+                        eprintln!("FAIL  {}[{i}]: rule has no languages configured", rule.id);
+                        failed += 1;
+                        continue;
+                    };
+                    let lang = test.language.unwrap_or(default_lang);
                     let variants: Vec<bool> = if lang == Language::TypeScript {
                         vec![false, true] // test against both TS and TSX grammars
                     } else {
                         vec![false]
                     };
                     for is_tsx_jsx in variants {
-                        let ts_lang = ts_parser::get_language(lang, is_tsx_jsx);
+                        let ts_lang = ts_parser::get_language(lang, is_tsx_jsx)?;
 
                         let mut parser = tree_sitter::Parser::new();
                         let tree = match ts_parser::parse_source(

@@ -53,7 +53,7 @@ pub fn scan(
 
     // Pre-compile all rules for each needed language variant
     for (lang, is_tsx_jsx) in &needed_variants {
-        let ts_lang = parser::get_language(*lang, *is_tsx_jsx);
+        let ts_lang = parser::get_language(*lang, *is_tsx_jsx)?;
         let mut compiled_rules = Vec::new();
 
         for rule in rules {

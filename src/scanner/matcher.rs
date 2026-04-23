@@ -92,7 +92,7 @@ pub fn execute_query(
             .unwrap_or_default()
             .to_string();
 
-        let id = compute_finding_id(&compiled.rule.id, file_path, &code_snippet);
+        let id = compute_finding_id(&compiled.rule.id, file_path, line_start, line_end, &code_snippet);
 
         findings.push(Finding {
             id,
@@ -148,10 +148,18 @@ fn check_predicates(predicates: &[(String, Predicate)], captures: &HashMap<&str,
     true
 }
 
-fn compute_finding_id(rule_id: &str, file_path: &Path, snippet: &str) -> String {
+fn compute_finding_id(
+    rule_id: &str,
+    file_path: &Path,
+    line_start: usize,
+    line_end: usize,
+    snippet: &str,
+) -> String {
     let mut hasher = Sha256::new();
     hasher.update(rule_id.as_bytes());
     hasher.update(file_path.to_string_lossy().as_bytes());
+    hasher.update(line_start.to_le_bytes());
+    hasher.update(line_end.to_le_bytes());
     hasher.update(snippet.as_bytes());
     format!("{:x}", hasher.finalize())
 }
@@ -195,7 +203,7 @@ mod tests {
         let rule = rules::parse_rule_for_test(rule_toml);
         let mut ts_parser = tree_sitter::Parser::new();
         let lang = rule.languages[0];
-        let ts_lang = parser::get_language(lang, false);
+        let ts_lang = parser::get_language(lang, false).unwrap();
         let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
         let compiled = compile_rule(&rule, &ts_lang).unwrap();
         execute_query(&compiled, &tree, source.as_bytes(), Path::new("test.ts"), lang)

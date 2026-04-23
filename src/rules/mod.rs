@@ -89,6 +89,25 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
 
     let mut predicates = Vec::new();
     for (capture_name, pred) in r.predicates {
+        let set_count = [
+            pred.match_re.is_some(),
+            pred.eq.is_some(),
+            pred.not_match.is_some(),
+            pred.not_eq.is_some(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count();
+
+        if set_count > 1 {
+            return Err(ZiftError::RuleParse {
+                rule_id: r.id.clone(),
+                message: format!(
+                    "predicate '{capture_name}' must set exactly one of: match, eq, not_match, not_eq"
+                ),
+            });
+        }
+
         let p = if let Some(re) = pred.match_re {
             Predicate::Match(regex::Regex::new(&re).map_err(|e| ZiftError::RuleParse {
                 rule_id: r.id.clone(),

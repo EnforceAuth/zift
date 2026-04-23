@@ -32,6 +32,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/nestjs-roles-decorator.toml"),
     ),
     (
+        "authorize-function-call",
+        include_str!("../../rules/typescript/authorize-function-call.toml"),
+    ),
+    (
         "permission-check-call",
         include_str!("../../rules/typescript/permission-check-call.toml"),
     ),

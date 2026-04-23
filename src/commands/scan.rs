@@ -6,6 +6,12 @@ use crate::rules;
 use crate::scanner;
 
 pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
+    if matches!(args.format, OutputFormat::Sarif) {
+        return Err(ZiftError::General(
+            "SARIF output not yet implemented".into(),
+        ));
+    }
+
     let path = args.path.canonicalize().map_err(|e| {
         ZiftError::General(format!(
             "failed to resolve path '{}': {e}",
@@ -37,11 +43,7 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
         OutputFormat::Json => {
             output::json::print(&result.findings, &path, result.enforcement_points, &mut writer)?
         }
-        OutputFormat::Sarif => {
-            return Err(ZiftError::General(
-                "SARIF output not yet implemented".into(),
-            ));
-        }
+        OutputFormat::Sarif => unreachable!("pre-checked above"),
     }
 
     Ok(())

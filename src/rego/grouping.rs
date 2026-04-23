@@ -34,12 +34,25 @@ pub fn derive_package_name(file_path: &Path, prefix: &str) -> String {
         .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
         .collect::<String>();
 
+    // Ensure each segment starts with a letter or underscore (Rego identifier rule)
+    let fixed = sanitized
+        .split('.')
+        .map(|seg| {
+            if seg.starts_with(|c: char| c.is_ascii_digit()) {
+                format!("_{seg}")
+            } else {
+                seg.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".");
+
     if prefix.is_empty() {
-        sanitized
-    } else if sanitized.is_empty() {
+        fixed
+    } else if fixed.is_empty() {
         prefix.to_string()
     } else {
-        format!("{prefix}.{sanitized}")
+        format!("{prefix}.{fixed}")
     }
 }
 
@@ -146,7 +159,17 @@ fn build_rego_content(package_name: &str, source_file: &Path, findings: &[&Findi
         // Check if stub contains "default allow" and add it only once
         for line in wrapped.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("default allow") {
+            let is_default_allow = trimmed
+                .strip_prefix("default allow")
+                .map(|rest| {
+                    rest.is_empty()
+                        || rest.starts_with(' ')
+                        || rest.starts_with('\t')
+                        || rest.starts_with(":=")
+                        || rest.starts_with('=')
+                })
+                .unwrap_or(false);
+            if is_default_allow {
                 if has_default_allow {
                     continue; // skip duplicate default
                 }

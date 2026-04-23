@@ -3,12 +3,14 @@ use tree_sitter::Tree;
 use crate::error::{Result, ZiftError};
 use crate::types::Language;
 
-pub fn get_language(lang: Language, is_tsx_jsx: bool) -> tree_sitter::Language {
+pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Language> {
     match (lang, is_tsx_jsx) {
-        (Language::TypeScript, false) => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        (Language::TypeScript, true) => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        (Language::JavaScript, _) => tree_sitter_javascript::LANGUAGE.into(),
-        _ => unimplemented!("language {:?} not yet supported", lang),
+        (Language::TypeScript, false) => Ok(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        (Language::TypeScript, true) => Ok(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        (Language::JavaScript, _) => Ok(tree_sitter_javascript::LANGUAGE.into()),
+        _ => Err(ZiftError::General(format!(
+            "language {lang:?} not yet supported"
+        ))),
     }
 }
 
@@ -18,7 +20,7 @@ pub fn parse_source(
     lang: Language,
     is_tsx_jsx: bool,
 ) -> Result<Tree> {
-    let ts_lang = get_language(lang, is_tsx_jsx);
+    let ts_lang = get_language(lang, is_tsx_jsx)?;
     parser
         .set_language(&ts_lang)
         .map_err(|e| ZiftError::General(format!("failed to set parser language: {e}")))?;
@@ -54,5 +56,10 @@ mod tests {
         let source = b"const x = 42;";
         let tree = parse_source(&mut parser, source, Language::JavaScript, false).unwrap();
         assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn unsupported_language_returns_error() {
+        assert!(get_language(Language::Python, false).is_err());
     }
 }
