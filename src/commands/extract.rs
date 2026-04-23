@@ -70,6 +70,26 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         if let Some(parent) = rego_file.output_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // Verify the resolved output path stays within the output directory
+        let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
+            ZiftError::General(format!(
+                "failed to resolve output dir '{}': {e}",
+                output_dir.display()
+            ))
+        })?;
+        let canonical_file = rego_file.output_path.canonicalize().map_err(|e| {
+            ZiftError::General(format!(
+                "failed to resolve output path '{}': {e}",
+                rego_file.output_path.display()
+            ))
+        })?;
+        if !canonical_file.starts_with(&canonical_output_dir) {
+            return Err(ZiftError::General(format!(
+                "output path '{}' escapes output directory '{}'",
+                rego_file.output_path.display(),
+                output_dir.display()
+            )));
+        }
         std::fs::write(&rego_file.output_path, &rego_file.content)?;
         total_files += 1;
         eprintln!(

@@ -68,10 +68,10 @@ fn derive_output_path(file_path: &Path, output_dir: &Path) -> PathBuf {
             break;
         }
     }
-    // Filter out path traversal components
+    // Keep only Normal components to prevent path traversal
     let safe_stem: PathBuf = stem
         .components()
-        .filter(|c| !matches!(c, std::path::Component::ParentDir))
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
         .collect();
     output_dir.join(safe_stem)
 }

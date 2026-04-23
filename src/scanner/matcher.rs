@@ -62,6 +62,12 @@ pub fn execute_query(
 
         for capture in query_match.captures {
             let Some(name) = compiled.capture_names.get(capture.index as usize) else {
+                tracing::warn!(
+                    "rule '{}': capture index {} out of range (max {})",
+                    compiled.rule.id,
+                    capture.index,
+                    compiled.capture_names.len(),
+                );
                 continue;
             };
             let text = capture
