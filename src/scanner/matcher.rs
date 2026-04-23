@@ -72,7 +72,7 @@ pub fn execute_query(
                         "rule '{}': capture index {} out of range (max {})",
                         compiled.rule.id,
                         capture.index,
-                        compiled.capture_names.len(),
+                        compiled.capture_names.len() - 1,
                     ))
                 })?;
             let text = capture
