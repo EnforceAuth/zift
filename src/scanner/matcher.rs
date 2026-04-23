@@ -50,7 +50,7 @@ pub fn execute_query(
     source: &[u8],
     file_path: &Path,
     language: Language,
-) -> Vec<Finding> {
+) -> Result<Vec<Finding>> {
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&compiled.query, tree.root_node(), source);
     let mut findings = Vec::new();
@@ -61,15 +61,14 @@ pub fn execute_query(
         let mut match_node = None;
 
         for capture in query_match.captures {
-            let Some(name) = compiled.capture_names.get(capture.index as usize) else {
-                tracing::warn!(
+            let name = compiled.capture_names.get(capture.index as usize).ok_or_else(|| {
+                ZiftError::General(format!(
                     "rule '{}': capture index {} out of range (max {})",
                     compiled.rule.id,
                     capture.index,
                     compiled.capture_names.len(),
-                );
-                continue;
-            };
+                ))
+            })?;
             let text = capture
                 .node
                 .utf8_text(source)
@@ -120,7 +119,7 @@ pub fn execute_query(
         });
     }
 
-    findings
+    Ok(findings)
 }
 
 fn check_predicates(predicates: &[(String, Predicate)], captures: &HashMap<&str, String>) -> bool {
@@ -212,7 +211,7 @@ mod tests {
         let ts_lang = parser::get_language(lang, false).unwrap();
         let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
         let compiled = compile_rule(&rule, &ts_lang).unwrap();
-        execute_query(&compiled, &tree, source.as_bytes(), Path::new("test.ts"), lang)
+        execute_query(&compiled, &tree, source.as_bytes(), Path::new("test.ts"), lang).unwrap()
     }
 
     #[test]

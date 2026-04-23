@@ -71,19 +71,27 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
             std::fs::create_dir_all(parent)?;
         }
         // Verify the resolved output path stays within the output directory
+        // by canonicalizing the parent (which now exists) and checking containment
+        // BEFORE writing, to prevent TOCTOU issues with symlinked directories.
         let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
             ZiftError::General(format!(
                 "failed to resolve output dir '{}': {e}",
                 output_dir.display()
             ))
         })?;
-        let canonical_file = rego_file.output_path.canonicalize().map_err(|e| {
+        let parent = rego_file.output_path.parent().ok_or_else(|| {
             ZiftError::General(format!(
-                "failed to resolve output path '{}': {e}",
+                "output path '{}' has no parent",
                 rego_file.output_path.display()
             ))
         })?;
-        if !canonical_file.starts_with(&canonical_output_dir) {
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            ZiftError::General(format!(
+                "failed to resolve parent dir '{}': {e}",
+                parent.display()
+            ))
+        })?;
+        if !canonical_parent.starts_with(&canonical_output_dir) {
             return Err(ZiftError::General(format!(
                 "output path '{}' escapes output directory '{}'",
                 rego_file.output_path.display(),

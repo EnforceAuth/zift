@@ -113,13 +113,21 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                             }
                         };
 
-                        let findings = crate::scanner::matcher::execute_query(
+                        let findings = match crate::scanner::matcher::execute_query(
                             &compiled,
                             &tree,
                             test.input.as_bytes(),
                             std::path::Path::new("test"),
                             lang,
-                        );
+                        ) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                let suffix = if is_tsx_jsx { "/tsx" } else { "" };
+                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): query error: {e}", rule.id);
+                                failed += 1;
+                                continue;
+                            }
+                        };
 
                         let matched = !findings.is_empty();
                         if matched == test.expect_match {

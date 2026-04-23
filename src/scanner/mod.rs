@@ -116,7 +116,7 @@ pub fn scan(
                 source.as_bytes(),
                 rel_path,
                 file.language,
-            );
+            )?;
 
             // Separate enforcement points from inline auth findings
             if policy_imports.is_empty() {
