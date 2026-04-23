@@ -26,7 +26,7 @@ template = """
 default allow := false
 
 allow if {
-    input.user.role in {"{{role_value}}"}
+    "{{role_value}}" in input.user.roles
 }
 """
 

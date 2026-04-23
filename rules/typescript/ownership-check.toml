@@ -8,7 +8,7 @@ query = """
 (binary_expression
   left: (member_expression
     property: (property_identifier) @left_prop)
-  operator: ["==" "===" "!=" "!=="]
+  operator: ["==" "==="]
   right: (member_expression
     property: (property_identifier) @right_prop)
 ) @match
@@ -36,3 +36,11 @@ if (resource.ownerId === user.id) {
 }
 """
 expect_match = true
+
+[[rule.tests]]
+input = """
+if (resource.ownerId !== user.id) {
+  denyAccess();
+}
+"""
+expect_match = false

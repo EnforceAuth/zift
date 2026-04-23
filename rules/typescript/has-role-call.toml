@@ -13,7 +13,7 @@ query = """
 """
 
 [rule.predicates.fn_name]
-match = "^(hasRole|checkRole|isRole|requireRole|hasPermission|checkPermission|isAuthorized|authorize)$"
+match = "^(hasRole|checkRole|isRole|requireRole)$"
 
 [rule.rego_template]
 template = """

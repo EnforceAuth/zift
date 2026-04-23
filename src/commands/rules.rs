@@ -3,6 +3,7 @@ use crate::config::ZiftConfig;
 use crate::error::Result;
 use crate::rules;
 use crate::scanner::parser as ts_parser;
+use crate::types::Language;
 
 pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
     match args.action {
@@ -30,14 +31,22 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
             let loaded = rules::load_rules(None, &config)?;
             let mut errors = 0;
             for rule in &loaded {
-                // Validate tree-sitter queries
+                // Validate tree-sitter queries against all grammar variants
                 for lang in &rule.languages {
-                    let ts_lang = ts_parser::get_language(*lang, false);
-                    if let Err(e) =
-                        tree_sitter::Query::new(&ts_lang, &rule.query_source)
-                    {
-                        eprintln!("FAIL  {}  ({lang}): query: {e}", rule.id);
-                        errors += 1;
+                    let variants: &[bool] = if *lang == Language::TypeScript {
+                        &[false, true] // validate against both TS and TSX grammars
+                    } else {
+                        &[false]
+                    };
+                    for &is_tsx_jsx in variants {
+                        let ts_lang = ts_parser::get_language(*lang, is_tsx_jsx);
+                        if let Err(e) =
+                            tree_sitter::Query::new(&ts_lang, &rule.query_source)
+                        {
+                            let suffix = if is_tsx_jsx { "/tsx" } else { "" };
+                            eprintln!("FAIL  {}  ({lang}{suffix}): query: {e}", rule.id);
+                            errors += 1;
+                        }
                     }
                 }
                 // Validate Rego template if present
@@ -65,49 +74,59 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
             for rule in &loaded {
                 for (i, test) in rule.tests.iter().enumerate() {
                     let lang = test.language.unwrap_or(rule.languages[0]);
-                    let ts_lang = ts_parser::get_language(lang, false);
-
-                    let mut parser = tree_sitter::Parser::new();
-                    let tree = match ts_parser::parse_source(
-                        &mut parser,
-                        test.input.as_bytes(),
-                        lang,
-                        false,
-                    ) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("FAIL  {}[{i}]: parse error: {e}", rule.id);
-                            failed += 1;
-                            continue;
-                        }
-                    };
-
-                    let compiled = match crate::scanner::matcher::compile_rule(rule, &ts_lang) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            eprintln!("FAIL  {}[{i}]: compile error: {e}", rule.id);
-                            failed += 1;
-                            continue;
-                        }
-                    };
-
-                    let findings = crate::scanner::matcher::execute_query(
-                        &compiled,
-                        &tree,
-                        test.input.as_bytes(),
-                        std::path::Path::new("test"),
-                        lang,
-                    );
-
-                    let matched = !findings.is_empty();
-                    if matched == test.expect_match {
-                        passed += 1;
+                    let variants: Vec<bool> = if lang == Language::TypeScript {
+                        vec![false, true] // test against both TS and TSX grammars
                     } else {
-                        eprintln!(
-                            "FAIL  {}[{i}]: expected match={}, got match={}",
-                            rule.id, test.expect_match, matched,
+                        vec![false]
+                    };
+                    for is_tsx_jsx in variants {
+                        let ts_lang = ts_parser::get_language(lang, is_tsx_jsx);
+
+                        let mut parser = tree_sitter::Parser::new();
+                        let tree = match ts_parser::parse_source(
+                            &mut parser,
+                            test.input.as_bytes(),
+                            lang,
+                            is_tsx_jsx,
+                        ) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                let suffix = if is_tsx_jsx { "/tsx" } else { "" };
+                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): parse error: {e}", rule.id);
+                                failed += 1;
+                                continue;
+                            }
+                        };
+
+                        let compiled = match crate::scanner::matcher::compile_rule(rule, &ts_lang) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let suffix = if is_tsx_jsx { "/tsx" } else { "" };
+                                eprintln!("FAIL  {}[{i}] ({lang}{suffix}): compile error: {e}", rule.id);
+                                failed += 1;
+                                continue;
+                            }
+                        };
+
+                        let findings = crate::scanner::matcher::execute_query(
+                            &compiled,
+                            &tree,
+                            test.input.as_bytes(),
+                            std::path::Path::new("test"),
+                            lang,
                         );
-                        failed += 1;
+
+                        let matched = !findings.is_empty();
+                        if matched == test.expect_match {
+                            passed += 1;
+                        } else {
+                            let suffix = if is_tsx_jsx { "/tsx" } else { "" };
+                            eprintln!(
+                                "FAIL  {}[{i}] ({lang}{suffix}): expected match={}, got match={}",
+                                rule.id, test.expect_match, matched,
+                            );
+                            failed += 1;
+                        }
                     }
                 }
             }

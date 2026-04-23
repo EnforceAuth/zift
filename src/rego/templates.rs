@@ -107,6 +107,17 @@ pub fn generate_default_stub(
 
     match category {
         AuthCategory::Rbac => {
+            // If any string contains ':', it likely represents a permission (e.g., "orders:read")
+            // rather than a role name — use a permission-based template instead
+            if literals.iter().any(|s| s.contains(':')) {
+                let checks = literals
+                    .iter()
+                    .filter(|s| s.contains(':'))
+                    .map(|p| format!("    \"{p}\" in input.user.permissions"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return format!("default allow := false\n\nallow if {{\n{checks}\n}}");
+            }
             let roles = if literals.is_empty() {
                 "{\"TODO\"}".to_string()
             } else {
@@ -224,13 +235,25 @@ mod tests {
     }
 
     #[test]
-    fn default_stub_rbac() {
+    fn default_stub_rbac_permissions() {
         let stub = generate_default_stub(
             AuthCategory::Rbac,
             r#"authorize(user, "audit:read", { type: "audit" })"#,
         );
-        assert!(stub.contains("input.user.role in"));
+        assert!(stub.contains("input.user.permissions"));
         assert!(stub.contains("audit:read"));
+        // "audit" (without colon) should not appear as a permission check
+        assert!(!stub.contains("\"audit\" in"));
+    }
+
+    #[test]
+    fn default_stub_rbac_roles() {
+        let stub = generate_default_stub(
+            AuthCategory::Rbac,
+            r#"if (user.role === "admin") { }"#,
+        );
+        assert!(stub.contains("input.user.role in"));
+        assert!(stub.contains("admin"));
     }
 
     #[test]

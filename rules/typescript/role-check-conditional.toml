@@ -10,6 +10,7 @@ query = """
     (binary_expression
       left: (member_expression
         property: (property_identifier) @prop)
+      operator: ["==" "==="]
       right: (string) @role_value))
 ) @match
 """
@@ -49,6 +50,14 @@ expect_match = false
 input = """
 if (msg.role === "assistant") {
   processResponse();
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if (user.role !== "banned") {
+  proceed();
 }
 """
 expect_match = false
