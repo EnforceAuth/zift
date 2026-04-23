@@ -21,7 +21,9 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     tracing::info!("scanning {}", path.display());
 
     if args.deep {
-        eprintln!("warning: --deep (LLM-assisted) is not yet implemented, running structural scan only");
+        eprintln!(
+            "warning: --deep (LLM-assisted) is not yet implemented, running structural scan only"
+        );
     }
 
     let loaded_rules = rules::load_rules(args.rules_dir.as_deref(), &config)?;
@@ -37,12 +39,18 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     };
 
     match args.format {
-        OutputFormat::Text => {
-            output::text::print(&result.findings, &path, result.enforcement_points, &mut writer)?
-        }
-        OutputFormat::Json => {
-            output::json::print(&result.findings, &path, result.enforcement_points, &mut writer)?
-        }
+        OutputFormat::Text => output::text::print(
+            &result.findings,
+            &path,
+            result.enforcement_points,
+            &mut writer,
+        )?,
+        OutputFormat::Json => output::json::print(
+            &result.findings,
+            &path,
+            result.enforcement_points,
+            &mut writer,
+        )?,
         OutputFormat::Sarif => unreachable!("pre-checked above"),
     }
 

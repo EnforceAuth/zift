@@ -1,0 +1,23 @@
+[workspace]
+release_commits = "^(feat|fix|refactor|perf)[(!:]"
+publish = false
+semver_check = false
+git_only = true
+git_tag_enable = true
+git_release_enable = true
+
+[changelog]
+protect_breaking_commits = true
+
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^doc", skip = true },
+    { message = "^test", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^style", skip = true },
+    { message = "^build", skip = true },
+]

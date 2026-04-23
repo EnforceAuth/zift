@@ -31,9 +31,13 @@ pub fn validate_template(template: &str) -> ValidationResult {
     // This matters because bare placeholders may appear in identifier positions
     // (e.g. input.user.{{attribute}}) where a quoted string would be invalid Rego.
     let re_quoted = regex::Regex::new(r#"["']\{\{(\w+)\}\}["']"#).unwrap();
-    let rendered = re_quoted.replace_all(template, "\"placeholder\"").to_string();
+    let rendered = re_quoted
+        .replace_all(template, "\"placeholder\"")
+        .to_string();
     let re_bare = regex::Regex::new(r"\{\{(\w+)\}\}").unwrap();
-    let rendered = re_bare.replace_all(&rendered, "placeholder_value").to_string();
+    let rendered = re_bare
+        .replace_all(&rendered, "placeholder_value")
+        .to_string();
 
     // Wrap in a minimal package to form a complete Rego module
     let full_policy = format!("package validate_template\n\nimport rego.v1\n\n{rendered}");

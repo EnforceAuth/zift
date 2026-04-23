@@ -58,8 +58,11 @@ pub fn find_policy_imports(
             continue;
         };
 
-        let capture_names: Vec<String> =
-            query.capture_names().iter().map(|s| s.to_string()).collect();
+        let capture_names: Vec<String> = query
+            .capture_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let name_idx = capture_names.iter().position(|n| n == "name");
         let source_idx = capture_names.iter().position(|n| n == "source");
 
@@ -111,8 +114,13 @@ mod tests {
 
     fn parse_ts(source: &str) -> tree_sitter::Tree {
         let mut ts_parser = tree_sitter::Parser::new();
-        parser::parse_source(&mut ts_parser, source.as_bytes(), Language::TypeScript, false)
-            .unwrap()
+        parser::parse_source(
+            &mut ts_parser,
+            source.as_bytes(),
+            Language::TypeScript,
+            false,
+        )
+        .unwrap()
     }
 
     #[test]

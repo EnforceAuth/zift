@@ -1,6 +1,6 @@
 use crate::error::Result;
 
-use super::{parse_rule, PatternRule};
+use super::{PatternRule, parse_rule};
 
 const EMBEDDED_RULES: &[(&str, &str)] = &[
     (

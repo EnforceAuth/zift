@@ -248,9 +248,15 @@ mod tests {
 
     #[test]
     fn report_subcommand() {
-        let cli =
-            Cli::try_parse_from(["zift", "report", "--input", "findings.json", "-f", "markdown"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "zift",
+            "report",
+            "--input",
+            "findings.json",
+            "-f",
+            "markdown",
+        ])
+        .unwrap();
         assert!(matches!(cli.command, Some(Command::Report(_))));
     }
 

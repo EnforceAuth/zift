@@ -22,8 +22,7 @@ pub fn render_template(template: &str, vars: &HashMap<String, String>) -> String
 fn strip_quotes(s: &str) -> &str {
     let s = s.trim();
     if s.len() >= 2
-        && ((s.starts_with('"') && s.ends_with('"'))
-            || (s.starts_with('\'') && s.ends_with('\'')))
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
     {
         &s[1..s.len() - 1]
     } else {
@@ -34,9 +33,7 @@ fn strip_quotes(s: &str) -> &str {
 /// Extract quoted string literals from a code snippet.
 pub fn extract_string_literals(code: &str) -> Vec<String> {
     let re = Regex::new(r#"["']([^"']+)["']"#).unwrap();
-    re.captures_iter(code)
-        .map(|c| c[1].to_string())
-        .collect()
+    re.captures_iter(code).map(|c| c[1].to_string()).collect()
 }
 
 /// Return a default Rego template for the given auth category.
@@ -96,10 +93,7 @@ allow if {
 }
 
 /// Build a Rego stub for a finding using category defaults + extracted values.
-pub fn generate_default_stub(
-    category: AuthCategory,
-    code_snippet: &str,
-) -> String {
+pub fn generate_default_stub(category: AuthCategory, code_snippet: &str) -> String {
     let template = default_template(category);
     let literals = extract_string_literals(code_snippet);
 
@@ -245,10 +239,7 @@ mod tests {
 
     #[test]
     fn default_stub_rbac_roles() {
-        let stub = generate_default_stub(
-            AuthCategory::Rbac,
-            r#"if (user.role === "admin") { }"#,
-        );
+        let stub = generate_default_stub(AuthCategory::Rbac, r#"if (user.role === "admin") { }"#);
         assert!(stub.contains("input.user.role in"));
         assert!(stub.contains("admin"));
     }

@@ -39,9 +39,7 @@ pub fn print(
         *by_category
             .entry(f.category.to_string().to_lowercase())
             .or_default() += 1;
-        *by_confidence
-            .entry(f.confidence.to_string())
-            .or_default() += 1;
+        *by_confidence.entry(f.confidence.to_string()).or_default() += 1;
         files.insert(&f.file);
     }
 
