@@ -1,0 +1,9 @@
+# .coderabbit.yaml
+reviews:
+  instructions: |
+    - Surface ALL findings in round 1. Never trickle comments across multiple rounds.
+      If uncertain whether something is worth flagging, include it in round 1 or skip it entirely.
+    - Do NOT generate new review comments on incremental pushes to a PR once the maintainer
+      has addressed or declined a suggestion. Respect final decisions.
+    - Files under `.claude/` are planning/agentic documents, not production code.
+      A single high-level pass only — no iterative feedback.
