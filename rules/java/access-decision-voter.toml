@@ -9,6 +9,12 @@ query = """
   (superclass
     (type_identifier) @parent_class)
 ) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (type_identifier) @parent_class))
+) @match
 """
 
 [rule.predicates.parent_class]
@@ -16,7 +22,15 @@ match = "^(AccessDecisionVoter|AbstractAccessDecisionManager|SecurityInterceptor
 
 [[rule.tests]]
 input = """
-public class CustomVoter extends AccessDecisionVoter<Object> {
+public class CustomVoter extends AbstractAccessDecisionManager {
+    public int vote() { return 0; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class CustomVoter implements AccessDecisionVoter<Object> {
     public int vote() { return 0; }
 }
 """

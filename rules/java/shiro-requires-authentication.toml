@@ -3,7 +3,7 @@ id = "java-shiro-requires-authentication"
 languages = ["java"]
 category = "middleware"
 confidence = "high"
-description = "Apache Shiro @RequiresAuthentication or @RequiresGuest annotation"
+description = "Apache Shiro @RequiresAuthentication, @RequiresGuest, or @RequiresUser annotation"
 query = """
 (marker_annotation
   name: (identifier) @anno_name

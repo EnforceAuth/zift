@@ -16,6 +16,15 @@ query = """
 [rule.predicates.anno_name]
 eq = "RolesAllowed"
 
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {{{role_value}}}
+}
+"""
+
 [[rule.tests]]
 input = """
 public class UserController {

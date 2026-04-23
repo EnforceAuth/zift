@@ -16,13 +16,13 @@ query = """
 """
 
 [rule.predicates.getter]
-match = "(?i)(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)"
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
 
 [rule.predicates.method_name]
 eq = "equals"
 
 [rule.predicates.other_getter]
-match = "(?i)(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)"
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
 
 [[rule.tests]]
 input = """
