@@ -20,6 +20,9 @@ match = "^(hasRole|hasAnyRole|hasAuthority|hasAnyAuthority)$"
 template = """
 default allow := false
 
+# granted_authority covers both roles (e.g. "ROLE_ADMIN") and
+# authorities/permissions (e.g. "SCOPE_read") per Spring Security's
+# GrantedAuthority abstraction.
 allow if {
     input.user.granted_authority in {"{{role_value}}"}
 }
