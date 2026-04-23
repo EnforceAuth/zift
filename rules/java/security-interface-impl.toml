@@ -1,0 +1,62 @@
+[rule]
+id = "java-security-interface-impl"
+languages = ["java"]
+category = "custom"
+confidence = "medium"
+description = "Implementation of Spring Security interfaces (UserDetailsService, etc.)"
+query = """
+(class_declaration
+  (super_interfaces
+    (type_list
+      (type_identifier) @iface_name))
+) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (generic_type
+        (type_identifier) @iface_name)))
+) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (scoped_type_identifier
+        name: (type_identifier) @iface_name)))
+) @match
+"""
+
+[rule.predicates.iface_name]
+match = "^(UserDetailsService|AuthenticationProvider|AuthorizationManager|GrantedAuthority|SecurityConfigurer|WebSecurityConfigurer)$"
+
+[[rule.tests]]
+input = """
+public class MyUserService implements UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyUserService implements Serializable, UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyAuthManager implements AuthorizationManager<RequestAuthorizationContext> {
+    public AuthorizationDecision check() { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyService implements Serializable {
+    public void doWork() { }
+}
+"""
+expect_match = false

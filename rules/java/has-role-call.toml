@@ -1,0 +1,79 @@
+[rule]
+id = "java-has-role-call"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security hasRole/hasAuthority method call"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (string_literal
+      (string_fragment) @role_value))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(hasRole|hasAnyRole|hasAuthority|hasAnyAuthority)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# granted_authority covers both roles (e.g. "ROLE_ADMIN") and
+# authorities/permissions (e.g. "SCOPE_read") per Spring Security's
+# GrantedAuthority abstraction.
+allow if {
+    input.user.granted_authority in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/ops/**").hasAnyRole("ADMIN", "OPS");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/api/**").hasAnyAuthority("SCOPE_read", "SCOPE_write");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/reports/**").hasAuthority("SCOPE_reports.read");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure() {
+        http.authorizeRequests().antMatchers("/public/**").permitAll();
+    }
+}
+"""
+expect_match = false

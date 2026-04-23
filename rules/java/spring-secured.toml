@@ -1,0 +1,44 @@
+[rule]
+id = "java-spring-secured"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security @Secured annotation"
+query = """
+(annotation
+  name: (identifier) @anno_name
+  arguments: (annotation_argument_list
+    (string_literal
+      (string_fragment) @role_value))
+) @match
+"""
+
+[rule.predicates.anno_name]
+eq = "Secured"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Secured("ROLE_ADMIN")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Override
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = false

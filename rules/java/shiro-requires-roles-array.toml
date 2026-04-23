@@ -1,0 +1,44 @@
+[rule]
+id = "java-shiro-requires-roles-array"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Apache Shiro @RequiresRoles annotation with array of roles"
+query = """
+(annotation
+  name: (identifier) @anno_name
+  arguments: (annotation_argument_list
+    (element_value_array_initializer
+      (string_literal) @role_value))
+) @match
+"""
+
+[rule.predicates.anno_name]
+eq = "RequiresRoles"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {{{role_value}}}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @RequiresRoles({"admin", "manager"})
+    public void adminAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @Transactional
+    public void adminAction() { }
+}
+"""
+expect_match = false

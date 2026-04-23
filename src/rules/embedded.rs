@@ -3,6 +3,7 @@ use crate::error::Result;
 use super::{PatternRule, parse_rule};
 
 const EMBEDDED_RULES: &[(&str, &str)] = &[
+    // -- TypeScript / JavaScript --
     (
         "role-check-conditional",
         include_str!("../../rules/typescript/role-check-conditional.toml"),
@@ -54,6 +55,83 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
     (
         "feature-gate-check",
         include_str!("../../rules/typescript/feature-gate-check.toml"),
+    ),
+    // -- Java --
+    (
+        "java-spring-preauthorize",
+        include_str!("../../rules/java/spring-preauthorize.toml"),
+    ),
+    (
+        "java-spring-secured",
+        include_str!("../../rules/java/spring-secured.toml"),
+    ),
+    (
+        "java-roles-allowed",
+        include_str!("../../rules/java/spring-roles-allowed.toml"),
+    ),
+    (
+        "java-roles-allowed-array",
+        include_str!("../../rules/java/spring-roles-allowed-array.toml"),
+    ),
+    (
+        "java-spring-permit-all",
+        include_str!("../../rules/java/spring-permit-all.toml"),
+    ),
+    (
+        "java-is-user-in-role",
+        include_str!("../../rules/java/is-user-in-role.toml"),
+    ),
+    (
+        "java-has-role-call",
+        include_str!("../../rules/java/has-role-call.toml"),
+    ),
+    (
+        "java-shiro-requires-permissions",
+        include_str!("../../rules/java/shiro-requires-permissions.toml"),
+    ),
+    (
+        "java-shiro-requires-roles",
+        include_str!("../../rules/java/shiro-requires-roles.toml"),
+    ),
+    (
+        "java-shiro-requires-roles-array",
+        include_str!("../../rules/java/shiro-requires-roles-array.toml"),
+    ),
+    (
+        "java-shiro-requires-authentication",
+        include_str!("../../rules/java/shiro-requires-authentication.toml"),
+    ),
+    (
+        "java-shiro-is-permitted",
+        include_str!("../../rules/java/shiro-is-permitted.toml"),
+    ),
+    (
+        "java-role-equals-check",
+        include_str!("../../rules/java/role-equals-check.toml"),
+    ),
+    (
+        "java-ownership-check",
+        include_str!("../../rules/java/ownership-check.toml"),
+    ),
+    (
+        "java-http-security-authorize",
+        include_str!("../../rules/java/http-security-authorize.toml"),
+    ),
+    (
+        "java-authenticated-check",
+        include_str!("../../rules/java/authenticated-check.toml"),
+    ),
+    (
+        "java-access-decision-voter",
+        include_str!("../../rules/java/access-decision-voter.toml"),
+    ),
+    (
+        "java-security-interface-impl",
+        include_str!("../../rules/java/security-interface-impl.toml"),
+    ),
+    (
+        "java-feature-gate-check",
+        include_str!("../../rules/java/feature-gate-check.toml"),
     ),
 ];
 

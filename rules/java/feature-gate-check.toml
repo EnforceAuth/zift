@@ -1,0 +1,57 @@
+[rule]
+id = "java-feature-gate-check"
+languages = ["java"]
+category = "feature_gate"
+confidence = "medium"
+description = "Feature flag or plan-based gating in Java"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (string_literal
+      (string_fragment) @feature))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(hasFeature|isFeatureEnabled|checkFeature|hasPlan|isPlanActive)$"
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (featureFlags.hasFeature("advanced-analytics")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (featureFlags.isFeatureEnabled("beta-dashboard")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (subscription.hasPlan("pro")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (validator.isEnabled("field")) { validate(); }
+    }
+}
+"""
+expect_match = false

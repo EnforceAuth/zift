@@ -1,0 +1,35 @@
+[rule]
+id = "java-http-security-authorize"
+languages = ["java"]
+category = "middleware"
+confidence = "high"
+description = "Spring Security HttpSecurity authorization configuration"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+  arguments: (argument_list)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(authorizeRequests|authorizeHttpRequests|formLogin|httpBasic|oauth2Login|oauth2ResourceServer)$"
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure(HttpSecurity http) {
+        http.authorizeRequests().anyRequest().authenticated();
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure(HttpSecurity http) {
+        http.csrf().disable();
+    }
+}
+"""
+expect_match = false

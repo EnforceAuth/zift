@@ -72,7 +72,7 @@ pub fn execute_query(
                         "rule '{}': capture index {} out of range (max {})",
                         compiled.rule.id,
                         capture.index,
-                        compiled.capture_names.len() - 1,
+                        compiled.capture_names.len(),
                     ))
                 })?;
             let text = capture
@@ -285,6 +285,205 @@ mod tests {
             include_str!("../../rules/typescript/permission-check-call.toml"),
         );
         assert!(!findings.is_empty());
+    }
+
+    // -- Java rule tests --
+
+    fn parse_and_match_java(source: &str, rule_toml: &str) -> Vec<Finding> {
+        let rule = rules::parse_rule_for_test(rule_toml);
+        let mut ts_parser = tree_sitter::Parser::new();
+        let lang = Language::Java;
+        let ts_lang = parser::get_language(lang, false).unwrap();
+        // Wrap in a class+method if not already a class declaration
+        let wrapped = if source.contains("class ") {
+            source.to_string()
+        } else {
+            format!("public class Test {{ public void test() {{ {source} }} }}")
+        };
+        let tree = parser::parse_source(&mut ts_parser, wrapped.as_bytes(), lang, false).unwrap();
+        let compiled = compile_rule(&rule, &ts_lang).unwrap();
+        execute_query(
+            &compiled,
+            &tree,
+            wrapped.as_bytes(),
+            Path::new("Test.java"),
+            lang,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn java_preauthorize_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @PreAuthorize("hasRole('ADMIN')")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-preauthorize.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @PreAuthorize");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn java_preauthorize_no_false_positive() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @Override
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-preauthorize.toml"),
+        );
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn java_secured_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @Secured("ROLE_ADMIN")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-secured.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @Secured");
+    }
+
+    #[test]
+    fn java_roles_allowed_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @RolesAllowed("admin")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-roles-allowed.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @RolesAllowed");
+    }
+
+    #[test]
+    fn java_is_user_in_role_matches() {
+        let findings = parse_and_match_java(
+            r#"request.isUserInRole("admin");"#,
+            include_str!("../../rules/java/is-user-in-role.toml"),
+        );
+        assert!(!findings.is_empty(), "should match isUserInRole");
+    }
+
+    #[test]
+    fn java_has_role_call_matches() {
+        let findings = parse_and_match_java(
+            r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
+            include_str!("../../rules/java/has-role-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match hasRole");
+    }
+
+    #[test]
+    fn java_shiro_requires_permissions_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @RequiresPermissions("user:delete")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/shiro-requires-permissions.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @RequiresPermissions");
+    }
+
+    #[test]
+    fn java_shiro_is_permitted_matches() {
+        let findings = parse_and_match_java(
+            r#"subject.isPermitted("user:delete");"#,
+            include_str!("../../rules/java/shiro-is-permitted.toml"),
+        );
+        assert!(!findings.is_empty(), "should match isPermitted");
+    }
+
+    #[test]
+    fn java_marker_annotation_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @RequiresAuthentication
+    public void secure() { }
+}
+"#,
+            include_str!("../../rules/java/shiro-requires-authentication.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match @RequiresAuthentication marker annotation"
+        );
+    }
+
+    #[test]
+    fn java_marker_annotation_no_false_positive() {
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @Override
+    public void toString() { }
+}
+"#,
+            include_str!("../../rules/java/shiro-requires-authentication.toml"),
+        );
+        assert!(findings.is_empty(), "should not match @Override");
+    }
+
+    #[test]
+    fn java_role_equals_check_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getRole().equals("admin");"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match getRole().equals()");
+    }
+
+    #[test]
+    fn java_role_equals_check_no_false_positive() {
+        let findings = parse_and_match_java(
+            r#"user.getName().equals("admin");"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(findings.is_empty(), "should not match getName().equals()");
+    }
+
+    #[test]
+    fn java_ownership_check_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getUserId().equals(resource.getOwnerId());"#,
+            include_str!("../../rules/java/ownership-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match ownership check");
+    }
+
+    #[test]
+    fn java_authenticated_check_matches() {
+        let findings = parse_and_match_java(
+            r#"authentication.isAuthenticated();"#,
+            include_str!("../../rules/java/authenticated-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match isAuthenticated()");
+    }
+
+    #[test]
+    fn java_feature_gate_matches() {
+        let findings = parse_and_match_java(
+            r#"featureFlags.hasFeature("advanced");"#,
+            include_str!("../../rules/java/feature-gate-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match hasFeature()");
     }
 
     #[test]

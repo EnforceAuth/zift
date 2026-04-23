@@ -1,0 +1,44 @@
+[rule]
+id = "java-shiro-requires-permissions"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Apache Shiro @RequiresPermissions annotation"
+query = """
+(annotation
+  name: (identifier) @anno_name
+  arguments: (annotation_argument_list
+    (string_literal
+      (string_fragment) @perm_value))
+) @match
+"""
+
+[rule.predicates.anno_name]
+eq = "RequiresPermissions"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{perm_value}}" in input.user.permissions
+}
+"""
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @RequiresPermissions("user:delete")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Transactional
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = false

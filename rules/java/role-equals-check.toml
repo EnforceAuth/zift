@@ -1,0 +1,61 @@
+[rule]
+id = "java-role-equals-check"
+languages = ["java"]
+category = "rbac"
+confidence = "medium"
+description = "Role comparison via .equals() or string equality"
+query = """
+(method_invocation
+  object: (method_invocation
+    name: (identifier) @getter)
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (string_literal
+      (string_fragment) @role_value))
+) @match
+"""
+
+[rule.predicates.getter]
+match = "^(getRole|getRoles|getAuthority|getAuthorities)$"
+
+[rule.predicates.method_name]
+match = "^(equals|equalsIgnoreCase)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getRole().equals("admin")) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getRole().contains("ad")) { doSomething(); }
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getName().equals("admin")) { doSomething(); }
+    }
+}
+"""
+expect_match = false

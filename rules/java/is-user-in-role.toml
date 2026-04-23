@@ -1,0 +1,46 @@
+[rule]
+id = "java-is-user-in-role"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Servlet API isUserInRole() call"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (string_literal
+      (string_fragment) @role_value))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "isUserInRole"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class MyServlet {
+    public void doGet() {
+        if (request.isUserInRole("admin")) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyServlet {
+    public void doGet() {
+        if (request.isAuthenticated()) { doSomething(); }
+    }
+}
+"""
+expect_match = false

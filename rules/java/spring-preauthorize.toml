@@ -1,0 +1,54 @@
+[rule]
+id = "java-spring-preauthorize"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security @PreAuthorize annotation"
+query = """
+(annotation
+  name: (identifier) @anno_name
+  arguments: (annotation_argument_list
+    (string_literal
+      (string_fragment) @expr))
+) @match
+"""
+
+[rule.predicates.anno_name]
+eq = "PreAuthorize"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    # TODO: translate SpEL expression: {{expr}}
+    input.user.role in {"TODO"}
+}
+"""
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @PreAuthorize("hasAuthority('SCOPE_read')")
+    public void readData() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @Override
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = false

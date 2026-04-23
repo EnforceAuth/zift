@@ -1,0 +1,45 @@
+[rule]
+id = "java-ownership-check"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Resource ownership comparison (e.g., getUserId().equals(resource.getOwnerId()))"
+query = """
+(method_invocation
+  object: (method_invocation
+    name: (identifier) @getter)
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (method_invocation
+      name: (identifier) @other_getter))
+) @match
+"""
+
+[rule.predicates.getter]
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+
+[rule.predicates.method_name]
+eq = "equals"
+
+[rule.predicates.other_getter]
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getUserId().equals(resource.getOwnerId())) { allow(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getName().equals(other.getName())) { compare(); }
+    }
+}
+"""
+expect_match = false

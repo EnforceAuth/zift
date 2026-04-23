@@ -3,11 +3,17 @@ use tree_sitter::Tree;
 use crate::error::{Result, ZiftError};
 use crate::types::Language;
 
+/// Returns true if the language has tree-sitter parser support.
+pub fn is_language_supported(lang: Language) -> bool {
+    get_language(lang, false).is_ok()
+}
+
 pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Language> {
     match (lang, is_tsx_jsx) {
         (Language::TypeScript, false) => Ok(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         (Language::TypeScript, true) => Ok(tree_sitter_typescript::LANGUAGE_TSX.into()),
         (Language::JavaScript, _) => Ok(tree_sitter_javascript::LANGUAGE.into()),
+        (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
         _ => Err(ZiftError::General(format!(
             "language {lang:?} not yet supported"
         ))),
@@ -59,7 +65,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_java() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"public class Foo { public void bar() {} }";
+        let tree = parse_source(&mut parser, source, Language::Java, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn java_is_supported() {
+        assert!(is_language_supported(Language::Java));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
         assert!(get_language(Language::Python, false).is_err());
+        assert!(!is_language_supported(Language::Python));
     }
 }

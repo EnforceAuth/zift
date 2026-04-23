@@ -1,0 +1,41 @@
+[rule]
+id = "java-spring-permit-all"
+languages = ["java"]
+category = "middleware"
+confidence = "medium"
+description = "Spring Security @PermitAll or @DenyAll annotation"
+query = """
+(marker_annotation
+  name: (identifier) @anno_name
+) @match
+"""
+
+[rule.predicates.anno_name]
+match = "^(PermitAll|DenyAll)$"
+
+[[rule.tests]]
+input = """
+public class PublicController {
+    @PermitAll
+    public void publicEndpoint() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @DenyAll
+    public void lockedEndpoint() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Override
+    public void doSomething() { }
+}
+"""
+expect_match = false
