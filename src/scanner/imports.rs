@@ -38,6 +38,52 @@ const TS_DEFAULT_IMPORT_QUERY: &str = r#"
   source: (string) @source)
 "#;
 
+/// Tree-sitter query for namespace imports: `import * as foo from 'bar'`
+const TS_NAMESPACE_IMPORT_QUERY: &str = r#"
+(import_statement
+  (import_clause
+    (namespace_import
+      (identifier) @name))
+  source: (string) @source)
+"#;
+
+/// Tree-sitter query for CommonJS `require()`: `const foo = require('bar')`
+const TS_REQUIRE_QUERY: &str = r#"
+((variable_declarator
+   name: (identifier) @name
+   value: (call_expression
+     function: (identifier) @_fn
+     arguments: (arguments
+       (string) @source)))
+ (#eq? @_fn "require"))
+"#;
+
+/// Tree-sitter query for destructured CommonJS require:
+/// `const { foo } = require('bar')` and `const { foo: aliased } = require('bar')`.
+/// Captures the binding actually used in code (the alias when renamed).
+const TS_REQUIRE_DESTRUCTURED_QUERY: &str = r#"
+((variable_declarator
+   name: (object_pattern
+     [
+       (shorthand_property_identifier_pattern) @name
+       (pair_pattern value: (identifier) @name)
+     ])
+   value: (call_expression
+     function: (identifier) @_fn
+     arguments: (arguments
+       (string) @source)))
+ (#eq? @_fn "require"))
+"#;
+
+/// Tree-sitter query for TypeScript `import = require()` syntax:
+/// `import foo = require('bar')`. TypeScript-specific.
+const TS_IMPORT_REQUIRE_QUERY: &str = r#"
+(import_statement
+  (import_require_clause
+    (identifier) @name
+    source: (string) @source))
+"#;
+
 /// Extract the set of function/identifier names imported from policy-related modules.
 pub fn find_policy_imports(
     tree: &tree_sitter::Tree,
@@ -53,7 +99,14 @@ pub fn find_policy_imports(
 
     let ts_lang = tree.language();
 
-    for query_src in [TS_NAMED_IMPORT_QUERY, TS_DEFAULT_IMPORT_QUERY] {
+    for query_src in [
+        TS_NAMED_IMPORT_QUERY,
+        TS_DEFAULT_IMPORT_QUERY,
+        TS_NAMESPACE_IMPORT_QUERY,
+        TS_REQUIRE_QUERY,
+        TS_REQUIRE_DESTRUCTURED_QUERY,
+        TS_IMPORT_REQUIRE_QUERY,
+    ] {
         let Ok(query) = tree_sitter::Query::new(&ts_lang, query_src) else {
             continue;
         };
@@ -180,5 +233,95 @@ import { validateInput } from './utils';
         let tree = parse_ts(source);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
         assert!(imports.contains("evaluate"));
+    }
+
+    #[test]
+    fn detects_namespace_policy_import() {
+        let source = r#"
+import * as authz from "../policy";
+import * as utils from "./utils";
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authz"));
+        assert!(!imports.contains("utils"));
+    }
+
+    #[test]
+    fn detects_require_policy_import() {
+        let source = r#"
+const authz = require("../policy");
+const express = require("express");
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authz"));
+        assert!(!imports.contains("express"));
+    }
+
+    #[test]
+    fn enforcement_point_check_namespace_import() {
+        let source = r#"
+import * as authz from "../policy";
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(is_enforcement_point(
+            r#"authz.authorize(user, "configs:read", resource)"#,
+            &imports,
+        ));
+        assert!(!is_enforcement_point(
+            r#"if (user.role === "admin")"#,
+            &imports,
+        ));
+    }
+
+    #[test]
+    fn detects_destructured_require_policy_import() {
+        let source = r#"
+const { authorize, can } = require("../policy");
+const { Router } = require("express");
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authorize"));
+        assert!(imports.contains("can"));
+        assert!(!imports.contains("Router"));
+    }
+
+    #[test]
+    fn detects_aliased_destructured_require_policy_import() {
+        let source = r#"
+const { authorize: auth } = require("../policy");
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        // We capture the binding actually used in code (the alias), not the original name.
+        assert!(imports.contains("auth"));
+        assert!(!imports.contains("authorize"));
+    }
+
+    #[test]
+    fn detects_require_with_let_and_var() {
+        let source = r#"
+let authzLet = require("../policy");
+var authzVar = require("../policy");
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authzLet"));
+        assert!(imports.contains("authzVar"));
+    }
+
+    #[test]
+    fn detects_ts_import_require_syntax() {
+        let source = r#"
+import authz = require("../policy");
+import express = require("express");
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authz"));
+        assert!(!imports.contains("express"));
     }
 }
