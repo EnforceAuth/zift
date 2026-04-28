@@ -1,0 +1,135 @@
+[rule]
+id = "java-custom-authz-call"
+languages = ["java"]
+category = "custom"
+confidence = "medium"
+description = "Custom authorization-style method call (heuristic: name suggests role/membership/permission check)"
+# Application-specific authorization layers (e.g. PrivilegeService, AccessChecker)
+# expose boolean predicate methods that don't match Spring/Shiro/Jakarta names.
+# This rule fires on `is*`/`has*`/`can*` method invocations whose names contain
+# a role- or access-related keyword as a complete sub-word (e.g. `isOrgAdmin`,
+# `isCandidateManager`, `isAdminForAccount`, `hasFullOrganizationAccess`).
+#
+# `method_name` is captured twice so we can apply both an inclusive `match`
+# predicate and an exclusive `not_match` predicate that filters out names
+# already covered by other rules (`hasRole`, `hasAuthority`, `isUserInRole`,
+# their `hasAny*` variants).
+#
+# Confidence is `medium` because the pattern is heuristic — a manual review of
+# each finding is expected. The category default Rego stub already prompts that.
+query = """
+(method_invocation
+  name: (identifier) @method_name @method_name_excl
+) @match
+"""
+
+[rule.predicates.method_name]
+# The keyword must be a complete camelCase word — followed by end-of-name
+# or the start of another camelCase word ([A-Z]…). This avoids matching
+# substrings of unrelated words (e.g. `isIncludeAdmins` where "Admin" is
+# part of "Admins").
+match = "^(is|has|can)\\w*?(Admin|Manager|Member|Recruiter|Viewer|Editor|Owner|Access|Permission|Privilege|Role|Authority|Authorized)(?:[A-Z]\\w*)?$"
+
+[rule.predicates.method_name_excl]
+not_match = "^(hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|isUserInRole)$"
+
+[[rule.tests]]
+input = """
+public class OrgController {
+    public void delete(Account account, Org org) {
+        if (!privService.isOrgAdmin(account.getId(), org.getId())) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class CandidateController {
+    public void view(Account account, Candidate c) {
+        if (!privService.isCandidateViewer(account.getId(), c.getOrgId())) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    public void edit(Account actor, Org org, Account subject) {
+        if (!privService.isAdminForAccount(actor, org, subject)) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class ReportController {
+    public Report build(Account actor, Long orgId) {
+        if (!privService.hasFullOrganizationAccess(actor, orgId)) {
+            return Report.empty();
+        }
+        return Report.full();
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void doWork(Note note) {
+        if (note.isArchived()) { return; }
+        process(note);
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void doWork(String s) {
+        if (s.isEmpty()) { return; }
+        if (str.hasLength(s)) { process(s); }
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure(HttpSecurity http) {
+        http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class Servlet {
+    public void doGet() {
+        if (request.isUserInRole("admin")) { allow(); }
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class Filter {
+    public boolean accept(SearchRequest req) {
+        return req.isIncludeAdmins() || req.isIncludeEmployees();
+    }
+}
+"""
+expect_match = false
