@@ -205,12 +205,16 @@ import { Router as R } from "express";
 "#;
         let tree = parse_ts(source);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
-        // We capture the binding actually used in code (the alias), not the original name.
+        // For policy paths: capture the binding actually used in code (the alias),
+        // not the original name.
         assert!(imports.contains("auth"));
         assert!(imports.contains("Perm"));
         assert!(!imports.contains("authorize"));
         assert!(!imports.contains("Permission"));
+        // For non-policy paths: neither the alias nor the original name is captured,
+        // regardless of how the import is renamed.
         assert!(!imports.contains("R"));
+        assert!(!imports.contains("Router"));
     }
 
     #[test]
