@@ -21,12 +21,20 @@ fn is_policy_path(source: &str) -> bool {
 }
 
 /// Tree-sitter query for named imports: `import { foo } from 'bar'`
+/// and aliased: `import { foo as bar } from 'baz'`.
+/// Captures the binding actually used in code (the alias when renamed,
+/// otherwise the original name).
 const TS_NAMED_IMPORT_QUERY: &str = r#"
 (import_statement
   (import_clause
     (named_imports
-      (import_specifier
-        name: (identifier) @name)))
+      [
+        (import_specifier
+          alias: (identifier) @name)
+        (import_specifier
+          !alias
+          name: (identifier) @name)
+      ]))
   source: (string) @source)
 "#;
 
@@ -187,6 +195,53 @@ import { Router } from 'express';
         assert!(imports.contains("authorize"));
         assert!(imports.contains("authorizeWorkload"));
         assert!(!imports.contains("Router"));
+    }
+
+    #[test]
+    fn detects_aliased_named_policy_import() {
+        let source = r#"
+import { authorize as auth, Permission as Perm } from "../policy";
+import { Router as R } from "express";
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        // We capture the binding actually used in code (the alias), not the original name.
+        assert!(imports.contains("auth"));
+        assert!(imports.contains("Perm"));
+        assert!(!imports.contains("authorize"));
+        assert!(!imports.contains("Permission"));
+        assert!(!imports.contains("R"));
+    }
+
+    #[test]
+    fn detects_mixed_aliased_and_plain_named_imports() {
+        let source = r#"
+import { authorize, can as canDo, evaluate } from "../policy";
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        assert!(imports.contains("authorize"));
+        assert!(imports.contains("canDo"));
+        assert!(imports.contains("evaluate"));
+        assert!(!imports.contains("can"));
+    }
+
+    #[test]
+    fn enforcement_point_check_aliased_named_import() {
+        let source = r#"
+import { authorize as auth } from "../policy";
+"#;
+        let tree = parse_ts(source);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
+        // The call uses the alias, so the regex must match the alias binding.
+        assert!(is_enforcement_point(
+            r#"if (!auth(req.user, "configs:read", req.params.id)) { return res.status(403).end(); }"#,
+            &imports,
+        ));
+        assert!(!is_enforcement_point(
+            r#"if (!authorize(req.user, "configs:read", req.params.id)) { return; }"#,
+            &imports,
+        ));
     }
 
     #[test]
