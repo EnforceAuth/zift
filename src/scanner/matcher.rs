@@ -574,67 +574,64 @@ public class Ctrl {
     }
 
     #[test]
-    fn java_security_interface_impl_matches() {
-        let findings = parse_and_match_java(
-            r#"
+    fn java_security_interface_impl_cases() {
+        // Table-driven: (case_name, source, expect_match)
+        let cases: &[(&str, &str, bool)] = &[
+            (
+                "plain UserDetailsService",
+                r#"
 public class MyUserService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) { return null; }
 }
 "#,
-            include_str!("../../rules/java/security-interface-impl.toml"),
-        );
-        assert!(
-            !findings.is_empty(),
-            "should match implements UserDetailsService"
-        );
-    }
-
-    #[test]
-    fn java_security_interface_impl_scoped_matches() {
-        let findings = parse_and_match_java(
-            r#"
+                true,
+            ),
+            (
+                "fully-qualified UserDetailsService",
+                r#"
 public class MyUserService implements org.springframework.security.core.userdetails.UserDetailsService {
     public UserDetails loadUserByUsername(String username) { return null; }
 }
 "#,
-            include_str!("../../rules/java/security-interface-impl.toml"),
-        );
-        assert!(
-            !findings.is_empty(),
-            "should match fully-qualified UserDetailsService"
-        );
-    }
-
-    #[test]
-    fn java_security_interface_impl_generic_matches() {
-        let findings = parse_and_match_java(
-            r#"
+                true,
+            ),
+            (
+                "generic AuthorizationManager",
+                r#"
 public class MyAuthManager implements AuthorizationManager<RequestAuthorizationContext> {
     public AuthorizationDecision check() { return null; }
 }
 "#,
-            include_str!("../../rules/java/security-interface-impl.toml"),
-        );
-        assert!(
-            !findings.is_empty(),
-            "should match generic AuthorizationManager"
-        );
-    }
-
-    #[test]
-    fn java_security_interface_impl_no_false_positive() {
-        let findings = parse_and_match_java(
-            r#"
+                true,
+            ),
+            (
+                "unrelated Serializable (no false positive)",
+                r#"
 public class MyService implements Serializable {
     public void doWork() { }
 }
 "#,
-            include_str!("../../rules/java/security-interface-impl.toml"),
-        );
-        assert!(
-            findings.is_empty(),
-            "should not match unrelated interface like Serializable"
-        );
+                false,
+            ),
+        ];
+
+        for (case_name, source, expect_match) in cases {
+            let findings = parse_and_match_java(
+                source,
+                include_str!("../../rules/java/security-interface-impl.toml"),
+            );
+            if *expect_match {
+                assert!(
+                    !findings.is_empty(),
+                    "case `{case_name}`: expected at least one finding",
+                );
+            } else {
+                assert!(
+                    findings.is_empty(),
+                    "case `{case_name}`: expected no findings, got {findings:?}",
+                );
+            }
+        }
     }
 
     #[test]
