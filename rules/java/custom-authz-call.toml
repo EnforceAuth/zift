@@ -82,6 +82,48 @@ public class ReportController {
 """
 expect_match = true
 
+# `can*` predicates (e.g. canEditRole, canManagePermission) are part of the
+# inclusive `is|has|can` family — keep them locked by fixture.
+[[rule.tests]]
+input = """
+public class RoleController {
+    public void edit(Account actor, Org org, Role role) {
+        if (!privService.canEditRole(actor, org, role)) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class PermissionController {
+    public void update(Account actor, Permission p) {
+        if (!privService.canManagePermission(actor, p)) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
+# `can*` with the keyword in the interior of the identifier (parallel to the
+# existing `isAdminForAccount` fixture) — pin so the non-greedy inclusive
+# regex doesn't regress for `can`-prefixed names where the keyword sits
+# between two camelCase words.
+[[rule.tests]]
+input = """
+public class RoleController {
+    public void assign(Account actor, Role role, User target) {
+        if (!privService.canAssignAdminRole(actor, role, target)) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
 [[rule.tests]]
 input = """
 public class Service {
@@ -109,6 +151,29 @@ input = """
 public class SecurityConfig {
     public void configure(HttpSecurity http) {
         http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");
+    }
+}
+"""
+expect_match = false
+
+# `hasAnyRole` and `hasAnyAuthority` are framework APIs covered by other rules;
+# pin them with explicit negative fixtures so the not_match exclusion can't
+# silently regress.
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure(HttpSecurity http) {
+        http.authorizeRequests().antMatchers("/admin/**").hasAnyRole("ADMIN", "MANAGER");
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class SecurityConfig {
+    public void configure(HttpSecurity http) {
+        http.authorizeRequests().antMatchers("/api/**").hasAnyAuthority("SCOPE_read", "SCOPE_write");
     }
 }
 """
