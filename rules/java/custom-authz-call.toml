@@ -108,6 +108,22 @@ public class PermissionController {
 """
 expect_match = true
 
+# `can*` with the keyword in the interior of the identifier (parallel to the
+# existing `isAdminForAccount` fixture) — pin so the non-greedy inclusive
+# regex doesn't regress for `can`-prefixed names where the keyword sits
+# between two camelCase words.
+[[rule.tests]]
+input = """
+public class RoleController {
+    public void assign(Account actor, Role role, User target) {
+        if (!privService.canAssignAdminRole(actor, role, target)) {
+            throw new ForbiddenException();
+        }
+    }
+}
+"""
+expect_match = true
+
 [[rule.tests]]
 input = """
 public class Service {
