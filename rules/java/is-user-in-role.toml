@@ -4,12 +4,17 @@ languages = ["java"]
 category = "rbac"
 confidence = "high"
 description = "Servlet API isUserInRole() call"
+# Accept string literals as well as field accesses and bare identifiers
+# as the role argument; non-literal stubs need manual rego review.
 query = """
 (method_invocation
   name: (identifier) @method_name
   arguments: (argument_list
-    (string_literal
-      (string_fragment) @role_value))
+    [
+      (string_literal (string_fragment) @role_value)
+      (field_access) @role_value
+      (identifier) @role_value
+    ])
 ) @match
 """
 
@@ -30,6 +35,26 @@ input = """
 public class MyServlet {
     public void doGet() {
         if (request.isUserInRole("admin")) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyServlet {
+    public void doGet() {
+        if (request.isUserInRole(Role.ADMIN)) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyServlet {
+    public void doGet(String roleVar) {
+        if (request.isUserInRole(roleVar)) { doSomething(); }
     }
 }
 """

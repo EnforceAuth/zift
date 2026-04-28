@@ -4,14 +4,19 @@ languages = ["java"]
 category = "rbac"
 confidence = "medium"
 description = "Role comparison via .equals() or string equality"
+# Accept string literals as well as field accesses (e.g. `Role.ADMIN`) and
+# bare identifiers (e.g. `roleVar`) as the comparison argument.
 query = """
 (method_invocation
   object: (method_invocation
     name: (identifier) @getter)
   name: (identifier) @method_name
   arguments: (argument_list
-    (string_literal
-      (string_fragment) @role_value))
+    [
+      (string_literal (string_fragment) @role_value)
+      (field_access) @role_value
+      (identifier) @role_value
+    ])
 ) @match
 """
 
@@ -49,6 +54,26 @@ public class Service {
 }
 """
 expect_match = false
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (user.getRole().equals(Role.ADMIN)) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check(String roleName) {
+        if (user.getRole().equals(roleName)) { doSomething(); }
+    }
+}
+"""
+expect_match = true
 
 [[rule.tests]]
 input = """
