@@ -638,6 +638,85 @@ public class MyService implements Serializable {
     }
 
     #[test]
+    fn java_custom_authz_call_matches_role_suffix() {
+        let findings = parse_and_match_java(
+            r#"if (!privService.isOrgAdmin(account.getId(), org.getId())) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match custom isOrgAdmin call");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Custom);
+    }
+
+    #[test]
+    fn java_custom_authz_call_matches_keyword_in_middle() {
+        let findings = parse_and_match_java(
+            r#"if (!privService.isAdminForAccount(actor, org, subject)) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isAdminForAccount (keyword in middle)"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_matches_has_access() {
+        let findings = parse_and_match_java(
+            r#"if (privService.hasFullOrganizationAccess(account, orgId)) { allow(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFullOrganizationAccess"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_no_substring_false_positive() {
+        // "Admin" appears as a substring of "Admins" — must NOT match.
+        let findings = parse_and_match_java(
+            r#"if (req.isIncludeAdmins()) { include(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match isIncludeAdmins (Admin is a substring of Admins, not a complete sub-word)"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_no_state_check_false_positive() {
+        let findings = parse_and_match_java(
+            r#"if (note.isArchived()) { return; }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match state-check methods like isArchived"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_excludes_known_framework_methods() {
+        // hasRole/hasAuthority/isUserInRole are handled by dedicated rules;
+        // this rule must NOT report them to avoid duplicate findings.
+        for snippet in [
+            r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
+            r#"http.authorizeRequests().antMatchers("/api/**").hasAuthority("SCOPE_read");"#,
+            r#"if (request.isUserInRole("admin")) { allow(); }"#,
+        ] {
+            let findings = parse_and_match_java(
+                snippet,
+                include_str!("../../rules/java/custom-authz-call.toml"),
+            );
+            assert!(
+                findings.is_empty(),
+                "custom-authz-call must not duplicate framework rule for: {snippet}"
+            );
+        }
+    }
+
+    #[test]
     fn java_feature_gate_matches() {
         let findings = parse_and_match_java(
             r#"featureFlags.hasFeature("advanced");"#,
