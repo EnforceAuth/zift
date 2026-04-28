@@ -391,6 +391,18 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_is_user_in_role_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"request.isUserInRole(roleVar);"#,
+            include_str!("../../rules/java/is-user-in-role.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isUserInRole with identifier arg (variable role name)"
+        );
+    }
+
+    #[test]
     fn java_has_role_call_matches() {
         let findings = parse_and_match_java(
             r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
@@ -455,6 +467,18 @@ public class Ctrl {
         assert!(
             !findings.is_empty(),
             "should match isPermitted with field-access arg"
+        );
+    }
+
+    #[test]
+    fn java_shiro_is_permitted_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"subject.isPermitted(permVar);"#,
+            include_str!("../../rules/java/shiro-is-permitted.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isPermitted with identifier arg (variable permission)"
         );
     }
 
@@ -567,6 +591,18 @@ public class Ctrl {
         assert!(
             !findings.is_empty(),
             "should match hasFeature with field-access arg"
+        );
+    }
+
+    #[test]
+    fn java_feature_gate_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"featureFlags.hasFeature(featureKey);"#,
+            include_str!("../../rules/java/feature-gate-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFeature with identifier arg (variable feature key)"
         );
     }
 

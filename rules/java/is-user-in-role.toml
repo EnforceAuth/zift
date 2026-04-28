@@ -53,6 +53,16 @@ expect_match = true
 [[rule.tests]]
 input = """
 public class MyServlet {
+    public void doGet(String roleVar) {
+        if (request.isUserInRole(roleVar)) { doSomething(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class MyServlet {
     public void doGet() {
         if (request.isAuthenticated()) { doSomething(); }
     }

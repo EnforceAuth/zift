@@ -63,6 +63,16 @@ expect_match = true
 [[rule.tests]]
 input = """
 public class Service {
+    public void delete(String permVar) {
+        if (subject.isPermitted(permVar)) { doIt(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
     public void delete() {
         subject.doAction("user:delete");
     }
