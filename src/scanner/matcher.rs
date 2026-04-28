@@ -379,12 +379,48 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_is_user_in_role_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"request.isUserInRole(Role.ADMIN);"#,
+            include_str!("../../rules/java/is-user-in-role.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isUserInRole with field-access arg"
+        );
+    }
+
+    #[test]
     fn java_has_role_call_matches() {
         let findings = parse_and_match_java(
             r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
             include_str!("../../rules/java/has-role-call.toml"),
         );
         assert!(!findings.is_empty(), "should match hasRole");
+    }
+
+    #[test]
+    fn java_has_role_call_field_access_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"if (!acct.hasRole(Role.ADMIN)) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/has-role-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasRole with field-access arg (e.g., Role.ADMIN)"
+        );
+    }
+
+    #[test]
+    fn java_has_role_call_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"if (acct.hasRole(roleName)) { allow(); }"#,
+            include_str!("../../rules/java/has-role-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasRole with identifier arg (variable role name)"
+        );
     }
 
     #[test]
@@ -408,6 +444,18 @@ public class Ctrl {
             include_str!("../../rules/java/shiro-is-permitted.toml"),
         );
         assert!(!findings.is_empty(), "should match isPermitted");
+    }
+
+    #[test]
+    fn java_shiro_is_permitted_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"subject.isPermitted(Permissions.USER_DELETE);"#,
+            include_str!("../../rules/java/shiro-is-permitted.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isPermitted with field-access arg"
+        );
     }
 
     #[test]
@@ -451,6 +499,30 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_role_equals_check_field_access_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getRole().equals(Role.ADMIN);"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match getRole().equals(field-access)"
+        );
+    }
+
+    #[test]
+    fn java_role_equals_check_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getRole().equals(roleVar);"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match getRole().equals(identifier)"
+        );
+    }
+
+    #[test]
     fn java_role_equals_check_no_false_positive() {
         let findings = parse_and_match_java(
             r#"user.getName().equals("admin");"#,
@@ -484,6 +556,18 @@ public class Ctrl {
             include_str!("../../rules/java/feature-gate-check.toml"),
         );
         assert!(!findings.is_empty(), "should match hasFeature()");
+    }
+
+    #[test]
+    fn java_feature_gate_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"featureFlags.hasFeature(Features.BETA_DASHBOARD);"#,
+            include_str!("../../rules/java/feature-gate-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFeature with field-access arg"
+        );
     }
 
     #[test]
