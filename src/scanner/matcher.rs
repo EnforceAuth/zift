@@ -478,6 +478,70 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_security_interface_impl_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class MyUserService implements UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"#,
+            include_str!("../../rules/java/security-interface-impl.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match implements UserDetailsService"
+        );
+    }
+
+    #[test]
+    fn java_security_interface_impl_scoped_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class MyUserService implements org.springframework.security.core.userdetails.UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"#,
+            include_str!("../../rules/java/security-interface-impl.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match fully-qualified UserDetailsService"
+        );
+    }
+
+    #[test]
+    fn java_security_interface_impl_generic_matches() {
+        let findings = parse_and_match_java(
+            r#"
+public class MyAuthManager implements AuthorizationManager<RequestAuthorizationContext> {
+    public AuthorizationDecision check() { return null; }
+}
+"#,
+            include_str!("../../rules/java/security-interface-impl.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match generic AuthorizationManager"
+        );
+    }
+
+    #[test]
+    fn java_security_interface_impl_no_false_positive() {
+        let findings = parse_and_match_java(
+            r#"
+public class MyService implements Serializable {
+    public void doWork() { }
+}
+"#,
+            include_str!("../../rules/java/security-interface-impl.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "should not match unrelated interface like Serializable"
+        );
+    }
+
+    #[test]
     fn java_feature_gate_matches() {
         let findings = parse_and_match_java(
             r#"featureFlags.hasFeature("advanced");"#,
