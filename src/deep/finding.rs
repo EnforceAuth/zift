@@ -54,9 +54,35 @@ pub fn into_finding(
         "semantic finding"
     );
 
-    let rule_id = match seed.and_then(|s| s.pattern_rule.as_deref()) {
-        Some(pr) => format!("{pr}-semantic"),
-        None => format!("semantic-{}", category_slug(sem.category)),
+    // Synthetic rule id used both for the deterministic finding id hash AND
+    // for the displayed `pattern_rule` field. Semantic findings cannot honestly
+    // claim the structural rule verbatim — the model can re-categorize, drop,
+    // or re-scope the seed (e.g. an `ownership` seed coming back as
+    // `feature_gate`). Surfacing the seed's bare rule id would tell consumers
+    // "this finding came from rule ts-ownership-check" when it didn't.
+    //
+    // Three branches:
+    // 1. Escalation seed exists AND the model's reported range overlaps the
+    //    seed's range → genuine re-evaluation of the seed; tag `{rule}-semantic`.
+    // 2. Escalation candidate but the model's range is OUTSIDE the seed's
+    //    range → an incidental finding the model spotted in the surrounding
+    //    context window. Treat as if it were a cold-region hit; tag
+    //    `semantic-{category}` so the lineage doesn't falsely impersonate the
+    //    seed rule. (Manual subprocess walkthrough caught this: an ownership
+    //    escalation's expanded window covered an unrelated checkPermission
+    //    function and that feature_gate finding was getting stamped
+    //    `ts-ownership-check-semantic`.)
+    // 3. No seed (cold-region candidate) → synthesize from the model's category.
+    let rule_id = match (
+        seed.and_then(|s| s.pattern_rule.as_deref()),
+        seed.map(|s| (s.line_start, s.line_end)),
+    ) {
+        (Some(pr), Some((s_start, s_end)))
+            if ranges_overlap(s_start, s_end, sem.line_start, sem.line_end) =>
+        {
+            format!("{pr}-semantic")
+        }
+        _ => format!("semantic-{}", sem.category.slug()),
     };
 
     let code_snippet =
@@ -80,7 +106,10 @@ pub fn into_finding(
         category: sem.category,
         confidence: sem.confidence,
         description: sem.description,
-        pattern_rule: seed.and_then(|s| s.pattern_rule.clone()),
+        // Use the synthetic id (e.g. `ts-ownership-check-semantic` or
+        // `semantic-rbac`) so a consumer grouping by `pattern_rule` sees that
+        // this finding is the model's verdict, not the structural rule's.
+        pattern_rule: Some(rule_id),
         rego_stub: None, // structural-only; semantic findings have no rego template
         pass: ScanPass::Semantic,
     }
@@ -102,16 +131,16 @@ fn extract_lines(scan_root: &Path, relative: &Path, start: usize, end: usize) ->
     Some(lines[s..e].join("\n"))
 }
 
-fn category_slug(cat: AuthCategory) -> &'static str {
-    match cat {
-        AuthCategory::Rbac => "rbac",
-        AuthCategory::Abac => "abac",
-        AuthCategory::Middleware => "middleware",
-        AuthCategory::BusinessRule => "business_rule",
-        AuthCategory::Ownership => "ownership",
-        AuthCategory::FeatureGate => "feature_gate",
-        AuthCategory::Custom => "custom",
-    }
+// Canonical slug lookup lives on `AuthCategory::slug()` (src/types.rs) so
+// every site that needs the snake_case wire form goes through one source of
+// truth.
+
+/// Inclusive integer-range overlap: do `[a_start, a_end]` and
+/// `[b_start, b_end]` share any line? Used to decide whether a model-reported
+/// finding actually re-evaluates its escalation seed (overlapping ranges) or
+/// is an incidental finding from the surrounding context window (no overlap).
+fn ranges_overlap(a_start: usize, a_end: usize, b_start: usize, b_end: usize) -> bool {
+    a_start <= b_end && b_start <= a_end
 }
 
 #[cfg(test)]
@@ -190,14 +219,48 @@ mod tests {
     }
 
     #[test]
-    fn into_finding_inherits_pattern_rule_from_seed() {
+    fn into_finding_marks_seed_lineage_when_ranges_overlap() {
+        // Regression: semantic findings used to inherit the seed's
+        // `pattern_rule` verbatim, so a model-recategorized finding (e.g.
+        // ownership seed → feature_gate verdict) would still display
+        // `Rule: ts-ownership-check`. The fix preserves lineage but makes
+        // clear the model produced the finding, not the structural rule.
+        // Lineage only attaches when the model's range overlaps the seed —
+        // this is the genuine re-evaluation case.
         let dir = tempdir().unwrap();
         write_file(dir.path(), "src/auth.ts", "line\n");
         let cand = make_candidate("src/auth.ts", Language::TypeScript);
-        let sem = make_semantic(1, 1);
-        let seed = make_seed(Some("ts-foo"));
+        let seed = make_seed(Some("ts-foo")); // seed at line 5
+        let sem = SemanticFinding {
+            line_start: 4,
+            line_end: 7,
+            ..make_semantic(0, 0)
+        }; // overlaps seed range 5-5
         let f = into_finding(sem, &cand, Some(&seed), dir.path());
-        assert_eq!(f.pattern_rule.as_deref(), Some("ts-foo"));
+        assert_eq!(f.pattern_rule.as_deref(), Some("ts-foo-semantic"));
+    }
+
+    #[test]
+    fn into_finding_drops_seed_lineage_when_ranges_disjoint() {
+        // Regression caught during manual walkthrough: an escalation
+        // candidate's expanded context window covered an unrelated function
+        // (`checkPermission` 17-23 lines below the seed at line 7), the model
+        // returned a `feature_gate` finding for that incidental region, and
+        // the finding was getting stamped `ts-ownership-check-semantic` —
+        // misleading because that finding has nothing to do with the
+        // ownership rule. Disjoint ranges → fall through to `semantic-{cat}`.
+        let dir = tempdir().unwrap();
+        write_file(dir.path(), "src/auth.ts", "line\n");
+        let cand = make_candidate("src/auth.ts", Language::TypeScript);
+        let seed = make_seed(Some("ts-ownership-check")); // seed at line 5
+        let sem = SemanticFinding {
+            line_start: 17,
+            line_end: 23,
+            category: AuthCategory::FeatureGate,
+            ..make_semantic(0, 0)
+        }; // entirely past the seed window
+        let f = into_finding(sem, &cand, Some(&seed), dir.path());
+        assert_eq!(f.pattern_rule.as_deref(), Some("semantic-feature_gate"));
     }
 
     #[test]
@@ -205,13 +268,14 @@ mod tests {
         let dir = tempdir().unwrap();
         write_file(dir.path(), "src/auth.ts", "line\n");
         let cand = make_candidate("src/auth.ts", Language::TypeScript);
-        let sem = make_semantic(1, 1);
+        let sem = make_semantic(1, 1); // category = Rbac
         let f = into_finding(sem, &cand, None, dir.path());
-        // No structural seed, no pattern_rule on the resulting Finding.
-        assert!(f.pattern_rule.is_none());
-        // But the deterministic id is computed using a "semantic-rbac"-style
-        // synthetic rule id (we can't observe this directly, but we can
-        // observe that two cold-regions in the same place produce the same id).
+        // No structural seed → synthesize from the model's category so
+        // consumers grouping by `pattern_rule` can still bucket cold-region
+        // findings instead of seeing a raw `null`.
+        assert_eq!(f.pattern_rule.as_deref(), Some("semantic-rbac"));
+        // Determinism: two cold-regions at the same location produce the
+        // same id (the rule id flows into the hash).
         let f2 = into_finding(make_semantic(1, 1), &cand, None, dir.path());
         assert_eq!(f.id, f2.id);
     }
@@ -264,14 +328,28 @@ mod tests {
     }
 
     #[test]
+    fn ranges_overlap_covers_inclusive_boundaries() {
+        // Inclusive on both ends: touching at a single line counts as overlap.
+        assert!(ranges_overlap(5, 10, 10, 15)); // touch at 10
+        assert!(ranges_overlap(10, 15, 5, 10)); // symmetric
+        assert!(ranges_overlap(5, 10, 7, 7)); // contained
+        assert!(ranges_overlap(7, 7, 5, 10)); // contained, symmetric
+        assert!(ranges_overlap(1, 100, 50, 60)); // wide vs narrow
+        assert!(!ranges_overlap(5, 10, 11, 20)); // adjacent but disjoint
+        assert!(!ranges_overlap(11, 20, 5, 10)); // adjacent but disjoint, sym
+        assert!(!ranges_overlap(5, 5, 6, 6)); // single-line gap
+    }
+
+    #[test]
     fn category_slugs_round_trip() {
-        // Slugs match output_schema enum values.
-        assert_eq!(category_slug(AuthCategory::Rbac), "rbac");
-        assert_eq!(category_slug(AuthCategory::Abac), "abac");
-        assert_eq!(category_slug(AuthCategory::Middleware), "middleware");
-        assert_eq!(category_slug(AuthCategory::BusinessRule), "business_rule");
-        assert_eq!(category_slug(AuthCategory::Ownership), "ownership");
-        assert_eq!(category_slug(AuthCategory::FeatureGate), "feature_gate");
-        assert_eq!(category_slug(AuthCategory::Custom), "custom");
+        // Slugs match output_schema enum values. Canonical impl moved to
+        // `AuthCategory::slug` in src/types.rs.
+        assert_eq!(AuthCategory::Rbac.slug(), "rbac");
+        assert_eq!(AuthCategory::Abac.slug(), "abac");
+        assert_eq!(AuthCategory::Middleware.slug(), "middleware");
+        assert_eq!(AuthCategory::BusinessRule.slug(), "business_rule");
+        assert_eq!(AuthCategory::Ownership.slug(), "ownership");
+        assert_eq!(AuthCategory::FeatureGate.slug(), "feature_gate");
+        assert_eq!(AuthCategory::Custom.slug(), "custom");
     }
 }

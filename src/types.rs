@@ -32,6 +32,28 @@ pub enum AuthCategory {
     Custom,
 }
 
+impl AuthCategory {
+    /// Snake_case wire form, matching the serde `rename_all = "snake_case"`
+    /// applied to this enum. Use this anywhere the canonical wire spelling
+    /// is needed (JSON map keys, prompt schema enum, MCP tool args).
+    /// Distinct from [`std::fmt::Display`], which produces a human-friendly
+    /// form (`"Business Rule"`) — mixing the two in one JSON document
+    /// produces inconsistent keys (e.g. summary `"business rule"` vs.
+    /// finding `"business_rule"`), which breaks consumers grouping by
+    /// category.
+    pub fn slug(&self) -> &'static str {
+        match self {
+            AuthCategory::Rbac => "rbac",
+            AuthCategory::Abac => "abac",
+            AuthCategory::Middleware => "middleware",
+            AuthCategory::BusinessRule => "business_rule",
+            AuthCategory::Ownership => "ownership",
+            AuthCategory::FeatureGate => "feature_gate",
+            AuthCategory::Custom => "custom",
+        }
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
 )]

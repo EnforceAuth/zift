@@ -36,8 +36,14 @@ pub fn print(
     let mut files = std::collections::HashSet::new();
 
     for f in findings {
+        // Use the canonical snake_case wire form so summary keys round-trip
+        // against `findings[].category` in the same document. The Display impl
+        // produces a human-friendly form (`"Business Rule"` → lowercased
+        // `"business rule"` with a space), which disagrees with the serde
+        // form (`"business_rule"`) on multi-word variants and breaks
+        // consumers grouping the summary by category.
         *by_category
-            .entry(f.category.to_string().to_lowercase())
+            .entry(f.category.slug().to_string())
             .or_default() += 1;
         *by_confidence.entry(f.confidence.to_string()).or_default() += 1;
         files.insert(&f.file);

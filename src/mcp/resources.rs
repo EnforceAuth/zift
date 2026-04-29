@@ -42,7 +42,7 @@ pub fn list_resources(ctx: &ServerContext) -> ResourcesListResult {
     ];
     for category in ALL_CATEGORIES {
         resources.push(ResourceDescriptor {
-            uri: format!("category://{}", category_slug(*category)),
+            uri: format!("category://{}", category.slug()),
             name: format!("AuthCategory: {category}"),
             description: category_description(*category).to_string(),
             mime_type: "application/json",
@@ -80,7 +80,7 @@ pub fn read_resource(ctx: &ServerContext, uri: &str) -> Option<ResourceContent> 
     if let Some(slug) = uri.strip_prefix("category://") {
         let cat = category_from_slug(slug)?;
         let body = json!({
-            "category": category_slug(cat),
+            "category": cat.slug(),
             "display_name": cat.to_string(),
             "description": category_description(cat),
             "examples": category_examples(cat),
@@ -125,18 +125,6 @@ const ALL_CATEGORIES: &[AuthCategory] = &[
     AuthCategory::FeatureGate,
     AuthCategory::Custom,
 ];
-
-fn category_slug(c: AuthCategory) -> &'static str {
-    match c {
-        AuthCategory::Rbac => "rbac",
-        AuthCategory::Abac => "abac",
-        AuthCategory::Middleware => "middleware",
-        AuthCategory::BusinessRule => "business_rule",
-        AuthCategory::Ownership => "ownership",
-        AuthCategory::FeatureGate => "feature_gate",
-        AuthCategory::Custom => "custom",
-    }
-}
 
 fn category_from_slug(slug: &str) -> Option<AuthCategory> {
     match slug {
