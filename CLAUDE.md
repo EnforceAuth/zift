@@ -54,7 +54,3 @@ Skipped prefixes (no version bump):
 - `docs:`, `test:`, `ci:`, `chore:`, `style:`, `build:`
 
 PR titles must use a conventional commit prefix.
-
-## Hard Rules
-
-- Never include `Co-Authored-By` in commit messages
