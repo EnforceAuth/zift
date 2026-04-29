@@ -44,11 +44,18 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     let mut result = scanner::scan(&path, &loaded_rules, &args, &config)?;
 
     if let Some(runtime) = deep_runtime.as_ref() {
-        tracing::info!(
-            "running deep scan: base_url={} model={}",
-            runtime.base_url,
-            runtime.model,
-        );
+        match runtime.mode {
+            deep::config::DeepMode::Http => tracing::info!(
+                "running deep scan via HTTP: base_url={} model={}",
+                runtime.base_url,
+                runtime.model,
+            ),
+            deep::config::DeepMode::Subprocess => tracing::info!(
+                "running deep scan via subprocess: agent_cmd={:?} timeout={}s",
+                runtime.agent_cmd.as_deref().unwrap_or(""),
+                runtime.agent_timeout_secs,
+            ),
+        }
         result.findings = deep::run(result.findings, &path, runtime)?;
     }
 

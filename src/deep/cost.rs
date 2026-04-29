@@ -74,6 +74,7 @@ mod tests {
 
     fn rt(cap: Option<f64>, in_rate: Option<f64>, out_rate: Option<f64>) -> DeepRuntime {
         DeepRuntime {
+            mode: crate::deep::config::DeepMode::Http,
             base_url: "http://x/v1".into(),
             model: "m".into(),
             api_key: None,
@@ -87,6 +88,8 @@ mod tests {
             max_prompt_chars: 16_000,
             excludes: Vec::new(),
             language_filter: Vec::new(),
+            agent_cmd: None,
+            agent_timeout_secs: 600,
         }
     }
 

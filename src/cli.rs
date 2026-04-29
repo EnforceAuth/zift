@@ -116,6 +116,23 @@ pub struct ScanArgs {
     /// invocation. Build-time validation in `deep::config::build` is enough.
     #[arg(long, env = "ZIFT_AGENT_API_KEY")]
     pub api_key: Option<String>,
+
+    /// Shell command line for the subprocess transport (requires --deep)
+    ///
+    /// Selects the subprocess deep-mode transport: Zift writes a single
+    /// JSON envelope `{system, user, schema}` to the command's stdin and
+    /// reads the deep-mode JSON response from stdout. Use for agent CLIs
+    /// that don't speak the OpenAI HTTP dialect — e.g. `claude -p
+    /// --output-format json`, `aider`, or a custom wrapper script.
+    ///
+    /// Mutually exclusive with --base-url at config-build time (validated
+    /// in deep::config::build).
+    ///
+    /// Examples:
+    ///   --agent-cmd "claude -p --output-format json"
+    ///   --agent-cmd "./scripts/my-agent.sh"
+    #[arg(long, requires = "deep")]
+    pub agent_cmd: Option<String>,
 }
 
 // -- Extract --

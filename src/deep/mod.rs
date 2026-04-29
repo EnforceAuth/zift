@@ -15,6 +15,7 @@ pub mod error;
 pub mod finding;
 pub mod merge;
 pub mod prompt;
+pub mod subprocess;
 
 pub use config::DeepRuntime;
 pub use error::DeepError;
@@ -57,7 +58,14 @@ pub fn run(
         runtime.max_candidates
     );
 
-    let client = client::OpenAiCompatibleClient::new(runtime)?;
+    // Dispatch on transport mode: subprocess hooks (Tier 3) shell out to an
+    // arbitrary command speaking our JSON contract; HTTP (Tier 2) speaks the
+    // OpenAI chat-completions dialect. The trait keeps the rest of `run`
+    // identical between transports.
+    let analyzer: Box<dyn analyzer::Analyzer> = match runtime.mode {
+        config::DeepMode::Http => Box::new(client::OpenAiCompatibleClient::new(runtime)?),
+        config::DeepMode::Subprocess => Box::new(subprocess::SubprocessClient::new(runtime)?),
+    };
     let cost_tracker = cost::CostTracker::new(runtime);
 
     // Index structural findings by id so we can look up the seed Finding for
@@ -82,7 +90,7 @@ pub fn run(
             structural_finding: seed,
         });
 
-        let response = match client.analyze(&prompt) {
+        let response = match analyzer.analyze(&prompt) {
             Ok(r) => r,
             Err(DeepError::Http(e)) => {
                 tracing::warn!(

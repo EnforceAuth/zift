@@ -12,6 +12,22 @@ use crate::config::ZiftConfig;
 use crate::deep::error::DeepError;
 use crate::types::Language;
 
+/// Which transport [`crate::deep::run`] dispatches to per request.
+///
+/// Resolution lives in [`build`] — `--agent-cmd` on the CLI implies
+/// [`DeepMode::Subprocess`], `--base-url` implies [`DeepMode::Http`], and
+/// `[deep] mode = "..."` in `.zift.toml` is honored when no CLI flag
+/// pins the choice. Default is [`DeepMode::Http`] — preserves the
+/// behavior shipped in PR 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeepMode {
+    /// OpenAI-compatible chat-completions over HTTP. PR 1's transport.
+    Http,
+    /// Spawn an arbitrary command per request; speak the JSON envelope
+    /// contract over stdin/stdout. PR 3's transport.
+    Subprocess,
+}
+
 /// Resolved runtime configuration for the deep (semantic) scan.
 ///
 /// `Debug` is implemented manually to redact `api_key` — derive(Debug) would
@@ -19,6 +35,8 @@ use crate::types::Language;
 /// call site (none today, but defense in depth).
 #[derive(Clone)]
 pub struct DeepRuntime {
+    /// Selected transport. See [`DeepMode`].
+    pub mode: DeepMode,
     pub base_url: String,
     pub model: String,
     pub api_key: Option<String>,
@@ -37,11 +55,21 @@ pub struct DeepRuntime {
     /// Language filter from `--language`. Empty == all languages. Forwarded
     /// to cold-region file discovery.
     pub language_filter: Vec<Language>,
+    /// Shell command line invoked per request when [`Self::mode`] is
+    /// [`DeepMode::Subprocess`]. `None` for HTTP. Validated to be present
+    /// in [`build`] when subprocess mode is selected.
+    pub agent_cmd: Option<String>,
+    /// Per-request timeout for the subprocess transport. Distinct from
+    /// [`Self::request_timeout_secs`] (HTTP) because LLM CLIs are
+    /// noticeably slower than HTTP — `claude -p` cold-starts can take
+    /// 30+ seconds before producing a token.
+    pub agent_timeout_secs: u64,
 }
 
 impl std::fmt::Debug for DeepRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DeepRuntime")
+            .field("mode", &self.mode)
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
@@ -55,6 +83,8 @@ impl std::fmt::Debug for DeepRuntime {
             .field("max_prompt_chars", &self.max_prompt_chars)
             .field("excludes", &self.excludes)
             .field("language_filter", &self.language_filter)
+            .field("agent_cmd", &self.agent_cmd)
+            .field("agent_timeout_secs", &self.agent_timeout_secs)
             .finish()
     }
 }
@@ -79,6 +109,10 @@ const DEFAULT_MAX_PROMPT_CHARS: usize = 16_000;
 const DEFAULT_TEMPERATURE: f32 = 0.0;
 const DEFAULT_REMOTE_CONCURRENCY: usize = 4;
 const DEFAULT_LOCAL_CONCURRENCY: usize = 1;
+/// Subprocess agents (e.g. `claude -p`) cold-start much slower than raw
+/// HTTP — 30s+ before the first token is normal. 600s (10 min) is the
+/// plan-recommended ceiling: generous, not pathological.
+const DEFAULT_AGENT_TIMEOUT_SECS: u64 = 600;
 
 /// Heuristic check: is this base_url pointing at a local server?
 ///
@@ -93,11 +127,142 @@ fn is_localhost(base_url: &str) -> bool {
         || lower.contains("://0.0.0.0")
 }
 
+/// Resolve which transport mode to use from CLI flags, config, and
+/// inference. Locked rules:
+///
+/// - `--agent-cmd` on the CLI **always** selects subprocess. It is
+///   mutually exclusive with `--base-url` (different transports;
+///   accepting both would just hide the conflict).
+/// - `--base-url` on the CLI **always** selects HTTP.
+/// - With no CLI override, an explicit `[deep] mode = "..."` wins.
+/// - With neither, infer from which `[deep]` fields are populated. If
+///   both are populated, demand the user disambiguate — silently picking
+///   one would let a typo flip the transport.
+pub(crate) fn resolve_mode(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepMode, DeepError> {
+    let cli_agent = args.agent_cmd.as_deref().is_some_and(|s| !s.is_empty());
+    let cli_base_url = args.base_url.as_deref().is_some_and(|s| !s.is_empty());
+
+    if cli_agent && cli_base_url {
+        return Err(DeepError::Config(
+            "--agent-cmd and --base-url are mutually exclusive — they select \
+             different transports (subprocess vs HTTP); pass exactly one"
+                .into(),
+        ));
+    }
+    if cli_agent {
+        return Ok(DeepMode::Subprocess);
+    }
+    if cli_base_url {
+        return Ok(DeepMode::Http);
+    }
+
+    if let Some(m) = config.deep.mode.as_deref().map(str::trim)
+        && !m.is_empty()
+    {
+        return match m.to_ascii_lowercase().as_str() {
+            "http" => Ok(DeepMode::Http),
+            "subprocess" => Ok(DeepMode::Subprocess),
+            other => Err(DeepError::Config(format!(
+                "[deep] mode must be \"http\" or \"subprocess\" (got {other:?})"
+            ))),
+        };
+    }
+
+    // No CLI flag, no config mode — infer from which fields are populated.
+    // Prefer the field the user actually configured; demand disambiguation
+    // if both are set so a stale field doesn't silently flip transports.
+    let cfg_agent = config
+        .deep
+        .agent_cmd
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    let cfg_base = config
+        .deep
+        .base_url
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    match (cfg_agent, cfg_base) {
+        (true, false) => Ok(DeepMode::Subprocess),
+        (false, true) => Ok(DeepMode::Http),
+        // Default when nothing is configured: HTTP. The Http branch will then
+        // hard-fail on missing base_url/model — same behavior as PR 1 shipped.
+        (false, false) => Ok(DeepMode::Http),
+        (true, true) => Err(DeepError::Config(
+            "[deep] sets both base_url and agent_cmd — set [deep] mode = \"http\" \
+             or \"subprocess\" to disambiguate, or pass --base-url / --agent-cmd \
+             on the CLI"
+                .into(),
+        )),
+    }
+}
+
 /// Resolve CLI args + config-file values into a [`DeepRuntime`].
 ///
-/// Validates required fields; returns [`DeepError::Config`] on missing
-/// `base_url` or `model`.
+/// Branches on transport mode (see [`resolve_mode`]). Returns
+/// [`DeepError::Config`] on missing required fields per the selected
+/// mode (`base_url`/`model` for HTTP, `agent_cmd` for subprocess).
 pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepError> {
+    let mode = resolve_mode(args, config)?;
+
+    let api_key = args.api_key.clone().filter(|s| !s.is_empty());
+    let max_cost_usd =
+        validate_non_negative_finite("max_cost", args.max_cost.or(config.deep.max_cost))?;
+    let cost_per_1k_input =
+        validate_non_negative_finite("cost_per_1k_input", config.deep.cost_per_1k_input)?;
+    let cost_per_1k_output =
+        validate_non_negative_finite("cost_per_1k_output", config.deep.cost_per_1k_output)?;
+
+    // Warn if a cap is set but no rates are configured — the tracker
+    // short-circuits when both rates are 0, so the cap would never bind.
+    // Subprocess transport doesn't track tokens at all, so the warning is
+    // even more relevant there: spend ceilings have no effect on agent
+    // CLIs unless the user wraps them in something that returns usage.
+    let no_rates =
+        cost_per_1k_input.unwrap_or(0.0) == 0.0 && cost_per_1k_output.unwrap_or(0.0) == 0.0;
+    if max_cost_usd.is_some() && no_rates {
+        tracing::warn!(
+            "--max-cost is set but [deep] cost_per_1k_input / \
+             cost_per_1k_output are not configured in .zift.toml — spend \
+             tracking is a no-op without rates"
+        );
+    }
+
+    // Merge excludes from config + CLI; preserve CLI ordering after config.
+    let mut excludes = config.scan.exclude.clone();
+    excludes.extend(args.exclude.iter().cloned());
+
+    match mode {
+        DeepMode::Http => build_http(
+            args,
+            config,
+            api_key,
+            max_cost_usd,
+            cost_per_1k_input,
+            cost_per_1k_output,
+            excludes,
+        ),
+        DeepMode::Subprocess => build_subprocess(
+            args,
+            config,
+            api_key,
+            max_cost_usd,
+            cost_per_1k_input,
+            cost_per_1k_output,
+            excludes,
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_http(
+    args: &ScanArgs,
+    config: &ZiftConfig,
+    api_key: Option<String>,
+    max_cost_usd: Option<f64>,
+    cost_per_1k_input: Option<f64>,
+    cost_per_1k_output: Option<f64>,
+    excludes: Vec<String>,
+) -> Result<DeepRuntime, DeepError> {
     let base_url = args
         .base_url
         .clone()
@@ -144,37 +309,14 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
             )
         })?;
 
-    let api_key = args.api_key.clone().filter(|s| !s.is_empty());
-    let max_cost_usd =
-        validate_non_negative_finite("max_cost", args.max_cost.or(config.deep.max_cost))?;
-    let cost_per_1k_input =
-        validate_non_negative_finite("cost_per_1k_input", config.deep.cost_per_1k_input)?;
-    let cost_per_1k_output =
-        validate_non_negative_finite("cost_per_1k_output", config.deep.cost_per_1k_output)?;
-
-    // Warn if a cap is set but no rates are configured — the tracker
-    // short-circuits when both rates are 0, so the cap would never bind.
-    let no_rates =
-        cost_per_1k_input.unwrap_or(0.0) == 0.0 && cost_per_1k_output.unwrap_or(0.0) == 0.0;
-    if max_cost_usd.is_some() && no_rates {
-        tracing::warn!(
-            "--max-cost is set but [deep] cost_per_1k_input / \
-             cost_per_1k_output are not configured in .zift.toml — spend \
-             tracking is a no-op without rates"
-        );
-    }
-
     let max_concurrent = if is_localhost(&base_url) {
         DEFAULT_LOCAL_CONCURRENCY
     } else {
         DEFAULT_REMOTE_CONCURRENCY
     };
 
-    // Merge excludes from config + CLI; preserve CLI ordering after config.
-    let mut excludes = config.scan.exclude.clone();
-    excludes.extend(args.exclude.iter().cloned());
-
     Ok(DeepRuntime {
+        mode: DeepMode::Http,
         base_url,
         model,
         api_key,
@@ -188,6 +330,67 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
         max_prompt_chars: DEFAULT_MAX_PROMPT_CHARS,
         excludes,
         language_filter: args.language.clone(),
+        agent_cmd: None,
+        agent_timeout_secs: DEFAULT_AGENT_TIMEOUT_SECS,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_subprocess(
+    args: &ScanArgs,
+    config: &ZiftConfig,
+    api_key: Option<String>,
+    max_cost_usd: Option<f64>,
+    cost_per_1k_input: Option<f64>,
+    cost_per_1k_output: Option<f64>,
+    excludes: Vec<String>,
+) -> Result<DeepRuntime, DeepError> {
+    let agent_cmd = args
+        .agent_cmd
+        .clone()
+        .or_else(|| config.deep.agent_cmd.clone())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            DeepError::Config(
+                "subprocess mode requires --agent-cmd \
+                 (or [deep] agent_cmd in .zift.toml)"
+                    .into(),
+            )
+        })?;
+
+    let agent_timeout_secs = config
+        .deep
+        .agent_timeout_secs
+        .unwrap_or(DEFAULT_AGENT_TIMEOUT_SECS);
+
+    // Subprocess agents serialize internally on the agent's side (one
+    // `claude -p` invocation, one model call); spawning N of them in
+    // parallel rarely improves throughput and frequently competes for
+    // the agent's own rate-limit budget. Default to 1; users override
+    // via shell tooling, not Zift.
+    let max_concurrent = DEFAULT_LOCAL_CONCURRENCY;
+
+    Ok(DeepRuntime {
+        mode: DeepMode::Subprocess,
+        // base_url and model are HTTP-only. Empty in subprocess mode —
+        // the HTTP client is never instantiated, so these never reach
+        // the wire. Documented on `DeepRuntime`.
+        base_url: String::new(),
+        model: String::new(),
+        api_key,
+        max_cost_usd,
+        cost_per_1k_input,
+        cost_per_1k_output,
+        request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
+        max_candidates: DEFAULT_MAX_CANDIDATES,
+        max_concurrent,
+        temperature: DEFAULT_TEMPERATURE,
+        max_prompt_chars: DEFAULT_MAX_PROMPT_CHARS,
+        excludes,
+        language_filter: args.language.clone(),
+        agent_cmd: Some(agent_cmd),
+        agent_timeout_secs,
     })
 }
 
@@ -293,6 +496,7 @@ mod tests {
     #[test]
     fn debug_format_redacts_api_key() {
         let runtime = DeepRuntime {
+            mode: DeepMode::Http,
             base_url: "http://x/v1".into(),
             model: "m".into(),
             api_key: Some("sk-supersecret".into()),
@@ -306,6 +510,8 @@ mod tests {
             max_prompt_chars: 16_000,
             excludes: Vec::new(),
             language_filter: Vec::new(),
+            agent_cmd: None,
+            agent_timeout_secs: 600,
         };
         let formatted = format!("{runtime:?}");
         assert!(!formatted.contains("sk-supersecret"));
@@ -475,5 +681,188 @@ mod tests {
         assert_eq!(runtime.max_candidates, DEFAULT_MAX_CANDIDATES);
         assert_eq!(runtime.max_prompt_chars, DEFAULT_MAX_PROMPT_CHARS);
         assert_eq!(runtime.temperature, DEFAULT_TEMPERATURE);
+    }
+
+    // -- Subprocess mode resolution ---------------------------------------
+
+    fn subprocess_args(agent_cmd: Option<&str>) -> ScanArgs {
+        ScanArgs {
+            deep: true,
+            agent_cmd: agent_cmd.map(String::from),
+            ..ScanArgs::default()
+        }
+    }
+
+    #[test]
+    fn cli_agent_cmd_selects_subprocess_mode() {
+        let args = subprocess_args(Some("claude -p --output-format json"));
+        let runtime = build(&args, &ZiftConfig::default()).unwrap();
+        assert_eq!(runtime.mode, DeepMode::Subprocess);
+        assert_eq!(
+            runtime.agent_cmd.as_deref(),
+            Some("claude -p --output-format json")
+        );
+        // base_url and model are HTTP-only — empty in subprocess mode.
+        assert!(runtime.base_url.is_empty());
+        assert!(runtime.model.is_empty());
+    }
+
+    #[test]
+    fn cli_agent_cmd_and_base_url_are_mutually_exclusive() {
+        // Both pin different transports; refuse to silently pick one.
+        let mut args = subprocess_args(Some("claude -p"));
+        args.base_url = Some("http://x/v1".into());
+        args.model = Some("m".into());
+        let err = build(&args, &ZiftConfig::default()).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("mutually exclusive")),
+            "expected Config(<mutually exclusive>), got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn config_mode_subprocess_requires_agent_cmd() {
+        // Explicit `mode = "subprocess"` without `agent_cmd` is a hard
+        // error — otherwise the failure moves to spawn-time as an opaque
+        // empty-command crash.
+        let config = config_with(DeepConfig {
+            mode: Some("subprocess".into()),
+            ..DeepConfig::default()
+        });
+        // No CLI flags — fall through to config.
+        let args = ScanArgs {
+            deep: true,
+            ..ScanArgs::default()
+        };
+        let err = build(&args, &config).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("agent_cmd")),
+            "expected Config(<agent_cmd>), got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn config_agent_cmd_without_explicit_mode_infers_subprocess() {
+        // Single populated transport field → infer that mode. No need to
+        // require users to spell out `mode = "subprocess"` redundantly.
+        let config = config_with(DeepConfig {
+            agent_cmd: Some("claude -p".into()),
+            ..DeepConfig::default()
+        });
+        let args = ScanArgs {
+            deep: true,
+            ..ScanArgs::default()
+        };
+        let runtime = build(&args, &config).unwrap();
+        assert_eq!(runtime.mode, DeepMode::Subprocess);
+        assert_eq!(runtime.agent_cmd.as_deref(), Some("claude -p"));
+    }
+
+    #[test]
+    fn config_with_both_transport_fields_demands_disambiguation() {
+        // Both base_url AND agent_cmd are populated, no explicit mode —
+        // refuse to silently pick. A stale config field would otherwise
+        // flip the transport and the user would never notice until the
+        // wrong agent ran.
+        let config = config_with(DeepConfig {
+            base_url: Some("http://x/v1".into()),
+            agent_cmd: Some("claude -p".into()),
+            model: Some("m".into()),
+            ..DeepConfig::default()
+        });
+        let args = ScanArgs {
+            deep: true,
+            ..ScanArgs::default()
+        };
+        let err = build(&args, &config).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("disambiguate")),
+            "expected Config(<disambiguate>), got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn invalid_mode_string_rejected() {
+        let config = config_with(DeepConfig {
+            mode: Some("rest".into()),
+            ..DeepConfig::default()
+        });
+        let args = ScanArgs {
+            deep: true,
+            ..ScanArgs::default()
+        };
+        let err = build(&args, &config).unwrap_err();
+        assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn cli_agent_cmd_overrides_config_mode_http() {
+        // Edge: config says http, CLI says agent_cmd. CLI wins.
+        let config = config_with(DeepConfig {
+            mode: Some("http".into()),
+            base_url: Some("http://x/v1".into()),
+            model: Some("m".into()),
+            ..DeepConfig::default()
+        });
+        let args = subprocess_args(Some("claude -p"));
+        let runtime = build(&args, &config).unwrap();
+        assert_eq!(runtime.mode, DeepMode::Subprocess);
+    }
+
+    #[test]
+    fn subprocess_caps_concurrency_to_one() {
+        let args = subprocess_args(Some("claude -p"));
+        let runtime = build(&args, &ZiftConfig::default()).unwrap();
+        assert_eq!(runtime.max_concurrent, DEFAULT_LOCAL_CONCURRENCY);
+    }
+
+    #[test]
+    fn subprocess_default_timeout_is_600s() {
+        let args = subprocess_args(Some("claude -p"));
+        let runtime = build(&args, &ZiftConfig::default()).unwrap();
+        assert_eq!(runtime.agent_timeout_secs, DEFAULT_AGENT_TIMEOUT_SECS);
+        assert_eq!(runtime.agent_timeout_secs, 600);
+    }
+
+    #[test]
+    fn subprocess_timeout_loaded_from_config() {
+        let config = config_with(DeepConfig {
+            agent_cmd: Some("claude -p".into()),
+            agent_timeout_secs: Some(120),
+            ..DeepConfig::default()
+        });
+        let args = ScanArgs {
+            deep: true,
+            ..ScanArgs::default()
+        };
+        let runtime = build(&args, &config).unwrap();
+        assert_eq!(runtime.agent_timeout_secs, 120);
+    }
+
+    #[test]
+    fn whitespace_only_agent_cmd_treated_as_missing() {
+        for cmd in ["   ", "\t", "\n", " \t\n "] {
+            let args = subprocess_args(Some(cmd));
+            let err = build(&args, &ZiftConfig::default()).unwrap_err();
+            assert!(
+                matches!(err, DeepError::Config(_)),
+                "expected Config error for agent_cmd={cmd:?}, got: {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subprocess_inherits_excludes_and_language_filter() {
+        // Cold-region discovery is mode-agnostic — both transports must
+        // honor the same scope filters, otherwise subprocess users would
+        // get a different file set than HTTP users from the same config.
+        let mut zcfg = ZiftConfig::default();
+        zcfg.scan.exclude = vec!["vendor/**".into()];
+        let mut args = subprocess_args(Some("claude -p"));
+        args.exclude = vec!["cli/**".into()];
+        args.language = vec![Language::Java];
+        let runtime = build(&args, &zcfg).unwrap();
+        assert_eq!(runtime.excludes, vec!["vendor/**", "cli/**"]);
+        assert_eq!(runtime.language_filter, vec![Language::Java]);
     }
 }
