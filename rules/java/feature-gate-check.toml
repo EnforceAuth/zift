@@ -4,12 +4,17 @@ languages = ["java"]
 category = "feature_gate"
 confidence = "medium"
 description = "Feature flag or plan-based gating in Java"
+# Accept string literals as well as field accesses and bare identifiers
+# as the feature key; non-literal stubs need manual rego review.
 query = """
 (method_invocation
   name: (identifier) @method_name
   arguments: (argument_list
-    (string_literal
-      (string_fragment) @feature))
+    [
+      (string_literal (string_fragment) @feature)
+      (field_access) @feature
+      (identifier) @feature
+    ])
 ) @match
 """
 
@@ -41,6 +46,26 @@ input = """
 public class Service {
     public void check() {
         if (subscription.hasPlan("pro")) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check(String featureKey) {
+        if (featureFlags.hasFeature(featureKey)) { enable(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (featureFlags.isFeatureEnabled(Features.BETA_DASHBOARD)) { enable(); }
     }
 }
 """

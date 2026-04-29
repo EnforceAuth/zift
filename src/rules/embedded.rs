@@ -133,6 +133,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "java-feature-gate-check",
         include_str!("../../rules/java/feature-gate-check.toml"),
     ),
+    (
+        "java-custom-authz-call",
+        include_str!("../../rules/java/custom-authz-call.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {

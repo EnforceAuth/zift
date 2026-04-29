@@ -379,12 +379,60 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_is_user_in_role_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"request.isUserInRole(Role.ADMIN);"#,
+            include_str!("../../rules/java/is-user-in-role.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isUserInRole with field-access arg"
+        );
+    }
+
+    #[test]
+    fn java_is_user_in_role_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"request.isUserInRole(roleVar);"#,
+            include_str!("../../rules/java/is-user-in-role.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isUserInRole with identifier arg (variable role name)"
+        );
+    }
+
+    #[test]
     fn java_has_role_call_matches() {
         let findings = parse_and_match_java(
             r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
             include_str!("../../rules/java/has-role-call.toml"),
         );
         assert!(!findings.is_empty(), "should match hasRole");
+    }
+
+    #[test]
+    fn java_has_role_call_field_access_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"if (!acct.hasRole(Role.ADMIN)) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/has-role-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasRole with field-access arg (e.g., Role.ADMIN)"
+        );
+    }
+
+    #[test]
+    fn java_has_role_call_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"if (acct.hasRole(roleName)) { allow(); }"#,
+            include_str!("../../rules/java/has-role-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasRole with identifier arg (variable role name)"
+        );
     }
 
     #[test]
@@ -408,6 +456,30 @@ public class Ctrl {
             include_str!("../../rules/java/shiro-is-permitted.toml"),
         );
         assert!(!findings.is_empty(), "should match isPermitted");
+    }
+
+    #[test]
+    fn java_shiro_is_permitted_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"subject.isPermitted(Permissions.USER_DELETE);"#,
+            include_str!("../../rules/java/shiro-is-permitted.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isPermitted with field-access arg"
+        );
+    }
+
+    #[test]
+    fn java_shiro_is_permitted_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"subject.isPermitted(permVar);"#,
+            include_str!("../../rules/java/shiro-is-permitted.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isPermitted with identifier arg (variable permission)"
+        );
     }
 
     #[test]
@@ -451,6 +523,30 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_role_equals_check_field_access_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getRole().equals(Role.ADMIN);"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match getRole().equals(field-access)"
+        );
+    }
+
+    #[test]
+    fn java_role_equals_check_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"user.getRole().equals(roleVar);"#,
+            include_str!("../../rules/java/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match getRole().equals(identifier)"
+        );
+    }
+
+    #[test]
     fn java_role_equals_check_no_false_positive() {
         let findings = parse_and_match_java(
             r#"user.getName().equals("admin");"#,
@@ -478,12 +574,176 @@ public class Ctrl {
     }
 
     #[test]
+    fn java_security_interface_impl_cases() {
+        // Table-driven: (case_name, source, expect_match)
+        let cases: &[(&str, &str, bool)] = &[
+            (
+                "plain UserDetailsService",
+                r#"
+public class MyUserService implements UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"#,
+                true,
+            ),
+            (
+                "fully-qualified UserDetailsService",
+                r#"
+public class MyUserService implements org.springframework.security.core.userdetails.UserDetailsService {
+    public UserDetails loadUserByUsername(String username) { return null; }
+}
+"#,
+                true,
+            ),
+            (
+                "generic AuthorizationManager",
+                r#"
+public class MyAuthManager implements AuthorizationManager<RequestAuthorizationContext> {
+    public AuthorizationDecision check() { return null; }
+}
+"#,
+                true,
+            ),
+            (
+                "unrelated Serializable (no false positive)",
+                r#"
+public class MyService implements Serializable {
+    public void doWork() { }
+}
+"#,
+                false,
+            ),
+        ];
+
+        for (case_name, source, expect_match) in cases {
+            let findings = parse_and_match_java(
+                source,
+                include_str!("../../rules/java/security-interface-impl.toml"),
+            );
+            if *expect_match {
+                assert!(
+                    !findings.is_empty(),
+                    "case `{case_name}`: expected at least one finding",
+                );
+            } else {
+                assert!(
+                    findings.is_empty(),
+                    "case `{case_name}`: expected no findings, got {findings:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn java_custom_authz_call_matches_role_suffix() {
+        let findings = parse_and_match_java(
+            r#"if (!privService.isOrgAdmin(account.getId(), org.getId())) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match custom isOrgAdmin call");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Custom);
+    }
+
+    #[test]
+    fn java_custom_authz_call_matches_keyword_in_middle() {
+        let findings = parse_and_match_java(
+            r#"if (!privService.isAdminForAccount(actor, org, subject)) { throw new ForbiddenException(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match isAdminForAccount (keyword in middle)"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_matches_has_access() {
+        let findings = parse_and_match_java(
+            r#"if (privService.hasFullOrganizationAccess(account, orgId)) { allow(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFullOrganizationAccess"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_no_substring_false_positive() {
+        // "Admin" appears as a substring of "Admins" — must NOT match.
+        let findings = parse_and_match_java(
+            r#"if (req.isIncludeAdmins()) { include(); }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match isIncludeAdmins (Admin is a substring of Admins, not a complete sub-word)"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_no_state_check_false_positive() {
+        let findings = parse_and_match_java(
+            r#"if (note.isArchived()) { return; }"#,
+            include_str!("../../rules/java/custom-authz-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match state-check methods like isArchived"
+        );
+    }
+
+    #[test]
+    fn java_custom_authz_call_excludes_known_framework_methods() {
+        // hasRole/hasAuthority/isUserInRole are handled by dedicated rules;
+        // this rule must NOT report them to avoid duplicate findings.
+        for snippet in [
+            r#"http.authorizeRequests().antMatchers("/admin/**").hasRole("ADMIN");"#,
+            r#"http.authorizeRequests().antMatchers("/api/**").hasAuthority("SCOPE_read");"#,
+            r#"if (request.isUserInRole("admin")) { allow(); }"#,
+        ] {
+            let findings = parse_and_match_java(
+                snippet,
+                include_str!("../../rules/java/custom-authz-call.toml"),
+            );
+            assert!(
+                findings.is_empty(),
+                "custom-authz-call must not duplicate framework rule for: {snippet}"
+            );
+        }
+    }
+
+    #[test]
     fn java_feature_gate_matches() {
         let findings = parse_and_match_java(
             r#"featureFlags.hasFeature("advanced");"#,
             include_str!("../../rules/java/feature-gate-check.toml"),
         );
         assert!(!findings.is_empty(), "should match hasFeature()");
+    }
+
+    #[test]
+    fn java_feature_gate_non_literal_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"featureFlags.hasFeature(Features.BETA_DASHBOARD);"#,
+            include_str!("../../rules/java/feature-gate-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFeature with field-access arg"
+        );
+    }
+
+    #[test]
+    fn java_feature_gate_identifier_arg_matches() {
+        let findings = parse_and_match_java(
+            r#"featureFlags.hasFeature(featureKey);"#,
+            include_str!("../../rules/java/feature-gate-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasFeature with identifier arg (variable feature key)"
+        );
     }
 
     #[test]

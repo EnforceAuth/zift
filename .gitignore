@@ -5,4 +5,4 @@
 .env
 .claude/settings.local.json
 .claude/worktrees/
-policies/generated/
+/policies/generated/

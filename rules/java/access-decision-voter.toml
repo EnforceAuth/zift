@@ -15,6 +15,20 @@ query = """
     (type_list
       (type_identifier) @parent_class))
 ) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (generic_type
+        (type_identifier) @parent_class)))
+) @match
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (scoped_type_identifier
+        (type_identifier) @parent_class .)))
+) @match
 """
 
 [rule.predicates.parent_class]
@@ -28,10 +42,22 @@ public class CustomVoter extends AbstractAccessDecisionManager {
 """
 expect_match = true
 
+# Generic interface: `implements AccessDecisionVoter<Object>` parses as a
+# `generic_type` wrapper around the `type_identifier` — pin so the rule keeps
+# matching parameterized Spring Security interfaces.
 [[rule.tests]]
 input = """
 public class CustomVoter implements AccessDecisionVoter<Object> {
     public int vote() { return 0; }
+}
+"""
+expect_match = true
+
+# Fully-qualified interface name parses as `scoped_type_identifier`.
+[[rule.tests]]
+input = """
+public class CustomEvaluator implements org.springframework.security.access.PermissionEvaluator {
+    public boolean hasPermission(Object o, Object p) { return false; }
 }
 """
 expect_match = true

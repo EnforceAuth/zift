@@ -4,12 +4,19 @@ languages = ["java"]
 category = "rbac"
 confidence = "high"
 description = "Spring Security hasRole/hasAuthority method call"
+# Accept string literals as well as field accesses (e.g. `Role.ADMIN`) and
+# bare identifiers (e.g. `role`) as the role argument. The rego stub treats
+# whatever text is captured as the role name; for non-literal expressions
+# the stub will need manual review, but the finding is still recorded.
 query = """
 (method_invocation
   name: (identifier) @method_name
   arguments: (argument_list
-    (string_literal
-      (string_fragment) @role_value))
+    [
+      (string_literal (string_fragment) @role_value)
+      (field_access) @role_value
+      (identifier) @role_value
+    ])
 ) @match
 """
 
@@ -63,6 +70,26 @@ input = """
 public class SecurityConfig {
     public void configure() {
         http.authorizeRequests().antMatchers("/reports/**").hasAuthority("SCOPE_reports.read");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check(Account acct) {
+        if (!acct.hasRole(Role.ADMIN)) { throw new ForbiddenException(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void check(Account acct, String role) {
+        if (acct.hasRole(role)) { allow(); }
     }
 }
 """

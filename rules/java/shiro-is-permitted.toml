@@ -4,12 +4,17 @@ languages = ["java"]
 category = "rbac"
 confidence = "high"
 description = "Apache Shiro Subject.isPermitted() call"
+# Accept string literals as well as field accesses and bare identifiers
+# as the permission argument; non-literal stubs need manual rego review.
 query = """
 (method_invocation
   name: (identifier) @method_name
   arguments: (argument_list
-    (string_literal
-      (string_fragment) @perm_value))
+    [
+      (string_literal (string_fragment) @perm_value)
+      (field_access) @perm_value
+      (identifier) @perm_value
+    ])
 ) @match
 """
 
@@ -40,6 +45,26 @@ input = """
 public class Service {
     public void delete() {
         subject.checkPermission("user:delete");
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void delete() {
+        if (subject.isPermitted(Permissions.USER_DELETE)) { doIt(); }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class Service {
+    public void delete(String permVar) {
+        if (subject.isPermitted(permVar)) { doIt(); }
     }
 }
 """
