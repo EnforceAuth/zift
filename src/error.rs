@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::deep::error::DeepError;
+
 pub type Result<T> = std::result::Result<T, ZiftError>;
 
 #[derive(Error, Debug)]
@@ -20,6 +22,9 @@ pub enum ZiftError {
 
     #[error("invalid tree-sitter query in rule {rule_id}: {message}")]
     QueryError { rule_id: String, message: String },
+
+    #[error("deep scan: {0}")]
+    Deep(#[from] DeepError),
 
     #[error("{0}")]
     General(String),

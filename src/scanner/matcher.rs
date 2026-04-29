@@ -164,7 +164,7 @@ fn check_predicates(predicates: &[(String, Predicate)], captures: &HashMap<&str,
     true
 }
 
-fn compute_finding_id(
+pub(crate) fn compute_finding_id(
     rule_id: &str,
     file_path: &Path,
     line_start: usize,

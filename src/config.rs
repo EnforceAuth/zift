@@ -24,9 +24,20 @@ pub struct ScanConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct DeepConfig {
-    pub provider: Option<String>,
+    /// OpenAI-compatible chat-completions endpoint, e.g. "http://localhost:11434/v1".
+    pub base_url: Option<String>,
+    /// Model name to send to the agent endpoint.
     pub model: Option<String>,
+    /// Maximum spend limit in USD.
     pub max_cost: Option<f64>,
+    /// USD cost per 1k input tokens. Required for `max_cost` to bind on
+    /// hosted models — without this (and `cost_per_1k_output`), the spend
+    /// tracker is a no-op.
+    pub cost_per_1k_input: Option<f64>,
+    /// USD cost per 1k output tokens. See `cost_per_1k_input`.
+    pub cost_per_1k_output: Option<f64>,
+    // NOTE: api_key is intentionally NOT readable from this file — keys belong
+    // in $ZIFT_AGENT_API_KEY or --api-key, not checked into source control.
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -66,7 +77,7 @@ mod tests {
     fn default_config() {
         let config = ZiftConfig::default();
         assert!(config.scan.exclude.is_empty());
-        assert!(config.deep.provider.is_none());
+        assert!(config.deep.base_url.is_none());
         assert!(config.extract.package_prefix.is_none());
     }
 
@@ -79,9 +90,11 @@ languages = ["java", "typescript"]
 min_confidence = "medium"
 
 [deep]
-provider = "anthropic"
-model = "claude-sonnet-4-20250514"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5-coder:14b"
 max_cost = 5.00
+cost_per_1k_input = 0.00015
+cost_per_1k_output = 0.0006
 
 [extract]
 package_prefix = "app.authz"
@@ -93,8 +106,14 @@ additional = ["./custom-rules"]
         let config: ZiftConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.scan.exclude.len(), 2);
         assert_eq!(config.scan.languages, vec!["java", "typescript"]);
-        assert_eq!(config.deep.provider.as_deref(), Some("anthropic"));
+        assert_eq!(
+            config.deep.base_url.as_deref(),
+            Some("http://localhost:11434/v1")
+        );
+        assert_eq!(config.deep.model.as_deref(), Some("qwen2.5-coder:14b"));
         assert_eq!(config.deep.max_cost, Some(5.0));
+        assert_eq!(config.deep.cost_per_1k_input, Some(0.00015));
+        assert_eq!(config.deep.cost_per_1k_output, Some(0.0006));
         assert_eq!(config.extract.package_prefix.as_deref(), Some("app.authz"));
         assert_eq!(config.rules.additional, vec!["./custom-rules"]);
     }
@@ -108,7 +127,7 @@ exclude = ["vendor/**"]
         let config: ZiftConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.scan.exclude, vec!["vendor/**"]);
         assert!(config.scan.languages.is_empty());
-        assert!(config.deep.provider.is_none());
+        assert!(config.deep.base_url.is_none());
     }
 
     #[test]

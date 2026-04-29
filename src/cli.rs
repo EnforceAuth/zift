@@ -86,20 +86,27 @@ pub struct ScanArgs {
     pub rules_dir: Option<PathBuf>,
 
     // -- Deep scan options --
-    /// LLM provider (requires --deep)
-    #[arg(long)]
-    pub provider: Option<LlmProvider>,
+    /// Base URL of an OpenAI-compatible chat-completions endpoint (requires --deep)
+    ///
+    /// Examples: http://localhost:11434/v1 (Ollama), http://localhost:1234/v1 (LM Studio),
+    /// https://api.openai.com/v1, https://openrouter.ai/api/v1
+    #[arg(long, requires = "deep")]
+    pub base_url: Option<String>,
 
-    /// Model to use (requires --deep)
-    #[arg(long)]
+    /// Model name to send to the agent endpoint (requires --deep)
+    #[arg(long, requires = "deep")]
     pub model: Option<String>,
 
-    /// Maximum spend limit for LLM calls (requires --deep)
-    #[arg(long)]
+    /// Maximum spend limit in USD (requires --deep)
+    #[arg(long, requires = "deep")]
     pub max_cost: Option<f64>,
 
-    /// API key (or set ZIFT_API_KEY / provider-specific env vars)
-    #[arg(long, env = "ZIFT_API_KEY")]
+    /// API key for the agent endpoint (or set ZIFT_AGENT_API_KEY)
+    ///
+    /// NOTE: no `requires = "deep"` here — `ZIFT_AGENT_API_KEY` may live in
+    /// the shell environment and would otherwise fail every non-deep
+    /// invocation. Build-time validation in `deep::config::build` is enough.
+    #[arg(long, env = "ZIFT_AGENT_API_KEY")]
     pub api_key: Option<String>,
 }
 
@@ -179,13 +186,6 @@ pub enum ReportFormat {
     Text,
     Html,
     Markdown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum LlmProvider {
-    Anthropic,
-    Openai,
-    Ollama,
 }
 
 #[cfg(test)]
@@ -287,5 +287,27 @@ mod tests {
     fn verbose_flag() {
         let cli = Cli::try_parse_from(["zift", "-vvv", "."]).unwrap();
         assert_eq!(cli.verbose, 3);
+    }
+
+    #[test]
+    fn deep_scan_with_base_url() {
+        let cli = Cli::try_parse_from([
+            "zift",
+            "scan",
+            "--deep",
+            "--base-url",
+            "http://localhost:11434/v1",
+            "--model",
+            "qwen2.5-coder:14b",
+            ".",
+        ])
+        .unwrap();
+        if let Some(Command::Scan(args)) = cli.command {
+            assert!(args.deep);
+            assert_eq!(args.base_url.as_deref(), Some("http://localhost:11434/v1"));
+            assert_eq!(args.model.as_deref(), Some("qwen2.5-coder:14b"));
+        } else {
+            panic!("expected Scan command");
+        }
     }
 }

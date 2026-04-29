@@ -23,9 +23,12 @@ sha2 = "0.10"
 regex = "1"
 streaming-iterator = "0.1"
 regorus = { version = "0.9", default-features = false, features = ["arc"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/zift-{ target }{ archive-suffix }"
