@@ -1,8 +1,8 @@
 # PR 2 — Tier 1 deep scan: MCP server
 
-Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](../done/01-pr1-deep-http-transport.md). This is the strategically headline transport — it inverts the model relationship so Zift never hosts an LLM client; the user's existing agent host (Claude Code, Cursor, Continue, Cline, Zed, etc.) calls Zift as an MCP tool provider.
+Companion to [00-deep-mode-overview.md](../todo/00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](./01-pr1-deep-http-transport.md). This is the strategically headline transport — it inverts the model relationship so Zift never hosts an LLM client; the user's existing agent host (Claude Code, Cursor, Continue, Cline, Zed, etc.) calls Zift as an MCP tool provider.
 
-**Status**: not started. Depends on PR 1 landing.
+**Status**: shipped (see "Shipped" at the bottom of this file).
 
 ## 1. Goal & scope
 
@@ -92,3 +92,23 @@ The MCP server is a transport, period.
 ## 10. Decision deferred from PR 1
 
 If during PR 1 we find the prompt library / candidate selection abstractions need a different shape to also serve the MCP path, fix them in PR 1 before merging — don't ship a shape we'll break in PR 2.
+
+## Shipped
+
+Implemented as a single PR. Decisions taken during implementation:
+
+- **Hand-rolled JSON-RPC 2.0 over stdio** instead of `rmcp`. The codebase is fully blocking (`reqwest::blocking`, `regorus::Engine`); pulling in `rmcp` would have forced tokio/async fragmentation. Hand-roll is ~250 lines of `serde` + line-delimited framing in `src/mcp/jsonrpc.rs`.
+- **Protocol version pinned to `2024-11-05`** (not the floating "current" date). Agent hosts negotiate via `initialize`; we want predictable behavior across releases.
+- **`validate_rego` uses embedded `regorus`** — the dependency was already present for the structural pass's template validation, so zero-install UX was free.
+- **Streaming responses deferred.** Single-client stdio + the largest tool result (full `scan_authz`) fits comfortably in a single response in practice. Revisit if multi-thousand-finding scans become a real workload.
+- **`prompt://system` and `prompt://schema` round-trip the canonical `crate::deep::prompt` constants verbatim.** Asserted in the integration test — drift between the deep-scan path and the MCP path becomes a test failure, not a silent inconsistency.
+- **Path containment**: every tool that resolves a relative path canonicalizes against `--scan-root` and rejects paths whose canonical form lands outside it. Same defense the deep-scan `expand_finding` already uses.
+
+Tooling shipped (7 tools): `scan_authz`, `get_finding_context`, `list_rules`, `get_rule`, `suggest_rego`, `validate_rego`, `analyze_snippet`.
+
+Resources shipped (4 kinds): `prompt://system`, `prompt://schema`, `category://<slug>` × 7 categories, `rule://<id>` × every loaded rule.
+
+Tests:
+
+- 35 unit tests under `src/mcp/*` (jsonrpc framing, server dispatch, every tool, every resource).
+- 6 stdio integration tests in `tests/mcp_stdio_integration.rs` that spawn `zift mcp` as a subprocess and drive the protocol over real pipes — catches the class of regressions in-process tests can't (e.g. an accidental `println!` to stdout from anywhere on the call path).

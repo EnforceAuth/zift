@@ -10,6 +10,7 @@ pub mod config;
 pub mod deep;
 pub mod error;
 pub mod logging;
+pub mod mcp;
 pub mod output;
 pub mod rego;
 pub mod rules;
