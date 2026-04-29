@@ -327,9 +327,12 @@ Keep it short — small local models struggle with long prompts.
 - Skip `confidence: High` — already trusted; sending them just costs money.
 
 **Cold regions** (pull):
-- For each scanned source file (reuse `discovery::discover_files`), regex-match function/method names: `(?i)(authori[sz]e|authenticate|require|ensure|guard|protect|allow|deny|check|can|may|isAdmin|hasRole|hasPermission)` plus the language's function-keyword regex.
+- Walk all source files in the scan root via an extension-based discovery that maps to the full `Language` enum, **not** just structurally-supported languages. (`discovery::discover_files` today is restricted to TS/JS/Java; we either extend it or add a `discover_files_for_deep` variant that covers Python, Go, C#, Kotlin, Ruby, PHP file extensions too.)
+- Regex-match function/method names: `(?i)(authori[sz]e|authenticate|require|ensure|guard|protect|allow|deny|check|can|may|isAdmin|hasRole|hasPermission)` plus a per-language function-keyword anchor where known (`function`, `def`, `func`, `fun`, `public`, `private`, `fn`, `=> {`). Languages we don't have a function-keyword for fall back to auth-name-only matching — slightly noisier but still useful.
 - Each match becomes one `ColdRegion` candidate. Cap cold regions at 30% of `max_candidates` so escalations get priority.
 - De-duplicate cold regions against escalation file/line ranges.
+
+**Why ungated across all languages**: structural support is at v0.1 (TS/JS/Java); Python/Go are v0.2 roadmap, C#/Kotlin/Ruby/PHP are v0.3. Cold-region scanning is regex-based and grammar-free, so the semantic pass becomes a way to ship *useful* coverage of v0.2/v0.3 languages **before** their structural grammars land. Early adopters running `--deep` against a Python or Go codebase get value today.
 
 Determinism: candidates sorted by `(file, line_start)` so reruns produce identical input ordering, keeping test expectations stable.
 
@@ -340,6 +343,8 @@ Two-tier:
 **Fast path (default)**: line-window expansion. Read the file, take lines `[max(1, start-5), min(eof, end+15)]`. Cheap, no parsing. Plus the first 20 lines of the file as `imports` (verbatim — model parses).
 
 **Smart path** (used when fast-path snippet is < 8 lines after window): re-parse with tree-sitter (`parser::parse_source` already exists); walk up from the original node to the nearest `function_declaration | method_definition | arrow_function | function_expression | class_declaration`; expand to that node's range. Cap at 200 lines to bound prompt size.
+
+**Smart-path only available for languages with an integrated tree-sitter grammar** — today TS/JS/Java. Python/Go/etc. fall through to the line-window fast path until their grammars land in v0.2/v0.3. This is fine: the model can usually figure out function boundaries from a generous line window, especially with the file header (imports) included.
 
 Truncate the final snippet at `runtime.max_prompt_chars` (default 16000) to prevent foot-guns on huge functions.
 
@@ -424,14 +429,19 @@ Six commits, each compiling and passing tests:
 
 Each commit ~150-400 lines of diff, reviewable independently. PR title for the merge: `feat: implement --deep with OpenAI-compatible HTTP transport`.
 
-## 12. Risks & open questions
+## 12. Decisions & open issues
 
-1. **Tree-sitter Python/Go grammars not pulled in** today. Cold-region scanning is regex-based (language-agnostic), so semantic could technically run on Python files even though structural can't. **Decision needed**: gate cold-region candidate creation to languages where `parser::is_language_supported(lang)` is true. Avoids surprising "deep scans Python but structural ignores it" UX.
-2. **`response_format` not universally supported.** Ollama 0.5+, llama.cpp partial. Plan: send it; on parse failure, retry without it. Follow-up issue: capability detection at startup.
-3. **`OPENAI_API_KEY` fallback?** CLI already wires `ZIFT_API_KEY` env. **Decision needed**: do we *also* fall back to `OPENAI_API_KEY` for users re-using existing env? Lean **no** — explicit > implicit, and we're not OpenAI.
-4. **Concurrency default**. `max_concurrent: 4` is conservative. Local servers with one GPU may degrade with parallelism > 1. Document this; consider auto-detecting localhost in base_url and capping to 1. **Defer to PR 1 review.**
-5. **Determinism in CI**. With `temperature: 0.0` and a mock server, integration tests are deterministic. Real-LLM tests are not — don't add any.
-6. **`compute_finding_id` location**. Currently private in `scanner/matcher.rs`. Need to expose at `crate::types::compute_finding_id` or similar. Small refactor in commit 2.
+### Locked decisions
+
+1. **Cold-region scanning is ungated across languages.** Runs on every language in the `Language` enum, including ones without a tree-sitter grammar. Rationale in §6. Implementation note: `discovery::discover_files` today only emits TS/JS/Java extensions; deep mode either extends it or adds a `discover_files_for_deep` that covers all `Language` extensions.
+2. **No `OPENAI_API_KEY` fallback.** Only `ZIFT_API_KEY` is honored from the environment. Explicit > implicit; Zift is not OpenAI.
+3. **Localhost concurrency auto-cap.** When `base_url` host is `localhost` or `127.0.0.1` (or `::1`), `max_concurrent` defaults to 1. Local single-GPU servers serialize internally; parallelism > 1 just adds queueing. User can override via explicit `[deep] max_concurrent = N`.
+
+### Open issues
+
+1. **`response_format` not universally supported.** Ollama 0.5+, llama.cpp partial. Plan: send it; on parse failure, retry without it. Follow-up issue: capability detection at startup vs per-call.
+2. **Determinism in CI.** With `temperature: 0.0` and a mock server, integration tests are deterministic. Real-LLM tests are not — don't add any.
+3. **`compute_finding_id` location.** Currently private in `scanner/matcher.rs`. Need to expose at `crate::types::compute_finding_id` or similar. Small refactor in commit 2.
 
 ## 13. Critical files
 
