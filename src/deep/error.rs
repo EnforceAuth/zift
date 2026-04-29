@@ -6,7 +6,12 @@ use thiserror::Error;
 /// crate boundary.
 #[derive(Error, Debug)]
 pub enum DeepError {
-    #[error("missing config: {0}")]
+    /// Config-build-time failure. Covers both missing required fields
+    /// (e.g. `--base-url` not set) AND validation failures of values that
+    /// were supplied (e.g. `--base-url ftp://...`, mutually-exclusive
+    /// flags, NaN cost rates). The prefix avoids "missing" because the
+    /// variant fires for malformed-but-present input too.
+    #[error("deep config error: {0}")]
     Config(String),
 
     #[error("io error: {0}")]
