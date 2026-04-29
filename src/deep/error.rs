@@ -23,6 +23,7 @@ pub enum DeepError {
 
     #[error("request timed out after {secs}s")]
     Timeout { secs: u64 },
-    // Http(#[from] reqwest::Error) is added in commit 5 alongside the HTTP
-    // client, so we don't drag reqwest into the build before it's needed.
+
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
 }

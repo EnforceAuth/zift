@@ -1,18 +1,7 @@
-mod cli;
-mod commands;
-mod config;
-mod deep;
-mod error;
-mod logging;
-mod output;
-mod rego;
-mod rules;
-mod scanner;
-mod types;
-
 use clap::Parser;
 
-use cli::Cli;
+use zift::cli::Cli;
+use zift::{commands, config, error, logging};
 
 fn main() {
     let cli = Cli::parse();
