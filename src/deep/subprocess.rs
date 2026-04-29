@@ -55,17 +55,29 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// `Debug` is derived so `Result<Self, _>::unwrap_err` works in tests
-/// — the std `unwrap_err` requires `Self: Debug`. The struct only holds
-/// a command string and a timeout; nothing sensitive to redact.
-#[derive(Debug)]
+/// `Debug` is implemented manually so `Result<Self, _>::unwrap_err`
+/// works in tests (the std `unwrap_err` requires `Self: Debug`) without
+/// printing the raw command string. Users sometimes inline API keys or
+/// bearer tokens directly in `agent_cmd` (e.g.
+/// `claude -p --api-key sk-...`); a derived `Debug` would echo those
+/// secrets through any panic, `unwrap_err`, or `?`-bubbled error log.
 pub struct SubprocessClient {
     /// Shell command line, as supplied by the user. Passed to the
-    /// platform shell (`sh -c` on Unix, `cmd /C` on Windows).
+    /// platform shell (`sh -c` on Unix, `cmd /C` on Windows). Treated
+    /// as potentially-sensitive — never formatted into errors or logs.
     cmd: String,
     /// Wall-clock ceiling for one request. On expiry the child is
     /// killed and [`DeepError::Timeout`] is returned.
     timeout: Duration,
+}
+
+impl std::fmt::Debug for SubprocessClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubprocessClient")
+            .field("cmd", &"<redacted>")
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl SubprocessClient {
@@ -116,7 +128,14 @@ impl SubprocessClient {
                 // as `Config` so the orchestrator hard-fails the whole
                 // deep run rather than silently skipping every
                 // candidate — every spawn would fail identically.
-                DeepError::Config(format!("failed to spawn agent_cmd ({}): {e}", self.cmd))
+                //
+                // We deliberately do NOT include `self.cmd` in the
+                // message: users sometimes inline API keys/tokens in
+                // the command string, and this error can be logged or
+                // surfaced verbatim by callers. The OS error itself
+                // ("No such file or directory", "Permission denied")
+                // is enough to diagnose typo/missing-binary cases.
+                DeepError::Config(format!("failed to spawn agent_cmd: {e}"))
             })?;
 
         let mut stdin = child
@@ -215,11 +234,42 @@ impl SubprocessClient {
         if let Ok(Err(e)) = writer.join() {
             tracing::debug!("subprocess: writer error (likely EPIPE on early exit): {e}");
         }
-        let stdout_buf = stdout_rx
-            .recv()
-            .map_err(|_| DeepError::BadResponse("subprocess stdout reader disconnected".into()))?
-            .map_err(DeepError::Io)?;
-        let stderr_buf = stderr_rx.recv().unwrap_or_default();
+
+        // Bound stdout/stderr reads by the remaining wall-clock budget.
+        // `try_wait` above only watches the immediate shell child, so a
+        // wrapper like `sh -c 'sleep 30 & printf "{...}"'` makes the
+        // shell exit promptly while a backgrounded grandchild keeps
+        // our pipes open. An unbounded `recv()` would then hang past
+        // `agent_timeout_secs`. Using `recv_timeout(remaining)` keeps
+        // the wall-clock contract intact end-to-end.
+        let remaining = self.timeout.saturating_sub(start.elapsed());
+        let stdout_buf = match stdout_rx.recv_timeout(remaining) {
+            Ok(res) => res.map_err(DeepError::Io)?,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Same teardown as the in-loop timeout branch: kill the
+                // process group so any backgrounded descendant releases
+                // our pipes, then drain stderr briefly.
+                #[cfg(unix)]
+                kill_process_tree(&child);
+                #[cfg(not(unix))]
+                kill_process_tree(&mut child);
+                let _ = stderr_rx.recv_timeout(Duration::from_millis(500));
+                return Err(DeepError::Timeout {
+                    secs: self.timeout.as_secs(),
+                });
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(DeepError::BadResponse(
+                    "subprocess stdout reader disconnected".into(),
+                ));
+            }
+        };
+        // Stderr is best-effort: cap at a short timeout regardless of
+        // remaining budget so a stuck stderr pipe (rare, but possible
+        // with weird LD_PRELOAD shims) can't extend the request.
+        let stderr_buf = stderr_rx
+            .recv_timeout(Duration::from_millis(500))
+            .unwrap_or_default();
 
         if !exit.success() {
             // Surface as `BadResponse` so the orchestrator skips this

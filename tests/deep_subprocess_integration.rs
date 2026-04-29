@@ -171,9 +171,13 @@ fn timeout_skips_candidate_and_returns_promptly() {
 
 #[test]
 fn agent_receives_envelope_with_system_user_schema() {
-    // Round-trip: the agent reads stdin, asserts the envelope shape via
-    // jq, and emits canned JSON if shape is valid. If jq isn't on the
-    // box, fall back to a grep-based check.
+    // Round-trip the envelope through a temp file so we can parse and
+    // assert on its actual contents — `cat > file` captures the raw
+    // stdin without needing to modify the runtime API. After the run
+    // we read the file back, parse as JSON, and assert on the concrete
+    // fields rather than just key presence. This rules out the
+    // "everything-grepped-empty-merge passed silently" failure mode
+    // that the companion test below also guards.
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("auth.ts"),
@@ -181,28 +185,66 @@ fn agent_receives_envelope_with_system_user_schema() {
     )
     .unwrap();
 
-    // grep-based check: stdin must mention "system", "user", and "schema"
-    // as JSON keys (we can't fully validate JSON without jq, but key
-    // presence is enough proof the envelope arrived).
+    // Capture stdin to a tempfile, then emit canned findings JSON.
+    // Using `dir.path()` for the capture file keeps the test
+    // hermetic — the tempdir is cleaned up on drop.
+    let envelope_path = dir.path().join("captured-envelope.json");
     let canned = r#"{"findings":[]}"#;
     let cmd = format!(
-        "in=$(cat) && \
-         echo \"$in\" | grep -q '\"system\"' && \
-         echo \"$in\" | grep -q '\"user\"' && \
-         echo \"$in\" | grep -q '\"schema\"' && \
-         printf '%s' '{}'",
-        canned
+        "cat > '{}' && printf '%s' '{}'",
+        envelope_path.display(),
+        canned,
     );
 
     let runtime = subprocess_runtime(&cmd, 10);
-    // No structural input → empty merged result if the envelope shape
-    // is correct (canned response is empty). If the shell pipeline's
-    // grep checks fail, the whole pipeline exits nonzero → BadResponse
-    // → orchestrator skip → still empty merged, which would silently
-    // pass. So also assert via a separate test below that nonzero
-    // exits skip — and trust that pipeline here.
     let merged = zift::deep::run(Vec::new(), dir.path(), &runtime).unwrap();
+
+    // No structural input + empty canned findings → empty merge. This
+    // alone could pass via the orchestrator's skip path; the
+    // assertions below pin the envelope shape, and
+    // `agent_envelope_failure_path_is_observable` pins the failure
+    // path.
     assert!(merged.is_empty());
+
+    // Parse the captured envelope and assert on actual contents, not
+    // just key presence. This catches schema regressions (e.g.,
+    // accidentally renaming a field) that key-presence-via-grep would
+    // miss.
+    let raw = fs::read_to_string(&envelope_path)
+        .expect("agent_cmd should have written the envelope to the temp file");
+    let envelope: serde_json::Value =
+        serde_json::from_str(&raw).expect("envelope must be valid JSON");
+
+    // `system` and `user` are non-empty strings (rendered prompt
+    // template). The renderer never produces empty values for these
+    // — if it did, the deep-mode response wouldn't be useful.
+    let system = envelope
+        .get("system")
+        .and_then(|v| v.as_str())
+        .expect("envelope.system must be a string");
+    let user = envelope
+        .get("user")
+        .and_then(|v| v.as_str())
+        .expect("envelope.user must be a string");
+    assert!(!system.is_empty(), "envelope.system must be non-empty");
+    assert!(!user.is_empty(), "envelope.user must be non-empty");
+    // The user prompt should reference the candidate file path so the
+    // agent has enough context to produce findings keyed to a location.
+    assert!(
+        user.contains("auth.ts"),
+        "envelope.user must reference the candidate file (got: {user:?})",
+    );
+
+    // `schema` is the JSON Schema for the response — must be an
+    // object, not a string or null. Subprocess wrappers may forward
+    // this verbatim to a real LLM as `response_format.json_schema`.
+    let schema = envelope
+        .get("schema")
+        .expect("envelope.schema must be present");
+    assert!(
+        schema.is_object(),
+        "envelope.schema must be a JSON object (got: {schema:?})",
+    );
 }
 
 #[test]
