@@ -32,7 +32,7 @@ TypeScript, JavaScript, and Java (Python, Go, C#, Kotlin, Ruby, PHP planned).
 ### Cargo
 
 ```bash
-cargo install zift     # build from source
+cargo install --git https://github.com/EnforceAuth/zift
 ```
 
 ### Binary download
