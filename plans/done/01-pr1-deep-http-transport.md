@@ -463,7 +463,7 @@ Each commit ~150-400 lines of diff, reviewable independently. PR title for the m
 ## 14. Shipped
 
 **Branch**: `feat/deep-http`
-**Test count**: 199 passing (186 lib unit + 13 integration); clippy clean with `-D warnings`.
+**Test count**: 227 passing (210 lib unit + 17 integration); clippy clean with `-D warnings`.
 
 ### Commits (in order)
 

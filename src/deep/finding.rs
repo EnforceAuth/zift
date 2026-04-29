@@ -40,13 +40,17 @@ pub fn into_finding(
     seed: Option<&Finding>,
     scan_root: &Path,
 ) -> Finding {
+    // `reasoning` can mirror back scanned source or secrets the model saw in
+    // the snippet. The canonical `Finding` already drops it; persisting the
+    // verbatim text in tracing logs would undo that. Log only the length so
+    // operators can still spot suspicious blank/oversize reasoning chains.
     tracing::debug!(
         file = %candidate.file.display(),
         lines = format!("{}-{}", sem.line_start, sem.line_end),
         category = ?sem.category,
         confidence = ?sem.confidence,
         is_false_positive = sem.is_false_positive,
-        reasoning = %sem.reasoning,
+        reasoning_len = sem.reasoning.len(),
         "semantic finding"
     );
 

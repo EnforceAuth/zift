@@ -108,7 +108,16 @@ pub fn select_candidates(
     let mut escalations = build_escalations(structural, scan_root, runtime)?;
     escalations.truncate(runtime.max_candidates);
 
-    let cold_budget = (runtime.max_candidates as f32 * COLD_REGION_FRACTION) as usize;
+    // Use ceiling so small `max_candidates` (1-3) still leave at least one
+    // cold slot when no escalations consume the budget. Plain floor cast
+    // rounded `1 * 0.3 → 0`, which silently disabled cold scanning under
+    // tight caps and made `--deep` look like a no-op.
+    let cold_budget = if runtime.max_candidates == 0 {
+        0
+    } else {
+        let scaled = (runtime.max_candidates as f32 * COLD_REGION_FRACTION).ceil() as usize;
+        scaled.max(1)
+    };
     let cold_budget = cold_budget.min(runtime.max_candidates.saturating_sub(escalations.len()));
 
     let cold = if cold_budget == 0 {
@@ -542,10 +551,35 @@ mod tests {
         let mut runtime = rt();
         runtime.max_candidates = 5;
         let candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
-        // cold_budget = 5 * 0.3 → 1 candidate. Cap binds: we should get
-        // exactly 1, not 20 (the count of available cold-region hits).
-        assert_eq!(candidates.len(), 1);
+        // cold_budget = ceil(5 * 0.3) = 2 candidates. Cap binds: we should
+        // get exactly 2, not 20 (the count of available cold-region hits).
+        assert_eq!(candidates.len(), 2);
         assert!(candidates.len() <= runtime.max_candidates);
+    }
+
+    #[test]
+    fn small_max_candidates_still_yields_cold_slot() {
+        // Regression: floor cast turned `1 * 0.3 → 0`, so `--deep` with a
+        // tight cap silently disabled cold-region analysis. Ceiling + min(1)
+        // guarantees at least one cold slot when nothing is escalated.
+        let dir = tempdir().unwrap();
+        for i in 0..3 {
+            fs::write(
+                dir.path().join(format!("f{i}.py")),
+                "def is_admin():\n    pass\n",
+            )
+            .unwrap();
+        }
+        for cap in [1, 2, 3] {
+            let mut runtime = rt();
+            runtime.max_candidates = cap;
+            let candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
+            assert!(
+                !candidates.is_empty(),
+                "cap={cap} produced no candidates; cold-region budget rounded to zero?"
+            );
+            assert!(candidates.len() <= cap);
+        }
     }
 
     #[test]

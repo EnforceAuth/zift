@@ -17,6 +17,38 @@ use std::path::{Path, PathBuf};
 const LINES_BEFORE: usize = 5;
 const LINES_AFTER: usize = 15;
 const IMPORT_LINES: usize = 20;
+/// Per-import-line cap so a single 100KB minified line can't dominate the
+/// imports payload.
+const IMPORT_LINE_MAX_CHARS: usize = 200;
+/// Cap the imports payload at this fraction of `max_chars` so it can never
+/// crowd out the actual snippet. The remaining budget goes to snippet + marker.
+const IMPORTS_BUDGET_FRACTION: f32 = 0.25;
+const TRUNCATION_MARKER: &str = "\n// [truncated by zift deep-mode max_prompt_chars]";
+
+/// Build at most `IMPORT_LINES` import strings whose combined length stays
+/// within `total_budget`. Each line is also clamped to
+/// `IMPORT_LINE_MAX_CHARS` so a single huge line can't consume the whole
+/// budget. Truncation is rounded down to a UTF-8 char boundary so multi-byte
+/// chars never split.
+fn build_bounded_imports(lines: &[&str], total_budget: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(IMPORT_LINES.min(lines.len()));
+    let mut spent: usize = 0;
+    for raw in lines.iter().take(IMPORT_LINES) {
+        let mut line = (*raw).to_string();
+        if line.len() > IMPORT_LINE_MAX_CHARS {
+            let cut = line.floor_char_boundary(IMPORT_LINE_MAX_CHARS);
+            line.truncate(cut);
+        }
+        // +1 accounts for the "\n" separator the caller adds when joining.
+        let added = line.len() + 1;
+        if spent.saturating_add(added) > total_budget {
+            break;
+        }
+        spent += added;
+        out.push(line);
+    }
+    out
+}
 
 #[derive(Debug, Clone)]
 pub struct ExpandedContext {
@@ -31,12 +63,17 @@ pub struct ExpandedContext {
 /// Expand a structural finding's snippet to include surrounding lines and
 /// file-level imports. `finding.file` is interpreted as relative to
 /// `scan_root`.
+///
+/// Verifies that the resolved file path stays inside `scan_root` after
+/// canonicalization — defense against absolute paths, `..` traversal, or
+/// symlinks pointing outside the scanned tree leaking arbitrary local
+/// files into deep-mode prompts.
 pub fn expand_finding(
     finding: &Finding,
     scan_root: &Path,
     max_chars: usize,
 ) -> Result<ExpandedContext, DeepError> {
-    let abs_path = scan_root.join(&finding.file);
+    let abs_path = ensure_within_scan_root(scan_root, &finding.file)?;
     expand_inner(
         &abs_path,
         finding.file.clone(),
@@ -45,6 +82,25 @@ pub fn expand_finding(
         finding.line_end,
         max_chars,
     )
+}
+
+/// Resolve `scan_root.join(relative)` and verify the canonical result is a
+/// descendant of canonical `scan_root`. Returns the canonical absolute path
+/// on success; [`DeepError::Config`] on traversal attempts (so the error is
+/// distinguishable from genuine I/O failures and the user-facing message
+/// names the offending path).
+fn ensure_within_scan_root(scan_root: &Path, relative: &Path) -> Result<PathBuf, DeepError> {
+    let candidate = scan_root.join(relative);
+    let canonical_root = scan_root.canonicalize()?;
+    let canonical_path = candidate.canonicalize()?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(DeepError::Config(format!(
+            "finding path {} resolves outside scan_root {}",
+            canonical_path.display(),
+            canonical_root.display(),
+        )));
+    }
+    Ok(canonical_path)
 }
 
 /// Expand an arbitrary file region (used for `ColdRegion` candidates that
@@ -99,25 +155,32 @@ fn expand_inner(
     let window_start = start_1based.saturating_sub(LINES_BEFORE).max(1);
     let window_end = (end_1based + LINES_AFTER).min(total);
 
+    // Build imports first so we know how much budget they consume against
+    // `max_chars`. Cap each line at `IMPORT_LINE_MAX_CHARS` and the total at
+    // `IMPORTS_BUDGET_FRACTION * max_chars` so a file full of giant generated
+    // lines (minified bundles, codegen) can't blow the prompt size budget.
+    let imports_budget = (max_chars as f32 * IMPORTS_BUDGET_FRACTION) as usize;
+    let imports = build_bounded_imports(&lines, imports_budget);
+    let imports_len: usize = imports.iter().map(|s| s.len()).sum::<usize>() + imports.len(); // +1 per for "\n" join
+
     // 0-based indexing into `lines`.
     let snippet_slice = &lines[(window_start - 1)..window_end];
     let mut snippet = snippet_slice.join("\n");
 
     // Truncate at max_chars (favors keeping the head — the part most likely
     // to contain the actual auth check; trailing context is more discardable).
+    // Reserve space for both the truncation marker and the imports payload so
+    // the combined `snippet + imports + marker` cannot exceed `max_chars`.
     // Round down to a UTF-8 char boundary to avoid `String::truncate` panics
     // on multi-byte chars (e.g. Unicode comments/identifiers in source).
-    if snippet.len() > max_chars {
-        let cut = snippet.floor_char_boundary(max_chars);
+    let snippet_budget = max_chars
+        .saturating_sub(TRUNCATION_MARKER.len())
+        .saturating_sub(imports_len);
+    if snippet.len() > snippet_budget {
+        let cut = snippet.floor_char_boundary(snippet_budget);
         snippet.truncate(cut);
-        snippet.push_str("\n// [truncated by zift deep-mode max_prompt_chars]");
+        snippet.push_str(TRUNCATION_MARKER);
     }
-
-    let imports: Vec<String> = lines
-        .iter()
-        .take(IMPORT_LINES)
-        .map(|s| (*s).to_string())
-        .collect();
 
     Ok(ExpandedContext {
         file_relative,
@@ -261,8 +324,65 @@ mod tests {
         let finding = make_finding(PathBuf::from("a.ts"), 100, 100);
 
         let ctx = expand_finding(&finding, dir.path(), 500).unwrap();
-        assert!(ctx.snippet.len() < 600); // 500 + tail marker
+        // snippet + imports + marker is the full prompt-payload budget.
+        let imports_len: usize =
+            ctx.imports.iter().map(|s| s.len()).sum::<usize>() + ctx.imports.len();
+        assert!(
+            ctx.snippet.len() + imports_len <= 500,
+            "snippet({}) + imports({}) exceeded max_chars=500",
+            ctx.snippet.len(),
+            imports_len,
+        );
         assert!(ctx.snippet.contains("[truncated"));
+    }
+
+    #[test]
+    fn combined_budget_includes_marker_and_imports() {
+        // Snippet truncation must reserve room for the marker AND the
+        // imports payload — otherwise concatenated payload busts max_chars.
+        let dir = tempdir().unwrap();
+        // Long imports + long snippet, both pressuring the budget.
+        let mut content = String::new();
+        for i in 1..=20 {
+            content.push_str(&format!("import line {i} ").repeat(30));
+            content.push('\n');
+        }
+        content.push_str(&"x".repeat(5_000));
+        write_file(dir.path(), "a.ts", &content);
+        let finding = make_finding(PathBuf::from("a.ts"), 21, 21);
+
+        let max = 1_000;
+        let ctx = expand_finding(&finding, dir.path(), max).unwrap();
+        let imports_len: usize =
+            ctx.imports.iter().map(|s| s.len()).sum::<usize>() + ctx.imports.len();
+        assert!(
+            ctx.snippet.len() + imports_len <= max,
+            "snippet({}) + imports({}) > max_chars={max}",
+            ctx.snippet.len(),
+            imports_len,
+        );
+    }
+
+    #[test]
+    fn long_imports_clamped_per_line() {
+        // A single 100KB minified line in the imports region must not
+        // explode the prompt size.
+        let dir = tempdir().unwrap();
+        let mut content = String::new();
+        content.push_str(&"x".repeat(100_000));
+        content.push('\n');
+        content.push_str(&numbered_lines(50));
+        write_file(dir.path(), "a.ts", &content);
+        let finding = make_finding(PathBuf::from("a.ts"), 30, 30);
+
+        let ctx = expand_finding(&finding, dir.path(), 16_000).unwrap();
+        for (i, imp) in ctx.imports.iter().enumerate() {
+            assert!(
+                imp.len() <= IMPORT_LINE_MAX_CHARS,
+                "import[{i}] length {} > {IMPORT_LINE_MAX_CHARS}",
+                imp.len(),
+            );
+        }
     }
 
     #[test]
@@ -282,6 +402,42 @@ mod tests {
         // No panic — boundary-rounded truncate keeps us valid.
         let ctx = expand_finding(&finding, dir.path(), 200).unwrap();
         assert!(ctx.snippet.contains("[truncated"));
+    }
+
+    #[test]
+    fn expand_finding_rejects_dotdot_traversal() {
+        // Layout: scan_root/inner/, with secret outside scan_root that the
+        // attacker tries to read via `../secret.txt`.
+        let dir = tempdir().unwrap();
+        let scan_root = dir.path().join("inner");
+        fs::create_dir_all(&scan_root).unwrap();
+        write_file(dir.path(), "secret.txt", "leaked");
+        // Need a file inside scan_root for canonicalize to succeed at all,
+        // otherwise the test fails for the wrong reason.
+        write_file(&scan_root, "ok.ts", "x");
+
+        let finding = make_finding(PathBuf::from("../secret.txt"), 1, 1);
+        let err = expand_finding(&finding, &scan_root, 16_000).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("outside scan_root")),
+            "expected Config error, got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn expand_finding_rejects_absolute_path_outside_scan_root() {
+        let dir = tempdir().unwrap();
+        let scan_root = dir.path().join("inner");
+        fs::create_dir_all(&scan_root).unwrap();
+        let outside = write_file(dir.path(), "outside.ts", "x");
+        write_file(&scan_root, "ok.ts", "x");
+
+        let finding = make_finding(outside.clone(), 1, 1);
+        let err = expand_finding(&finding, &scan_root, 16_000).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("outside scan_root")),
+            "expected Config error, got: {err:?}",
+        );
     }
 
     #[test]

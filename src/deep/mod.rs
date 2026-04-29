@@ -31,8 +31,12 @@ use std::path::Path;
 ///
 /// Errors:
 /// - `DeepError::Config`: missing config or HTTP client construction failure (hard fail)
-/// - `DeepError::CostExceeded`: cap reached mid-run; returns immediately (hard fail)
 /// - `DeepError::Io`: filesystem error reading source files (hard fail)
+///
+/// `DeepError::CostExceeded` is **not** propagated as an error — when the cap
+/// trips mid-run we stop dispatching new candidates but still merge the
+/// already-collected semantic findings back into the structural set, so the
+/// user keeps the work paid for. The cap breach is logged at `warn`.
 ///
 /// Per-candidate `Http`, `BadResponse`, and `Timeout` errors are logged
 /// and the candidate is skipped — best-effort enrichment, not all-or-nothing.
@@ -104,11 +108,38 @@ pub fn run(
                 );
                 continue;
             }
-            // Config / CostExceeded / Io are hard fails — propagate.
+            // Config / Io are hard fails — propagate.
+            // (CostExceeded comes from cost_tracker.record below, not from
+            // analyze, so it's handled separately to preserve in-flight findings.)
             Err(other) => return Err(other),
         };
 
-        cost_tracker.record(&response.usage)?;
+        // Cap breach stops new dispatch, but the findings already merged in
+        // earlier iterations (and the ones in this very response) are still
+        // worth surfacing — the user paid for them. Break out of the loop
+        // instead of returning the error and discarding the work.
+        if let Err(DeepError::CostExceeded { spent }) = cost_tracker.record(&response.usage) {
+            tracing::warn!(
+                "deep: cost ceiling reached after ${spent:.4} USD — stopping new requests; \
+                 returning {} semantic finding(s) collected so far",
+                semantic_findings.len() + response.findings.len(),
+            );
+            // Drain the in-flight response too — same candidate window.
+            for sem in response.findings {
+                if sem.is_false_positive {
+                    if let Some(seed_id) = &candidate.original_finding_id {
+                        false_positive_seeds.insert(seed_id.clone());
+                    }
+                    continue;
+                }
+                let Some(sem) = clamp_to_candidate(sem, candidate) else {
+                    continue;
+                };
+                let f = finding::into_finding(sem, candidate, seed, scan_root);
+                semantic_findings.push(f);
+            }
+            break;
+        }
 
         for sem in response.findings {
             if sem.is_false_positive {

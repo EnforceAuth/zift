@@ -552,6 +552,66 @@ fn deep_run_emits_findings_in_deterministic_order() {
 }
 
 #[test]
+fn deep_run_preserves_findings_when_cost_cap_trips_mid_run() {
+    // Two cold-region candidates. Tight cap + high rates → first response
+    // tips us over the cap. The orchestrator should keep that first
+    // semantic finding and the surviving structural set (none here),
+    // not propagate CostExceeded as an error.
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("a.ts"),
+        "function isAdmin(u) { return u.role === 'admin'; }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("b.ts"),
+        "function hasPermission(u) { return u.perms.includes('x'); }\n",
+    )
+    .unwrap();
+
+    let mut server = Server::new();
+    let _m = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_body(ok_response(
+            &json!({
+                "findings": [{
+                    "line_start": 1,
+                    "line_end": 1,
+                    "category": "rbac",
+                    "confidence": "high",
+                    "description": "role check",
+                    "reasoning": "isAdmin role comparison",
+                    "is_false_positive": false
+                }]
+            })
+            .to_string(),
+            10_000, // huge usage so the very first record() trips the cap
+            5_000,
+        ))
+        .expect_at_least(1)
+        .create();
+
+    let mut runtime = runtime_for(&server.url());
+    runtime.max_cost_usd = Some(0.01);
+    runtime.cost_per_1k_input = Some(1.00); // 10k input @ $1/k = $10 → way over $0.01 cap
+    runtime.cost_per_1k_output = Some(1.00);
+
+    // Should NOT return Err(CostExceeded) — should return what was collected.
+    let merged = zift::deep::run(Vec::new(), dir.path(), &runtime)
+        .expect("cap breach must not propagate as error");
+    let semantic: Vec<&Finding> = merged
+        .iter()
+        .filter(|f| f.pass == ScanPass::Semantic)
+        .collect();
+    assert_eq!(
+        semantic.len(),
+        1,
+        "expected to keep the in-flight semantic finding, got: {merged:?}",
+    );
+}
+
+#[test]
 fn deep_run_returns_structural_unchanged_when_no_candidates() {
     let dir = tempdir().unwrap();
     // No source files; no auth-y content; no structural findings.

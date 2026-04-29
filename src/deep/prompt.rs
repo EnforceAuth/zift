@@ -101,12 +101,19 @@ pub fn render(inputs: &PromptInputs) -> RenderedPrompt {
     user.push_str("\n```");
     user.push_str(language_fence(inputs.candidate.language));
     user.push('\n');
-    user.push_str(&inputs.candidate.source_snippet);
-    if !inputs.candidate.source_snippet.ends_with('\n') {
-        user.push('\n');
-    }
+    // Prefix every snippet line with its absolute file line number so the
+    // model emits `line_start`/`line_end` in the same coordinate system the
+    // rest of the pipeline (and `finding::into_finding`) interprets them in.
+    // Without this, the model counts from 1 inside the snippet and findings
+    // get mapped to wrong absolute file lines whenever the snippet doesn't
+    // start at line 1.
+    push_numbered_snippet(
+        &mut user,
+        &inputs.candidate.source_snippet,
+        inputs.candidate.line_start,
+    );
     user.push_str(
-        "```\n\nIdentify all authorization decisions in the snippet. Use line numbers from the snippet.",
+        "```\n\nIdentify all authorization decisions in the snippet. Use the absolute file line numbers shown in the `NNNN: ` prefix on each line — not snippet-relative offsets.",
     );
 
     RenderedPrompt {
@@ -262,6 +269,24 @@ fn detect_frameworks(imports: &[String], language: Language) -> Vec<&'static Fra
         .collect()
 }
 
+/// Append `snippet` to `out`, prefixing each line with its absolute file line
+/// number left-padded to 4 digits + ": ". Always ends with `\n` so the
+/// caller's closing fence lands on its own line. Empty snippet → just `\n`.
+fn push_numbered_snippet(out: &mut String, snippet: &str, first_line: usize) {
+    if snippet.is_empty() {
+        out.push('\n');
+        return;
+    }
+    // `lines()` drops the trailing newline (if any); we add one per emitted
+    // line below so the snippet always ends with a newline before the fence.
+    for (i, line) in snippet.lines().enumerate() {
+        let n = first_line + i;
+        out.push_str(&format!("{n:>4}: "));
+        out.push_str(line);
+        out.push('\n');
+    }
+}
+
 fn language_fence(lang: Language) -> &'static str {
     match lang {
         Language::TypeScript => "typescript",
@@ -394,6 +419,33 @@ mod tests {
         assert!(rendered.user.contains("Language: typescript"));
         assert!(rendered.user.contains("Lines: 10-25"));
         assert!(rendered.user.contains("```typescript"));
+    }
+
+    #[test]
+    fn render_prefixes_snippet_lines_with_absolute_file_numbers() {
+        // Candidate window starts at line 10 — every snippet line should
+        // be prefixed with `10:`, `11:`, etc., not `1:`, `2:`. Without the
+        // prefix the model emits snippet-relative offsets and findings
+        // get mapped to wrong absolute lines.
+        let cand = candidate_with_imports(Language::TypeScript, vec![]);
+        let inputs = PromptInputs {
+            candidate: &cand,
+            structural_finding: None,
+        };
+        let rendered = render(&inputs);
+        // First line of candidate.source_snippet should appear with line 10
+        // prefix. Padding is 4 chars right-aligned.
+        assert!(
+            rendered.user.contains("  10: function isAdmin"),
+            "expected absolute-line prefix '  10:', got user prompt:\n{}",
+            rendered.user,
+        );
+        // The system prompt must instruct the model to use the prefixed
+        // numbers, not snippet offsets.
+        assert!(
+            rendered.user.contains("absolute file line numbers"),
+            "user prompt missing line-number guidance",
+        );
     }
 
     #[test]
