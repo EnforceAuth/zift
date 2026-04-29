@@ -528,17 +528,16 @@ mod tests {
     #[test]
     fn max_candidates_cap_respected() {
         let dir = tempdir().unwrap();
-        // 20 files, each with one auth-y name. Use `is_admin()` (rather than
-        // `is_admin_{i}`) — the regex's trailing \b doesn't fire after
-        // `_<digit>` because `_` is a word char.
+        // 20 files, each with one auth-y name. Use `is_admin()` (not
+        // `is_admin_{i}`) because the regex's trailing `\b` doesn't fire
+        // after `_<digit>` (`_` is a word char). Suffix the *file name*
+        // to keep them unique without changing the auth-y token.
         for i in 0..20 {
             fs::write(
                 dir.path().join(format!("f{i}.py")),
                 "def is_admin():\n    pass\n",
             )
             .unwrap();
-            // Use the suffix only to vary file names, not the auth-y token.
-            let _ = i;
         }
         let mut runtime = rt();
         runtime.max_candidates = 5;

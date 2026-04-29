@@ -12,7 +12,7 @@ Out of scope: HTTP-transport MCP (stdio is the universal default), authenticatio
 
 ## 2. Subcommand
 
-```
+```bash
 zift mcp [--rules-dir DIR] [--scan-root DIR]
 ```
 

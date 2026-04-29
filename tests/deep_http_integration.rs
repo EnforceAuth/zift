@@ -218,6 +218,65 @@ fn json_wrapped_in_markdown_fence_is_accepted() {
 }
 
 #[test]
+fn http_400_with_response_format_triggers_retry() {
+    // First attempt (with response_format) returns 400 — typical of a server
+    // that hard-fails unsupported structured output rather than ignoring it.
+    // Second attempt (without response_format) returns valid findings.
+    let mut server = Server::new();
+
+    let _bad = server
+        .mock("POST", "/chat/completions")
+        .match_body(mockito::Matcher::PartialJsonString(
+            r#"{"response_format": {}}"#.into(),
+        ))
+        .with_status(400)
+        .with_body(r#"{"error": "response_format unsupported"}"#)
+        .create();
+
+    let _good = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_body(ok_response(&findings_content_one(), 60, 30))
+        .create();
+
+    let runtime = runtime_for(&server.url());
+    let client = OpenAiCompatibleClient::new(&runtime).unwrap();
+    let prompt = render(&PromptInputs {
+        candidate: &synth_candidate(),
+        structural_finding: None,
+    });
+
+    let response = client.analyze(&prompt).unwrap();
+    assert_eq!(response.findings.len(), 1);
+}
+
+#[test]
+fn http_400_without_response_format_surfaces_as_config_error() {
+    // After retry, 400/422 should fall through to Config — no infinite loop.
+    let mut server = Server::new();
+    let m = server
+        .mock("POST", "/chat/completions")
+        .with_status(400)
+        .with_body("bad request")
+        .expect_at_least(2)
+        .create();
+
+    let runtime = runtime_for(&server.url());
+    let client = OpenAiCompatibleClient::new(&runtime).unwrap();
+    let prompt = render(&PromptInputs {
+        candidate: &synth_candidate(),
+        structural_finding: None,
+    });
+
+    let err = client.analyze(&prompt).unwrap_err();
+    assert!(
+        matches!(err, DeepError::Config(_)),
+        "expected Config after retry, got: {err:?}"
+    );
+    m.assert();
+}
+
+#[test]
 fn http_401_surfaces_as_config_error() {
     let mut server = Server::new();
     let m = server

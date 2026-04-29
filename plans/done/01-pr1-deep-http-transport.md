@@ -6,7 +6,7 @@ Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). This PR mak
 
 End-to-end working `--deep` flag using a single HTTP client that speaks the OpenAI `/v1/chat/completions` shape. After this PR:
 
-```
+```bash
 zift scan ./repo --deep \
   --base-url http://localhost:11434/v1 \
   --model qwen2.5-coder:14b \

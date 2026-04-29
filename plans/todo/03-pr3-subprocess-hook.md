@@ -17,7 +17,7 @@ Out of scope: process pooling, IPC beyond stdin/stdout, environment-variable inj
 
 ## 2. CLI surface
 
-```
+```bash
 zift scan ./repo --deep --agent-cmd "claude -p --output-format json"
 ```
 

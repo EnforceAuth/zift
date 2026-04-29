@@ -117,11 +117,23 @@ impl OpenAiCompatibleClient {
         };
         let status = response.status();
         if !status.is_success() {
-            // Auth errors get distinct surfacing; everything else is generic.
-            if status.as_u16() == 401 || status.as_u16() == 403 {
+            let code = status.as_u16();
+            // Auth errors get distinct surfacing.
+            if code == 401 || code == 403 {
                 return Err(DeepError::Config(format!(
                     "auth rejected by {} ({})",
                     self.base_url, status
+                )));
+            }
+            // 400/422 on a request that included `response_format` is the
+            // signature of a backend that hard-fails unsupported structured
+            // output (vs. the more common case of silently ignoring it).
+            // Surface as `BadResponse` so `analyze()`'s retry path strips
+            // the schema and tries again. On the no-schema retry, this same
+            // status code falls through to the generic Config error below.
+            if with_response_format && (code == 400 || code == 422) {
+                return Err(DeepError::BadResponse(format!(
+                    "server rejected response_format ({status}); retrying without schema"
                 )));
             }
             return Err(DeepError::Config(format!(
@@ -141,14 +153,21 @@ impl OpenAiCompatibleClient {
             .and_then(|c| c.message.content)
             .ok_or_else(|| DeepError::BadResponse("response had no message content".into()))?;
 
-        // Try to parse the message content as our findings envelope.
-        // Some servers wrap JSON in markdown fences; strip those if present.
+        // Parse the message content as our findings envelope. Strip any
+        // markdown fence first (some local models add them despite the
+        // system prompt). Keep the returned error generic — the model may
+        // have mirrored prompt content back, and we don't want user source
+        // code (or other sensitive content) embedded in every BadResponse
+        // error string. The truncated payload sample is emitted at debug
+        // level instead, behind the operator's tracing filter.
         let content_clean = strip_markdown_fence(&content);
         let parsed: FindingsEnvelope = serde_json::from_str(content_clean).map_err(|e| {
-            DeepError::BadResponse(format!(
-                "content was not valid findings JSON: {e}; got: {}",
-                truncate_for_log(&content)
-            ))
+            tracing::debug!(
+                error = %e,
+                preview = %truncate_for_log(&content),
+                "deep: model response was not valid findings JSON",
+            );
+            DeepError::BadResponse("content was not valid findings JSON".into())
         })?;
 
         let usage = TokenUsage {

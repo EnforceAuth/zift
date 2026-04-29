@@ -27,7 +27,7 @@ User picks explicitly via `[deep] mode = "mcp" | "http" | "subprocess"`. No prov
 
 We build PR 1 first even though MCP (PR 2) is the strategically headline answer. Reason: MCP needs the prompt library, candidate selection, context expansion, and structured-output schema *anyway*. Building HTTP first forces those primitives into a clean shape; the MCP server in PR 2 is then a thin transport layer over them. The reverse order means writing the primitives for MCP, then refactoring when HTTP shows up.
 
-```
+```text
                                ┌─────────────────────────┐
                                │     src/deep/           │
                                │  candidate · context    │

@@ -117,6 +117,14 @@ pub fn run(
                 }
                 continue;
             }
+            // Validate model-reported ranges against the candidate window.
+            // Even with a strict JSON schema, the model can return reversed
+            // ranges or numbers outside the analyzed snippet — we don't
+            // want those flowing into merge/sort/snippet extraction as
+            // bogus findings.
+            let Some(sem) = clamp_to_candidate(sem, candidate) else {
+                continue;
+            };
             let f = finding::into_finding(sem, candidate, seed, scan_root);
             semantic_findings.push(f);
         }
@@ -147,4 +155,123 @@ pub fn run(
             .then(a.line_end.cmp(&b.line_end))
     });
     Ok(merged)
+}
+
+/// Clamp a [`SemanticFinding`]'s line range to the candidate's analyzed
+/// window. Drops the finding entirely when:
+///
+/// - `line_start == 0` (schema requires `>= 1`, but be defensive),
+/// - `line_end < line_start`,
+/// - the entire range falls outside the candidate's window.
+///
+/// Otherwise pulls the range into `[candidate.line_start, candidate.line_end]`,
+/// logs the clamp, and returns the normalized finding.
+fn clamp_to_candidate(
+    sem: SemanticFinding,
+    candidate: &candidate::Candidate,
+) -> Option<SemanticFinding> {
+    if sem.line_start == 0 || sem.line_end < sem.line_start {
+        tracing::warn!(
+            file = %candidate.file.display(),
+            reported = format!("{}-{}", sem.line_start, sem.line_end),
+            "deep: dropping finding with invalid line range",
+        );
+        return None;
+    }
+    // Whole range outside the candidate window? Drop.
+    if sem.line_end < candidate.line_start || sem.line_start > candidate.line_end {
+        tracing::warn!(
+            file = %candidate.file.display(),
+            reported = format!("{}-{}", sem.line_start, sem.line_end),
+            window = format!("{}-{}", candidate.line_start, candidate.line_end),
+            "deep: dropping finding outside candidate window",
+        );
+        return None;
+    }
+    let line_start = sem.line_start.max(candidate.line_start);
+    let line_end = sem.line_end.min(candidate.line_end).max(line_start);
+    if line_start != sem.line_start || line_end != sem.line_end {
+        tracing::debug!(
+            file = %candidate.file.display(),
+            reported = format!("{}-{}", sem.line_start, sem.line_end),
+            clamped = format!("{line_start}-{line_end}"),
+            "deep: clamped finding range to candidate window",
+        );
+    }
+    Some(SemanticFinding {
+        line_start,
+        line_end,
+        ..sem
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deep::candidate::CandidateKind;
+    use crate::types::{AuthCategory, Confidence, Language};
+    use std::path::PathBuf;
+
+    fn cand(line_start: usize, line_end: usize) -> candidate::Candidate {
+        candidate::Candidate {
+            kind: CandidateKind::ColdRegion,
+            file: PathBuf::from("a.ts"),
+            language: Language::TypeScript,
+            line_start,
+            line_end,
+            source_snippet: String::new(),
+            imports: Vec::new(),
+            original_finding_id: None,
+            seed_category: None,
+        }
+    }
+
+    fn sem(line_start: usize, line_end: usize) -> SemanticFinding {
+        SemanticFinding {
+            line_start,
+            line_end,
+            category: AuthCategory::Rbac,
+            confidence: Confidence::High,
+            description: "x".into(),
+            reasoning: "y".into(),
+            is_false_positive: false,
+        }
+    }
+
+    #[test]
+    fn clamp_drops_reversed_range() {
+        assert!(clamp_to_candidate(sem(20, 10), &cand(1, 100)).is_none());
+    }
+
+    #[test]
+    fn clamp_drops_zero_line_start() {
+        assert!(clamp_to_candidate(sem(0, 5), &cand(1, 100)).is_none());
+    }
+
+    #[test]
+    fn clamp_drops_range_entirely_outside_window() {
+        assert!(clamp_to_candidate(sem(200, 250), &cand(1, 100)).is_none());
+        assert!(clamp_to_candidate(sem(1, 5), &cand(50, 100)).is_none());
+    }
+
+    #[test]
+    fn clamp_pulls_overshooting_range_into_window() {
+        let out = clamp_to_candidate(sem(50, 200), &cand(40, 80)).unwrap();
+        assert_eq!(out.line_start, 50);
+        assert_eq!(out.line_end, 80);
+    }
+
+    #[test]
+    fn clamp_pulls_undershooting_range_into_window() {
+        let out = clamp_to_candidate(sem(5, 60), &cand(40, 80)).unwrap();
+        assert_eq!(out.line_start, 40);
+        assert_eq!(out.line_end, 60);
+    }
+
+    #[test]
+    fn clamp_passes_through_in_window_range() {
+        let out = clamp_to_candidate(sem(50, 60), &cand(40, 80)).unwrap();
+        assert_eq!(out.line_start, 50);
+        assert_eq!(out.line_end, 60);
+    }
 }

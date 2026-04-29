@@ -13,7 +13,11 @@ use crate::deep::error::DeepError;
 use crate::types::Language;
 
 /// Resolved runtime configuration for the deep (semantic) scan.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is implemented manually to redact `api_key` — derive(Debug) would
+/// allow the secret to leak through any `tracing::debug!("{runtime:?}")`
+/// call site (none today, but defense in depth).
+#[derive(Clone)]
 pub struct DeepRuntime {
     pub base_url: String,
     pub model: String,
@@ -33,6 +37,40 @@ pub struct DeepRuntime {
     /// Language filter from `--language`. Empty == all languages. Forwarded
     /// to cold-region file discovery.
     pub language_filter: Vec<Language>,
+}
+
+impl std::fmt::Debug for DeepRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeepRuntime")
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("max_cost_usd", &self.max_cost_usd)
+            .field("cost_per_1k_input", &self.cost_per_1k_input)
+            .field("cost_per_1k_output", &self.cost_per_1k_output)
+            .field("request_timeout_secs", &self.request_timeout_secs)
+            .field("max_candidates", &self.max_candidates)
+            .field("max_concurrent", &self.max_concurrent)
+            .field("temperature", &self.temperature)
+            .field("max_prompt_chars", &self.max_prompt_chars)
+            .field("excludes", &self.excludes)
+            .field("language_filter", &self.language_filter)
+            .finish()
+    }
+}
+
+/// Reject NaN, infinite, or negative values in cost-related config so
+/// downstream spend tracking cannot receive nonsense (e.g. `f64::NAN`
+/// silently propagates through arithmetic and breaks the cap).
+fn validate_non_negative_finite(name: &str, v: Option<f64>) -> Result<Option<f64>, DeepError> {
+    if let Some(x) = v
+        && (!x.is_finite() || x < 0.0)
+    {
+        return Err(DeepError::Config(format!(
+            "{name} must be a non-negative finite number (got {x})"
+        )));
+    }
+    Ok(v)
 }
 
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
@@ -87,17 +125,20 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
         })?;
 
     let api_key = args.api_key.clone().filter(|s| !s.is_empty());
-    let max_cost_usd = args.max_cost.or(config.deep.max_cost);
-    let cost_per_1k_input = config.deep.cost_per_1k_input;
-    let cost_per_1k_output = config.deep.cost_per_1k_output;
+    let max_cost_usd =
+        validate_non_negative_finite("max_cost", args.max_cost.or(config.deep.max_cost))?;
+    let cost_per_1k_input =
+        validate_non_negative_finite("cost_per_1k_input", config.deep.cost_per_1k_input)?;
+    let cost_per_1k_output =
+        validate_non_negative_finite("cost_per_1k_output", config.deep.cost_per_1k_output)?;
 
     // Warn if a cap is set but no rates are configured — the tracker
     // short-circuits when both rates are 0, so the cap would never bind.
     let no_rates =
         cost_per_1k_input.unwrap_or(0.0) == 0.0 && cost_per_1k_output.unwrap_or(0.0) == 0.0;
     if max_cost_usd.is_some() && no_rates {
-        eprintln!(
-            "warning: --max-cost is set but [deep] cost_per_1k_input / \
+        tracing::warn!(
+            "--max-cost is set but [deep] cost_per_1k_input / \
              cost_per_1k_output are not configured in .zift.toml — spend \
              tracking is a no-op without rates"
         );
@@ -198,6 +239,57 @@ mod tests {
         });
         let runtime = build(&args, &config).unwrap();
         assert_eq!(runtime.max_cost_usd, Some(0.5));
+    }
+
+    #[test]
+    fn negative_cost_field_rejected() {
+        let args = args_with(Some("http://x/v1"), Some("m"), None, Some(-1.0));
+        let err = build(&args, &ZiftConfig::default()).unwrap_err();
+        assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn nan_cost_rate_rejected() {
+        let args = args_with(Some("http://x/v1"), Some("m"), None, None);
+        let config = config_with(DeepConfig {
+            cost_per_1k_input: Some(f64::NAN),
+            ..DeepConfig::default()
+        });
+        let err = build(&args, &config).unwrap_err();
+        assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn infinite_cost_rate_rejected() {
+        let args = args_with(Some("http://x/v1"), Some("m"), None, None);
+        let config = config_with(DeepConfig {
+            cost_per_1k_output: Some(f64::INFINITY),
+            ..DeepConfig::default()
+        });
+        let err = build(&args, &config).unwrap_err();
+        assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn debug_format_redacts_api_key() {
+        let runtime = DeepRuntime {
+            base_url: "http://x/v1".into(),
+            model: "m".into(),
+            api_key: Some("sk-supersecret".into()),
+            max_cost_usd: None,
+            cost_per_1k_input: None,
+            cost_per_1k_output: None,
+            request_timeout_secs: 60,
+            max_candidates: 50,
+            max_concurrent: 1,
+            temperature: 0.0,
+            max_prompt_chars: 16_000,
+            excludes: Vec::new(),
+            language_filter: Vec::new(),
+        };
+        let formatted = format!("{runtime:?}");
+        assert!(!formatted.contains("sk-supersecret"));
+        assert!(formatted.contains("<redacted>"));
     }
 
     #[test]

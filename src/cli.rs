@@ -90,18 +90,22 @@ pub struct ScanArgs {
     ///
     /// Examples: http://localhost:11434/v1 (Ollama), http://localhost:1234/v1 (LM Studio),
     /// https://api.openai.com/v1, https://openrouter.ai/api/v1
-    #[arg(long)]
+    #[arg(long, requires = "deep")]
     pub base_url: Option<String>,
 
     /// Model name to send to the agent endpoint (requires --deep)
-    #[arg(long)]
+    #[arg(long, requires = "deep")]
     pub model: Option<String>,
 
     /// Maximum spend limit in USD (requires --deep)
-    #[arg(long)]
+    #[arg(long, requires = "deep")]
     pub max_cost: Option<f64>,
 
     /// API key for the agent endpoint (or set ZIFT_AGENT_API_KEY)
+    ///
+    /// NOTE: no `requires = "deep"` here — `ZIFT_AGENT_API_KEY` may live in
+    /// the shell environment and would otherwise fail every non-deep
+    /// invocation. Build-time validation in `deep::config::build` is enough.
     #[arg(long, env = "ZIFT_AGENT_API_KEY")]
     pub api_key: Option<String>,
 }
