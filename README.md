@@ -124,7 +124,8 @@ These hosts ship their own MCP config UI. Point them at the `zift` binary with `
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' | zift mcp
 ```
 
-You should see a single line back with `serverInfo.name == "zift"` and the seven tools listed in the capabilities.
+You should see a single line back with `serverInfo.name == "zift"` and capability flags for tools/resources.
+Then call `tools/list` to see the seven tool descriptors.
 
 ## Supported languages
 

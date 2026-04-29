@@ -45,7 +45,7 @@ pub fn list_resources(ctx: &ServerContext) -> ResourcesListResult {
             uri: format!("category://{}", category_slug(*category)),
             name: format!("AuthCategory: {category}"),
             description: category_description(*category).to_string(),
-            mime_type: "text/plain",
+            mime_type: "application/json",
         });
     }
     for rule in &ctx.rules {
