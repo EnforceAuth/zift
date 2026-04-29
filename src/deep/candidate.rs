@@ -14,9 +14,9 @@
 //!
 //! Candidates are sorted deterministically by `(file, line_start)`.
 
-// Some fields (original_finding_id, seed_category) are set here but read by
-// the prompt renderer in commit 4. is_tsx_jsx helper similarly waits for
-// commit 4. The allow goes away in commit 4.
+// The deep module is wired into the binary only when `deep::run` actually
+// does work (commit 6). Until then it's "dead" from the binary's perspective
+// even though tests cover it. This allow goes away in commit 6.
 #![allow(dead_code)]
 
 use crate::deep::config::DeepRuntime;
@@ -93,6 +93,9 @@ pub struct Candidate {
     pub line_start: usize,
     pub line_end: usize,
     pub source_snippet: String,
+    /// First N lines of the file (verbatim) — used by the prompt renderer
+    /// to detect framework idioms (e.g. `import express`, `from django`).
+    pub imports: Vec<String>,
     /// Set iff `kind == Escalation` — the structural finding's id.
     pub original_finding_id: Option<String>,
     /// Hint for prompt selection (e.g. seed an RBAC-flavored prompt).
@@ -164,6 +167,7 @@ fn build_escalations(
             line_start: ctx.line_start,
             line_end: ctx.line_end,
             source_snippet: ctx.snippet,
+            imports: ctx.imports,
             original_finding_id: Some(finding.id.clone()),
             seed_category: Some(finding.category),
         });
@@ -235,6 +239,7 @@ fn build_cold_regions(
                 line_start: ctx.line_start,
                 line_end: ctx.line_end,
                 source_snippet: ctx.snippet,
+                imports: ctx.imports,
                 original_finding_id: None,
                 seed_category: None,
             });
@@ -281,9 +286,7 @@ fn overlaps_any(
     })
 }
 
-/// Lookup a language's tsx/jsx flavor for a given file path. Used by the
-/// deep file walker to honor TS/JS structural quirks if needed downstream.
-#[allow(dead_code)] // used in commit 4 by prompt rendering
+/// Lookup a language's tsx/jsx flavor for a given file path.
 pub(crate) fn is_tsx_jsx(path: &Path) -> bool {
     detect_language_for_deep(path)
         .map(|(_, tsx)| tsx)

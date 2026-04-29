@@ -31,6 +31,7 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
 /// C#, Kotlin, Ruby, PHP). Used by the deep (semantic) scan, which can run
 /// regex-based cold-region detection on any language regardless of grammar
 /// availability.
+#[allow(dead_code)] // wired into the binary in commit 6
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
@@ -60,6 +61,7 @@ pub fn discover_files(
 /// Discover source files for the deep (semantic) scan. Behaves identically
 /// to [`discover_files`] but emits files in **all** languages from the
 /// [`Language`] enum, not only structurally-supported ones.
+#[allow(dead_code)] // wired into the binary in commit 6
 pub fn discover_files_for_deep(
     root: &Path,
     exclude_patterns: &[String],
