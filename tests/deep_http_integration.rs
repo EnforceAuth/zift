@@ -167,8 +167,10 @@ fn malformed_json_returns_bad_response_after_retry() {
 fn fallback_retry_succeeds_when_first_attempt_returns_bad_json() {
     let mut server = Server::new();
 
-    // First attempt (with response_format) returns garbage.
-    let _bad = server
+    // First attempt (with response_format) returns garbage. PartialJsonString
+    // requires the body to have a `response_format` key, so this mock only
+    // matches the structured-output attempt — not the retry.
+    let bad = server
         .mock("POST", "/chat/completions")
         .match_body(mockito::Matcher::PartialJsonString(
             r#"{"response_format": {}}"#.into(),
@@ -177,8 +179,10 @@ fn fallback_retry_succeeds_when_first_attempt_returns_bad_json() {
         .with_body(ok_response("not json", 50, 10))
         .create();
 
-    // Second attempt (without response_format) returns valid findings.
-    let _good = server
+    // Second attempt (without response_format) returns valid findings. The
+    // first mock won't match this request (no `response_format` field), so
+    // mockito falls through to this one.
+    let good = server
         .mock("POST", "/chat/completions")
         .with_status(200)
         .with_body(ok_response(&findings_content_one(), 60, 30))
@@ -193,6 +197,12 @@ fn fallback_retry_succeeds_when_first_attempt_returns_bad_json() {
 
     let response = client.analyze(&prompt).unwrap();
     assert_eq!(response.findings.len(), 1);
+    // Assert BOTH mocks were consumed exactly once (mockito's default
+    // expectation). This proves the structured-output attempt fired AND the
+    // retry without schema fired — without these asserts the test could pass
+    // by accidentally hitting `good` twice.
+    bad.assert();
+    good.assert();
 }
 
 #[test]
@@ -224,7 +234,7 @@ fn http_400_with_response_format_triggers_retry() {
     // Second attempt (without response_format) returns valid findings.
     let mut server = Server::new();
 
-    let _bad = server
+    let bad = server
         .mock("POST", "/chat/completions")
         .match_body(mockito::Matcher::PartialJsonString(
             r#"{"response_format": {}}"#.into(),
@@ -233,7 +243,7 @@ fn http_400_with_response_format_triggers_retry() {
         .with_body(r#"{"error": "response_format unsupported"}"#)
         .create();
 
-    let _good = server
+    let good = server
         .mock("POST", "/chat/completions")
         .with_status(200)
         .with_body(ok_response(&findings_content_one(), 60, 30))
@@ -248,6 +258,11 @@ fn http_400_with_response_format_triggers_retry() {
 
     let response = client.analyze(&prompt).unwrap();
     assert_eq!(response.findings.len(), 1);
+    // Assert BOTH mocks fired exactly once — see the fallback-retry test
+    // above for why this matters (without it, the structured-output attempt
+    // could be silently skipped and the test would still pass).
+    bad.assert();
+    good.assert();
 }
 
 #[test]
@@ -299,12 +314,17 @@ fn http_401_surfaces_as_config_error() {
 }
 
 #[test]
-fn http_500_surfaces_as_config_error() {
+fn http_500_surfaces_as_bad_response_for_per_candidate_skip() {
+    // 5xx is a transient server-side failure, NOT misconfiguration. It must
+    // surface as `BadResponse` so the orchestrator's per-candidate skip path
+    // takes it; mapping to `Config` would hard-fail the whole deep run on
+    // one upstream blip.
     let mut server = Server::new();
     let m = server
         .mock("POST", "/chat/completions")
         .with_status(500)
         .with_body("internal server error")
+        .expect_at_least(1) // analyze() retries without response_format once
         .create();
 
     let runtime = runtime_for(&server.url());
@@ -315,8 +335,12 @@ fn http_500_surfaces_as_config_error() {
     });
 
     let err = client.analyze(&prompt).unwrap_err();
+    assert!(
+        matches!(err, DeepError::BadResponse(_)),
+        "expected BadResponse for 5xx, got: {err:?}",
+    );
     let msg = format!("{err}");
-    assert!(msg.contains("500"), "got: {msg}");
+    assert!(msg.contains("500"), "msg should reference status: {msg}");
     m.assert();
 }
 

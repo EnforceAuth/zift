@@ -110,6 +110,13 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
                     .into(),
             )
         })?;
+    // Parse the URL eagerly so a typo (`htp://...`, missing scheme, etc.)
+    // hard-fails at config-build time instead of surfacing later as a
+    // per-candidate `DeepError::Http` skip — which would silently fall back
+    // to structural-only output and hide the misconfiguration from the user.
+    url::Url::parse(&base_url).map_err(|e| {
+        DeepError::Config(format!("--base-url is not a valid URL ({base_url:?}): {e}"))
+    })?;
 
     let model = args
         .model
@@ -349,6 +356,36 @@ mod tests {
         let args = args_with(Some(""), Some("m"), None, None);
         let err = build(&args, &ZiftConfig::default()).unwrap_err();
         assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn malformed_base_url_rejected_at_build_time() {
+        // A typo without a scheme would otherwise reach `client.rs` and fail
+        // there as `DeepError::Http`, which the orchestrator silently skips
+        // per-candidate — masking the misconfiguration. Catch it up front.
+        let args = args_with(Some("not a url"), Some("m"), None, None);
+        let err = build(&args, &ZiftConfig::default()).unwrap_err();
+        assert!(
+            matches!(err, DeepError::Config(ref msg) if msg.contains("not a valid URL")),
+            "expected Config(<not a valid URL>), got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn well_formed_base_urls_accepted() {
+        // Sanity: the validator must not regress on real-world base URLs.
+        for url in [
+            "http://localhost:11434/v1",
+            "https://api.openai.com/v1",
+            "http://127.0.0.1:8080/v1",
+            "http://[::1]:8080/v1",
+        ] {
+            let args = args_with(Some(url), Some("m"), None, None);
+            assert!(
+                build(&args, &ZiftConfig::default()).is_ok(),
+                "validator rejected real-world URL: {url}",
+            );
+        }
     }
 
     #[test]

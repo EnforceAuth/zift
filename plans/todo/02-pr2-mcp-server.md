@@ -1,6 +1,6 @@
 # PR 2 — Tier 1 deep scan: MCP server
 
-Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](./01-pr1-deep-http-transport.md). This is the strategically headline transport — it inverts the model relationship so Zift never hosts an LLM client; the user's existing agent host (Claude Code, Cursor, Continue, Cline, Zed, etc.) calls Zift as an MCP tool provider.
+Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](../done/01-pr1-deep-http-transport.md). This is the strategically headline transport — it inverts the model relationship so Zift never hosts an LLM client; the user's existing agent host (Claude Code, Cursor, Continue, Cline, Zed, etc.) calls Zift as an MCP tool provider.
 
 **Status**: not started. Depends on PR 1 landing.
 

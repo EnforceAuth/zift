@@ -1,6 +1,6 @@
 # PR 3 — Tier 3 deep scan: subprocess hook
 
-Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](./01-pr1-deep-http-transport.md). The smallest of the three transports — an escape hatch for any agent that doesn't fit Tier 1 (MCP) or Tier 2 (HTTP).
+Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). Builds on the primitives shipped in [PR 1](../done/01-pr1-deep-http-transport.md). The smallest of the three transports — an escape hatch for any agent that doesn't fit Tier 1 (MCP) or Tier 2 (HTTP).
 
 **Status**: not started. Depends on PR 1 landing.
 

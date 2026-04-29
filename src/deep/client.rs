@@ -136,6 +136,17 @@ impl OpenAiCompatibleClient {
                     "server rejected response_format ({status}); retrying without schema"
                 )));
             }
+            // 5xx is a transient/server-side failure, not misconfiguration.
+            // Surface as `BadResponse` so the orchestrator's per-candidate
+            // skip path takes it instead of aborting the entire deep run
+            // (which `Config` would do — that bucket is reserved for
+            // operator-actionable misconfiguration).
+            if status.is_server_error() {
+                return Err(DeepError::BadResponse(format!(
+                    "upstream {} from {}",
+                    status, self.base_url
+                )));
+            }
             return Err(DeepError::Config(format!(
                 "HTTP {} from {}",
                 status, self.base_url

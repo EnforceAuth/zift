@@ -2394,6 +2394,7 @@ dependencies = [
  "tree-sitter-java",
  "tree-sitter-javascript",
  "tree-sitter-typescript",
+ "url",
 ]
 
 [[package]]

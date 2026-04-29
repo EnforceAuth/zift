@@ -18,7 +18,7 @@ Make `zift scan --deep` produce semantic findings (`pass: ScanPass::Semantic`) w
 | Tier | Transport | When it's used | PR |
 |------|-----------|----------------|-----|
 | 1 | **MCP server** (`zift mcp`) | User has an agent host (Claude Code, Cursor, Continue, Cline, Zed). Their agent calls Zift tools; their agent calls the model. We never see the model. | [PR 2](./02-pr2-mcp-server.md) |
-| 2 | **OpenAI-compatible HTTP** (`--base-url`) | Headless / CI runs. One client speaks to Ollama, LM Studio, llama.cpp `server`, vLLM, OpenRouter, Together, Groq, Anthropic-via-proxy, OpenAI itself. | [PR 1](./01-pr1-deep-http-transport.md) |
+| 2 | **OpenAI-compatible HTTP** (`--base-url`) | Headless / CI runs. One client speaks to Ollama, LM Studio, llama.cpp `server`, vLLM, OpenRouter, Together, Groq, Anthropic-via-proxy, OpenAI itself. | [PR 1](../done/01-pr1-deep-http-transport.md) |
 | 3 | **Subprocess hook** (`--agent-cmd`) | Anything else — `claude -p`, `aider`, custom shell scripts, agents that don't expose HTTP. Stdin: prompt + JSON. Stdout: JSON matching our schema. | [PR 3](./03-pr3-subprocess-hook.md) |
 
 User picks explicitly via `[deep] mode = "mcp" | "http" | "subprocess"`. No provider auto-detection magic.
@@ -62,6 +62,6 @@ We build PR 1 first even though MCP (PR 2) is the strategically headline answer.
 
 ## Cross-references
 
-- [PR 1 — HTTP transport](./01-pr1-deep-http-transport.md)
+- [PR 1 — HTTP transport](../done/01-pr1-deep-http-transport.md)
 - [PR 2 — MCP server](./02-pr2-mcp-server.md)
 - [PR 3 — Subprocess hook](./03-pr3-subprocess-hook.md)

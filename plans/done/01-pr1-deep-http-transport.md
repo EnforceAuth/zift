@@ -1,6 +1,6 @@
 # PR 1 — Tier 2 deep scan: OpenAI-compatible HTTP transport
 
-Companion to [00-deep-mode-overview.md](./00-deep-mode-overview.md). This PR makes `--deep` functional end-to-end and lays down the shared primitives that PR 2 and PR 3 reuse.
+Companion to [00-deep-mode-overview.md](../todo/00-deep-mode-overview.md). This PR makes `--deep` functional end-to-end and lays down the shared primitives that PR 2 and PR 3 reuse.
 
 ## 1. Goal & scope
 
@@ -38,13 +38,13 @@ pub mod merge;
 pub mod prompt;
 
 pub fn run(
-    structural: &[Finding],
+    structural: Vec<Finding>,
     scan_root: &Path,
     runtime: &DeepRuntime,
 ) -> Result<Vec<Finding>, DeepError>;
 ```
 
-`run` is the single entry point called from `commands/scan.rs`. Synchronous (see §4). Returns `Vec<Finding>` with `pass: Semantic` already set. Merging into the master vec happens in the caller.
+`run` is the single entry point called from `commands/scan.rs`. Synchronous (see §4). Takes ownership of the structural vector (the deep pass may drop entries the model identifies as false positives) and returns the **merged** structural ∪ semantic findings, already deterministically re-sorted by `(file, line_start, line_end)`. Callers do not perform their own merge. PR 2 (MCP server) and PR 3 (subprocess hook) bind to the same shape.
 
 ### `src/deep/config.rs` — runtime config
 
@@ -411,7 +411,7 @@ cost_per_1k_output = 0.0
 
 Logic in `cost::record`:
 
-```
+```text
 delta = (in_tokens / 1000.0) * in_rate + (out_tokens / 1000.0) * out_rate
 spent += delta
 if cap.is_some_and(|c| spent > c): Err(CostExceeded { spent })
@@ -463,7 +463,7 @@ Each commit ~150-400 lines of diff, reviewable independently. PR title for the m
 ## 14. Shipped
 
 **Branch**: `feat/deep-http`
-**Test count**: 227 passing (210 lib unit + 17 integration); clippy clean with `-D warnings`.
+**Test count**: 230 passing (213 lib unit + 17 integration); clippy clean with `-D warnings`.
 
 ### Commits (in order)
 

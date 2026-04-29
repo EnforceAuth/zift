@@ -163,7 +163,24 @@ fn build_escalations(
         if !should_escalate(finding) {
             continue;
         }
-        let ctx = expand_finding(finding, scan_root, runtime.max_prompt_chars)?;
+        // I/O errors on a single file (deleted between scan and analyze,
+        // permission-denied, etc.) are best-effort: log and skip the
+        // candidate, don't abort the whole deep pass. Containment violations
+        // (`DeepError::Config` from `expand_finding`) and any other variant
+        // remain hard fails — they signal misconfiguration or malicious
+        // input that the operator should see.
+        let ctx = match expand_finding(finding, scan_root, runtime.max_prompt_chars) {
+            Ok(ctx) => ctx,
+            Err(DeepError::Io(e)) => {
+                tracing::warn!(
+                    "deep: skipping escalation for {}:{} — I/O error reading source: {e}",
+                    finding.file.display(),
+                    finding.line_start,
+                );
+                continue;
+            }
+            Err(other) => return Err(other),
+        };
         out.push(Candidate {
             kind: CandidateKind::Escalation,
             file: finding.file.clone(),
@@ -229,14 +246,28 @@ fn build_cold_regions(
             if overlaps_any(&file_relative, start, end, escalation_ranges) {
                 continue;
             }
-            let ctx = expand_region(
+            // Same best-effort policy as `build_escalations`: skip the
+            // cold region on per-file I/O errors, propagate everything else.
+            let ctx = match expand_region(
                 &file.path,
                 file_relative.clone(),
                 file.language,
                 start,
                 end,
                 runtime.max_prompt_chars,
-            )?;
+            ) {
+                Ok(ctx) => ctx,
+                Err(DeepError::Io(e)) => {
+                    tracing::warn!(
+                        "deep: skipping cold region {}:{}-{} — I/O error reading source: {e}",
+                        file_relative.display(),
+                        start,
+                        end,
+                    );
+                    continue;
+                }
+                Err(other) => return Err(other),
+            };
             out.push(Candidate {
                 kind: CandidateKind::ColdRegion,
                 file: file_relative.clone(),
@@ -580,6 +611,34 @@ mod tests {
             );
             assert!(candidates.len() <= cap);
         }
+    }
+
+    #[test]
+    fn missing_escalation_file_is_skipped_not_fatal() {
+        // Regression: a structural finding pointing at a deleted file used to
+        // propagate `DeepError::Io` through `?`, killing the entire deep pass
+        // even though deep mode is otherwise best-effort.
+        use crate::types::{AuthCategory, Confidence, Finding, ScanPass};
+        let dir = tempdir().unwrap();
+        // One escalation finding pointing at a file that doesn't exist.
+        let bad = Finding {
+            id: "x".into(),
+            file: PathBuf::from("does-not-exist.ts"),
+            line_start: 1,
+            line_end: 1,
+            code_snippet: String::new(),
+            language: Language::TypeScript,
+            category: AuthCategory::Custom,
+            confidence: Confidence::Low,
+            description: "x".into(),
+            pattern_rule: None,
+            rego_stub: None,
+            pass: ScanPass::Structural,
+        };
+        // Should NOT propagate Io; should return Ok with the bad escalation
+        // skipped. (No cold-region files either, so result is empty.)
+        let candidates = select_candidates(&[bad], dir.path(), &rt()).unwrap();
+        assert!(candidates.is_empty(), "got: {candidates:?}");
     }
 
     #[test]

@@ -24,6 +24,7 @@ regex = "1"
 streaming-iterator = "0.1"
 regorus = { version = "0.9", default-features = false, features = ["arc"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"
