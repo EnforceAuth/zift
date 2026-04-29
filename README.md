@@ -35,6 +35,8 @@ zift report .                   # detailed findings report
 | 2 | **OpenAI-compatible HTTP** (`--base-url`) | Headless / CI runs against any OpenAI-shaped chat-completions endpoint — Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, OpenAI, Anthropic-via-proxy. |
 | 3 | **Subprocess hook** (`--agent-cmd`) | Anything else — `claude -p`, `aider`, custom shell scripts. Stdin: prompt + JSON envelope. Stdout: JSON matching the deep-mode schema. |
 
+> **New to `--deep`?** [`docs/DEEP_MODE_WALKTHROUGH.md`](docs/DEEP_MODE_WALKTHROUGH.md) is a hands-on tour of all three transports against the same fixture, with real commands, real outputs, and the differences between static and deep made explicit.
+
 ### HTTP transport (`--base-url`)
 
 One client speaks to **any OpenAI-compatible chat-completions endpoint** — Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, OpenAI, and Anthropic-via-proxy. Pick where you want your bytes to go.
