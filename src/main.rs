@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod config;
+mod deep;
 mod error;
 mod logging;
 mod output;
