@@ -206,8 +206,12 @@ fn build_cold_regions(
         return Ok(Vec::new());
     }
 
-    let discovered =
+    let mut discovered =
         discover_files_for_deep(scan_root, &runtime.excludes, &runtime.language_filter);
+    // Sort by path so that under tight `max_candidates`, the surviving cold
+    // subset is stable across filesystems and runs. Without this, the
+    // post-loop sort only orders the items we already happened to pick.
+    discovered.sort_by(|a, b| a.path.cmp(&b.path));
     let mut out: Vec<Candidate> = Vec::new();
 
     for file in discovered {

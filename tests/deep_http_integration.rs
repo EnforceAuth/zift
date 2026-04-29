@@ -345,6 +345,36 @@ fn http_500_surfaces_as_bad_response_for_per_candidate_skip() {
 }
 
 #[test]
+fn http_429_surfaces_as_bad_response_for_per_candidate_skip() {
+    // 429 Too Many Requests is transient (rate-limit / quota), same bucket
+    // as 5xx — must hit the per-candidate skip path, NOT abort the whole
+    // deep run via `Config`.
+    let mut server = Server::new();
+    let m = server
+        .mock("POST", "/chat/completions")
+        .with_status(429)
+        .with_body("rate limited")
+        .expect_at_least(1)
+        .create();
+
+    let runtime = runtime_for(&server.url());
+    let client = OpenAiCompatibleClient::new(&runtime).unwrap();
+    let prompt = render(&PromptInputs {
+        candidate: &synth_candidate(),
+        structural_finding: None,
+    });
+
+    let err = client.analyze(&prompt).unwrap_err();
+    assert!(
+        matches!(err, DeepError::BadResponse(_)),
+        "expected BadResponse for 429, got: {err:?}",
+    );
+    let msg = format!("{err}");
+    assert!(msg.contains("429"), "msg should reference status: {msg}");
+    m.assert();
+}
+
+#[test]
 fn cost_tracker_caps_and_errors() {
     let mut runtime = runtime_for("http://unused");
     runtime.max_cost_usd = Some(0.01);

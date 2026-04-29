@@ -114,9 +114,18 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
     // hard-fails at config-build time instead of surfacing later as a
     // per-candidate `DeepError::Http` skip — which would silently fall back
     // to structural-only output and hide the misconfiguration from the user.
-    url::Url::parse(&base_url).map_err(|e| {
+    let parsed = url::Url::parse(&base_url).map_err(|e| {
         DeepError::Config(format!("--base-url is not a valid URL ({base_url:?}): {e}"))
     })?;
+    // The deep client speaks HTTP; reject `file://`, `ftp://`, etc. up-front
+    // rather than letting the request fail downstream as an opaque transport
+    // error.
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(DeepError::Config(format!(
+            "--base-url must use http or https (got {:?} in {base_url:?})",
+            parsed.scheme()
+        )));
+    }
 
     let model = args
         .model
@@ -369,6 +378,22 @@ mod tests {
             matches!(err, DeepError::Config(ref msg) if msg.contains("not a valid URL")),
             "expected Config(<not a valid URL>), got: {err:?}",
         );
+    }
+
+    #[test]
+    fn non_http_scheme_rejected_at_build_time() {
+        // The deep client speaks HTTP. `file://`, `ftp://`, etc. parse as
+        // valid URLs but have no business reaching the request layer — surface
+        // them as `Config` up front so the user gets a clear error instead of
+        // an opaque transport failure.
+        for url in ["file:///etc/passwd", "ftp://example.com/", "ws://x/v1"] {
+            let args = args_with(Some(url), Some("m"), None, None);
+            let err = build(&args, &ZiftConfig::default()).unwrap_err();
+            assert!(
+                matches!(err, DeepError::Config(ref msg) if msg.contains("must use http or https")),
+                "expected Config(<must use http or https>) for {url}, got: {err:?}",
+            );
+        }
     }
 
     #[test]

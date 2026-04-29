@@ -147,6 +147,15 @@ impl OpenAiCompatibleClient {
                     status, self.base_url
                 )));
             }
+            // 429 Too Many Requests is transient (rate-limit / quota), same
+            // bucket as 5xx — let the orchestrator skip this candidate rather
+            // than abort the whole deep run.
+            if code == 429 {
+                return Err(DeepError::BadResponse(format!(
+                    "upstream rate-limited ({} from {})",
+                    status, self.base_url
+                )));
+            }
             return Err(DeepError::Config(format!(
                 "HTTP {} from {}",
                 status, self.base_url

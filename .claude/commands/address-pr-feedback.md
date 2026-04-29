@@ -33,14 +33,28 @@ gh api "repos/{owner}/{repo}/pulls/{pr}/comments" --paginate \
 **CodeRabbit**: Look for a PR comment containing "Walkthrough" or a review with `coderabbitai` as author. If not present, inform the user:
 > "CodeRabbit hasn't reviewed this PR yet. Wait for its review or run `@coderabbitai review` as a PR comment, then re-run this command."
 
-**Amazon Q**: Look for review comments from `amazon-q-developer[bot]`. If not present, inform the user:
+**Amazon Q**: Look for activity from `amazon-q-developer[bot]` in *either* channel:
+- review/inline comments (pulls comments endpoint), or
+- PR-level comments (issues comments endpoint — this is where AQ posts its "Critical Issue" summary).
+
+If neither is present, inform the user:
 > "Amazon Q hasn't reviewed this PR yet. Wait for its review, then re-run this command."
+
+```bash
+# Check both channels for AQ activity
+gh api "repos/{owner}/{repo}/pulls/{pr}/comments" --paginate \
+  --jq '[.[] | select(.user.login == "amazon-q-developer[bot]")] | length'
+gh api "repos/{owner}/{repo}/issues/{pr}/comments" --paginate \
+  --jq '[.[] | select(.user.login == "amazon-q-developer[bot]")] | length'
+```
 
 **If either bot hasn't finished, stop here.** Do not proceed to fixing issues with incomplete feedback.
 
 #### 2a. Confirm the latest bot review covers the latest commit
 
-Bots re-review on every push. If you ran a previous round of `/address-pr-feedback`, pushed a fix commit, and the bot's response to that push hasn't landed yet, the next round will miss the new findings and cause exactly the bug this section exists to prevent.
+CodeRabbit re-reviews on every push. If you ran a previous round of `/address-pr-feedback`, pushed a fix commit, and CodeRabbit's response to that push hasn't landed yet, the next round will miss the new findings and cause exactly the bug this section exists to prevent.
+
+**Amazon Q does NOT re-review automatically on push** — it only reviews on initial PR open (or when explicitly triggered). After any fix push, AQ's `commit_id` will lag HEAD and that is *expected*. Don't block on it.
 
 ```bash
 # Compare the head SHA of the PR to the most recent CodeRabbit review's commit_id
@@ -54,7 +68,7 @@ echo "Last CR review commit: $LATEST_CR_COMMIT"
 If `$LATEST_CR_COMMIT` does not match `$HEAD_SHA`, CodeRabbit hasn't reviewed the latest commit yet. Tell the user:
 > "CodeRabbit's latest review is on commit `<short-SHA>` but PR head is `<short-SHA>`. Wait a few minutes for the new review to land, then re-run."
 
-Do the same check for Amazon Q (its review-author endpoint pins to a `commit_id` too). Don't proceed until both bots have caught up to head.
+For Amazon Q, optionally surface its review `commit_id` for context but **do not block** on a mismatch — note to the user that AQ's findings (if any) will be from its initial review pass and proceed.
 
 ### 3. Fetch review comments (token-efficient two-pass approach)
 
