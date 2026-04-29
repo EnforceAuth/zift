@@ -2,8 +2,6 @@
 
 Sift through your codebase for embedded authorization logic. Extract it into Rego for [OPA](https://www.openpolicyagent.org/).
 
-> **Status:** Design phase — not yet functional.
-
 ## What is zift?
 
 Most applications embed authorization decisions directly in application code: role checks in `if` statements, permission guards in middleware, business rules that act as access control. This scattered auth logic is hard to audit, hard to test, and impossible to enforce consistently.
@@ -27,23 +25,19 @@ zift report .                   # detailed findings report
 
 ## Supported languages
 
-Priority order for language support:
-
-| Language | Framework patterns |
-|----------|-------------------|
-| Java | Spring Security (`@PreAuthorize`, `@Secured`), Jakarta Security, Shiro |
-| TypeScript/JavaScript | Express middleware, NestJS guards, Next.js middleware |
-| Python | Django (`@permission_required`), Flask-Login, FastAPI dependencies |
-| Go | Custom middleware, Casbin, chi/gorilla middleware chains |
-| C# | ASP.NET (`[Authorize]`), policy-based authorization |
+TypeScript, JavaScript, and Java (Python, Go, C#, Kotlin, Ruby, PHP planned).
 
 ## Installation
 
+### Cargo
+
 ```bash
-cargo install zift      # from crates.io (planned)
+cargo install --git https://github.com/EnforceAuth/zift
 ```
 
-Or download a binary from [Releases](https://github.com/EnforceAuth/zift/releases).
+### Binary download
+
+Prebuilt binaries for Linux (x86_64), macOS (x86_64 and arm64), and Windows (x86_64) are available from [Releases](https://github.com/EnforceAuth/zift/releases).
 
 ## License
 
