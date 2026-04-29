@@ -260,10 +260,10 @@ SCAN OPTIONS:
     --config            Path to config file (default: .zift.toml)
 
 DEEP SCAN OPTIONS:
-    --provider          LLM provider (anthropic|openai|ollama)
-    --model             Model to use (default: provider-specific)
-    --max-cost          Maximum spend limit for LLM calls
-    --api-key           API key (or set ZIFT_API_KEY / provider-specific env vars)
+    --base-url          OpenAI-compatible endpoint (e.g. http://localhost:11434/v1)
+    --model             Model name to send to the agent endpoint
+    --max-cost          Maximum spend limit in USD
+    --api-key           API key for the agent endpoint (or set ZIFT_AGENT_API_KEY)
 
 EXTRACT OPTIONS:
     --input, -i         Findings file (default: stdin or last scan)

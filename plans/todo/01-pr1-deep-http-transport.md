@@ -66,7 +66,12 @@ pub struct DeepRuntime {
 pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepError>;
 ```
 
-Resolution precedence: CLI flag > env var (`ZIFT_API_KEY`) > `[deep]` config table > built-in default. Validation: empty `base_url` is hard error; missing `model` is hard error; missing `api_key` is a warning (not an error — Ollama/llama.cpp accept any value).
+Resolution precedence:
+
+- `base_url`, `model`, `max_cost`: CLI flag > `[deep]` config > built-in default.
+- `api_key`: CLI flag (`--api-key`) > env var (`ZIFT_AGENT_API_KEY`) > unset. **Intentionally NOT readable from `.zift.toml`** — keys belong in env vars or CLI to avoid accidental secret commits.
+
+Validation: empty `base_url` is hard error; missing `model` is hard error; missing `api_key` is a warning (not an error — Ollama/llama.cpp accept any value).
 
 ### `src/deep/error.rs`
 
@@ -420,7 +425,7 @@ CLI `--max-cost` wins over toml; CLI flags for the rates intentionally not added
 
 Six commits, each compiling and passing tests:
 
-1. **`refactor(cli): drop closed LlmProvider enum, add --base-url`** — `cli.rs`, `config.rs`, `commands/init.rs`, CLI tests. Stub-only deep scan still prints the warning.
+1. **`refactor(cli): drop closed LlmProvider enum, add --base-url, rename env var`** — `cli.rs`, `config.rs`, `commands/init.rs`, `docs/DESIGN.md`, CLI tests. Renames `ZIFT_API_KEY` → `ZIFT_AGENT_API_KEY`; `api_key` removed from config-file schema. Stub-only deep scan still prints the warning.
 2. **`feat(deep): add deep module skeleton with config + error types`** — empty modules with type definitions; `deep::run` returns `Ok(vec![])`; wired into `commands/scan.rs`; tests for `config::build`. Expose `compute_finding_id` from scanner.
 3. **`feat(deep): candidate selection and context expansion`** — `candidate.rs`, `context.rs` with tests. `deep::run` produces candidates but returns empty findings.
 4. **`feat(deep): prompt rendering and JSON schema`** — `prompt.rs`, `finding.rs`. `output_schema()` and `SYSTEM_PROMPT` exported. Tests for prompt validity.
@@ -434,7 +439,7 @@ Each commit ~150-400 lines of diff, reviewable independently. PR title for the m
 ### Locked decisions
 
 1. **Cold-region scanning is ungated across languages.** Runs on every language in the `Language` enum, including ones without a tree-sitter grammar. Rationale in §6. Implementation note: `discovery::discover_files` today only emits TS/JS/Java extensions; deep mode either extends it or adds a `discover_files_for_deep` that covers all `Language` extensions.
-2. **No `OPENAI_API_KEY` fallback.** Only `ZIFT_API_KEY` is honored from the environment. Explicit > implicit; Zift is not OpenAI.
+2. **No `OPENAI_API_KEY` fallback.** Only `ZIFT_AGENT_API_KEY` is honored from the environment. Explicit > implicit; Zift is not OpenAI.
 3. **Localhost concurrency auto-cap.** When `base_url` host is `localhost` or `127.0.0.1` (or `::1`), `max_concurrent` defaults to 1. Local single-GPU servers serialize internally; parallelism > 1 just adds queueing. User can override via explicit `[deep] max_concurrent = N`.
 
 ### Open issues
