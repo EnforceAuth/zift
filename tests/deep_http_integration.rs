@@ -28,6 +28,8 @@ fn runtime_for(server_url: &str) -> DeepRuntime {
         max_concurrent: 1,
         temperature: 0.0,
         max_prompt_chars: 16_000,
+        excludes: Vec::new(),
+        language_filter: Vec::new(),
     }
 }
 
@@ -448,6 +450,46 @@ fn deep_run_drops_structural_when_model_flags_false_positive() {
     // The structural finding was the only input; the model rejected it.
     // Result should be empty (no semantic finding emitted, no structural retained).
     assert!(merged.is_empty(), "expected empty result, got: {merged:?}");
+}
+
+#[test]
+fn deep_run_emits_findings_in_deterministic_order() {
+    // Three structural findings across two files; deep::run must return
+    // them sorted by (file, line_start, line_end), regardless of the
+    // randomized HashMap iteration internally.
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.ts"), "x\n".repeat(100)).unwrap();
+    fs::write(dir.path().join("b.ts"), "x\n".repeat(100)).unwrap();
+
+    let mut server = Server::new();
+    // Model returns no findings — keeps focus on the structural ordering.
+    let _m = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_body(ok_response(r#"{"findings": []}"#, 10, 5))
+        .expect_at_least(1)
+        .create();
+    let runtime = runtime_for(&server.url());
+
+    let structural = vec![
+        structural_finding("b.ts", 50),
+        structural_finding("a.ts", 80),
+        structural_finding("a.ts", 10),
+    ];
+    let merged = zift::deep::run(structural, dir.path(), &runtime).unwrap();
+
+    let order: Vec<(String, usize)> = merged
+        .iter()
+        .map(|f| (f.file.display().to_string(), f.line_start))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            ("a.ts".to_string(), 10),
+            ("a.ts".to_string(), 80),
+            ("b.ts".to_string(), 50),
+        ]
+    );
 }
 
 #[test]

@@ -45,10 +45,9 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
 
     if let Some(runtime) = deep_runtime.as_ref() {
         tracing::info!(
-            "running deep scan: base_url={} model={} concurrency={}",
+            "running deep scan: base_url={} model={}",
             runtime.base_url,
             runtime.model,
-            runtime.max_concurrent
         );
         result.findings = deep::run(result.findings, &path, runtime)?;
     }

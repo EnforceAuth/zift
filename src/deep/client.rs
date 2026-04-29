@@ -36,6 +36,9 @@ pub struct OpenAiCompatibleClient {
     api_key: Option<String>,
     model: String,
     temperature: f32,
+    /// Echoed into `DeepError::Timeout` so the user-visible error states the
+    /// configured limit, not just "HTTP error".
+    timeout_secs: u64,
 }
 
 impl OpenAiCompatibleClient {
@@ -51,6 +54,7 @@ impl OpenAiCompatibleClient {
             api_key: runtime.api_key.clone(),
             model: runtime.model.clone(),
             temperature: runtime.temperature,
+            timeout_secs: runtime.request_timeout_secs,
         })
     }
 
@@ -99,7 +103,18 @@ impl OpenAiCompatibleClient {
             req = req.bearer_auth(key);
         }
 
-        let response = req.send()?;
+        // Distinguish timeouts from generic HTTP errors so the orchestrator
+        // can surface a specific message ("request timed out after Ns")
+        // rather than the opaque "HTTP error: ...".
+        let response = match req.send() {
+            Ok(r) => r,
+            Err(e) if e.is_timeout() => {
+                return Err(DeepError::Timeout {
+                    secs: self.timeout_secs,
+                });
+            }
+            Err(e) => return Err(DeepError::Http(e)),
+        };
         let status = response.status();
         if !status.is_success() {
             // Auth errors get distinct surfacing; everything else is generic.
@@ -152,17 +167,25 @@ impl OpenAiCompatibleClient {
     }
 }
 
-/// Strip a leading/trailing ```json``` (or ```) markdown fence if present.
+/// Strip a leading/trailing markdown fence if present, regardless of the
+/// optional language tag (` ```json `, ` ```javascript `, plain ` ``` `, …).
 /// Some local models wrap JSON in fences despite system-prompt instructions
 /// not to.
 fn strip_markdown_fence(s: &str) -> &str {
     let trimmed = s.trim();
-    let after_fence = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .unwrap_or(trimmed);
+    let after_fence = match trimmed.strip_prefix("```") {
+        Some(rest) => {
+            // Drop the language tag (everything up to the first newline) if
+            // any, then continue with the remaining content.
+            match rest.find('\n') {
+                Some(nl) => &rest[nl + 1..],
+                None => rest,
+            }
+        }
+        None => trimmed,
+    };
     after_fence
-        .trim()
+        .trim_end()
         .strip_suffix("```")
         .unwrap_or(after_fence)
         .trim()
@@ -173,7 +196,10 @@ fn truncate_for_log(s: &str) -> String {
     if s.len() <= MAX {
         s.to_string()
     } else {
-        format!("{}...", &s[..MAX])
+        // Round down to a UTF-8 char boundary so we never panic on a
+        // multi-byte char straddling MAX (likely on garbage model output).
+        let cut = s.floor_char_boundary(MAX);
+        format!("{}...", &s[..cut])
     }
 }
 
@@ -235,6 +261,18 @@ mod tests {
     }
 
     #[test]
+    fn strip_fence_handles_alternative_language_tags() {
+        for lang in ["javascript", "ts", "rust", "yaml"] {
+            let raw = format!("```{lang}\n{{\"findings\": []}}\n```");
+            assert_eq!(
+                strip_markdown_fence(&raw),
+                "{\"findings\": []}",
+                "fence stripper failed for tag: {lang}"
+            );
+        }
+    }
+
+    #[test]
     fn truncate_for_log_short_string_passthrough() {
         assert_eq!(truncate_for_log("hello"), "hello");
     }
@@ -245,5 +283,16 @@ mod tests {
         let truncated = truncate_for_log(&long);
         assert!(truncated.ends_with("..."));
         assert!(truncated.len() < long.len());
+    }
+
+    #[test]
+    fn truncate_for_log_handles_multibyte_at_boundary() {
+        // 198 ascii + a 4-byte emoji crossing byte 200. Naive [..200] would panic.
+        let mut s = "x".repeat(198);
+        s.push('🦀'); // 4 bytes
+        s.push_str(&"y".repeat(50));
+        let truncated = truncate_for_log(&s);
+        // No panic, and we didn't slice mid-codepoint.
+        assert!(truncated.ends_with("..."));
     }
 }

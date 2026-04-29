@@ -63,6 +63,9 @@ pub fn run(
     let mut semantic_findings: Vec<Finding> = Vec::new();
     let mut false_positive_seeds: HashSet<String> = HashSet::new();
 
+    // TODO(deep-concurrency): honor `runtime.max_concurrent` via
+    // `std::thread::scope` over `reqwest::blocking::Client` (clone-cheap).
+    // Localhost endpoints auto-cap to 1 anyway; remote fan-out is the win.
     for candidate in &candidates {
         let seed = candidate
             .original_finding_id
@@ -127,10 +130,21 @@ pub fn run(
     );
 
     // Drop structural findings the model rejected, then merge semantic in.
+    // HashMap iteration order is randomized, so we must re-sort the merged
+    // result to match the deterministic (file, line_start) ordering the
+    // structural pass establishes — otherwise `--deep` produces different
+    // output orderings between runs over the same input.
     let filtered_structural: Vec<Finding> = structural_by_id
         .into_values()
         .filter(|f| !false_positive_seeds.contains(&f.id))
         .collect();
 
-    Ok(merge::merge(filtered_structural, semantic_findings))
+    let mut merged = merge::merge(filtered_structural, semantic_findings);
+    merged.sort_by(|a, b| {
+        a.file
+            .cmp(&b.file)
+            .then(a.line_start.cmp(&b.line_start))
+            .then(a.line_end.cmp(&b.line_end))
+    });
+    Ok(merged)
 }

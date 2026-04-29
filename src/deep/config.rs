@@ -10,6 +10,7 @@
 use crate::cli::ScanArgs;
 use crate::config::ZiftConfig;
 use crate::deep::error::DeepError;
+use crate::types::Language;
 
 /// Resolved runtime configuration for the deep (semantic) scan.
 #[derive(Debug, Clone)]
@@ -25,6 +26,13 @@ pub struct DeepRuntime {
     pub max_concurrent: usize,
     pub temperature: f32,
     pub max_prompt_chars: usize,
+    /// Glob exclude patterns merged from `--exclude` and `[scan].exclude`.
+    /// Forwarded to cold-region file discovery so deep mode honors the same
+    /// scope users set for the structural pass.
+    pub excludes: Vec<String>,
+    /// Language filter from `--language`. Empty == all languages. Forwarded
+    /// to cold-region file discovery.
+    pub language_filter: Vec<Language>,
 }
 
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
@@ -80,6 +88,20 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
 
     let api_key = args.api_key.clone().filter(|s| !s.is_empty());
     let max_cost_usd = args.max_cost.or(config.deep.max_cost);
+    let cost_per_1k_input = config.deep.cost_per_1k_input;
+    let cost_per_1k_output = config.deep.cost_per_1k_output;
+
+    // Warn if a cap is set but no rates are configured — the tracker
+    // short-circuits when both rates are 0, so the cap would never bind.
+    let no_rates =
+        cost_per_1k_input.unwrap_or(0.0) == 0.0 && cost_per_1k_output.unwrap_or(0.0) == 0.0;
+    if max_cost_usd.is_some() && no_rates {
+        eprintln!(
+            "warning: --max-cost is set but [deep] cost_per_1k_input / \
+             cost_per_1k_output are not configured in .zift.toml — spend \
+             tracking is a no-op without rates"
+        );
+    }
 
     let max_concurrent = if is_localhost(&base_url) {
         DEFAULT_LOCAL_CONCURRENCY
@@ -87,18 +109,24 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
         DEFAULT_REMOTE_CONCURRENCY
     };
 
+    // Merge excludes from config + CLI; preserve CLI ordering after config.
+    let mut excludes = config.scan.exclude.clone();
+    excludes.extend(args.exclude.iter().cloned());
+
     Ok(DeepRuntime {
         base_url,
         model,
         api_key,
         max_cost_usd,
-        cost_per_1k_input: None,
-        cost_per_1k_output: None,
+        cost_per_1k_input,
+        cost_per_1k_output,
         request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         max_candidates: DEFAULT_MAX_CANDIDATES,
         max_concurrent,
         temperature: DEFAULT_TEMPERATURE,
         max_prompt_chars: DEFAULT_MAX_PROMPT_CHARS,
+        excludes,
+        language_filter: args.language.clone(),
     })
 }
 
@@ -137,6 +165,7 @@ mod tests {
             base_url: Some("http://config/v1".into()),
             model: Some("config-model".into()),
             max_cost: Some(1.0),
+            ..DeepConfig::default()
         });
         let runtime = build(&args, &config).unwrap();
         assert_eq!(runtime.base_url, "http://cli/v1");
@@ -150,6 +179,7 @@ mod tests {
             base_url: Some("http://config/v1".into()),
             model: Some("config-model".into()),
             max_cost: Some(2.5),
+            ..DeepConfig::default()
         });
         let runtime = build(&args, &config).unwrap();
         assert_eq!(runtime.base_url, "http://config/v1");
@@ -164,9 +194,48 @@ mod tests {
             base_url: None,
             model: None,
             max_cost: Some(10.0),
+            ..DeepConfig::default()
         });
         let runtime = build(&args, &config).unwrap();
         assert_eq!(runtime.max_cost_usd, Some(0.5));
+    }
+
+    #[test]
+    fn cost_rates_loaded_from_config() {
+        let args = args_with(Some("http://x/v1"), Some("m"), None, Some(1.0));
+        let config = config_with(DeepConfig {
+            cost_per_1k_input: Some(0.0002),
+            cost_per_1k_output: Some(0.0008),
+            ..DeepConfig::default()
+        });
+        let runtime = build(&args, &config).unwrap();
+        assert_eq!(runtime.cost_per_1k_input, Some(0.0002));
+        assert_eq!(runtime.cost_per_1k_output, Some(0.0008));
+    }
+
+    #[test]
+    fn excludes_merged_from_cli_and_config() {
+        let mut args = args_with(Some("http://x/v1"), Some("m"), None, None);
+        args.exclude = vec!["cli/**".into()];
+        let mut zcfg = ZiftConfig::default();
+        zcfg.scan.exclude = vec!["config/**".into()];
+        zcfg.deep = DeepConfig {
+            ..DeepConfig::default()
+        };
+        let runtime = build(&args, &zcfg).unwrap();
+        assert_eq!(runtime.excludes, vec!["config/**", "cli/**"]);
+    }
+
+    #[test]
+    fn language_filter_passed_through() {
+        use crate::types::Language;
+        let mut args = args_with(Some("http://x/v1"), Some("m"), None, None);
+        args.language = vec![Language::Java, Language::Python];
+        let runtime = build(&args, &ZiftConfig::default()).unwrap();
+        assert_eq!(
+            runtime.language_filter,
+            vec![Language::Java, Language::Python]
+        );
     }
 
     #[test]

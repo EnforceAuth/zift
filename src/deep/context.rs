@@ -105,8 +105,11 @@ fn expand_inner(
 
     // Truncate at max_chars (favors keeping the head — the part most likely
     // to contain the actual auth check; trailing context is more discardable).
+    // Round down to a UTF-8 char boundary to avoid `String::truncate` panics
+    // on multi-byte chars (e.g. Unicode comments/identifiers in source).
     if snippet.len() > max_chars {
-        snippet.truncate(max_chars);
+        let cut = snippet.floor_char_boundary(max_chars);
+        snippet.truncate(cut);
         snippet.push_str("\n// [truncated by zift deep-mode max_prompt_chars]");
     }
 
@@ -259,6 +262,25 @@ mod tests {
 
         let ctx = expand_finding(&finding, dir.path(), 500).unwrap();
         assert!(ctx.snippet.len() < 600); // 500 + tail marker
+        assert!(ctx.snippet.contains("[truncated"));
+    }
+
+    #[test]
+    fn truncation_does_not_panic_on_multibyte_boundary() {
+        // Build a snippet whose byte length exceeds max_chars and whose
+        // truncation point lands inside a multi-byte char. Naive truncate
+        // would panic.
+        let dir = tempdir().unwrap();
+        let mut content = String::new();
+        // 198 ascii bytes, then a 4-byte emoji that crosses byte 200.
+        content.push_str(&"a".repeat(198));
+        content.push('🦀');
+        content.push_str(&"b".repeat(200));
+        write_file(dir.path(), "a.ts", &content);
+        let finding = make_finding(PathBuf::from("a.ts"), 1, 1);
+
+        // No panic — boundary-rounded truncate keeps us valid.
+        let ctx = expand_finding(&finding, dir.path(), 200).unwrap();
         assert!(ctx.snippet.contains("[truncated"));
     }
 

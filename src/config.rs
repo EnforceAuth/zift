@@ -30,6 +30,12 @@ pub struct DeepConfig {
     pub model: Option<String>,
     /// Maximum spend limit in USD.
     pub max_cost: Option<f64>,
+    /// USD cost per 1k input tokens. Required for `max_cost` to bind on
+    /// hosted models — without this (and `cost_per_1k_output`), the spend
+    /// tracker is a no-op.
+    pub cost_per_1k_input: Option<f64>,
+    /// USD cost per 1k output tokens. See `cost_per_1k_input`.
+    pub cost_per_1k_output: Option<f64>,
     // NOTE: api_key is intentionally NOT readable from this file — keys belong
     // in $ZIFT_AGENT_API_KEY or --api-key, not checked into source control.
 }
@@ -87,6 +93,8 @@ min_confidence = "medium"
 base_url = "http://localhost:11434/v1"
 model = "qwen2.5-coder:14b"
 max_cost = 5.00
+cost_per_1k_input = 0.00015
+cost_per_1k_output = 0.0006
 
 [extract]
 package_prefix = "app.authz"
@@ -104,6 +112,8 @@ additional = ["./custom-rules"]
         );
         assert_eq!(config.deep.model.as_deref(), Some("qwen2.5-coder:14b"));
         assert_eq!(config.deep.max_cost, Some(5.0));
+        assert_eq!(config.deep.cost_per_1k_input, Some(0.00015));
+        assert_eq!(config.deep.cost_per_1k_output, Some(0.0006));
         assert_eq!(config.extract.package_prefix.as_deref(), Some("app.authz"));
         assert_eq!(config.rules.additional, vec!["./custom-rules"]);
     }

@@ -85,6 +85,8 @@ mod tests {
             max_concurrent: 1,
             temperature: 0.0,
             max_prompt_chars: 16_000,
+            excludes: Vec::new(),
+            language_filter: Vec::new(),
         }
     }
 

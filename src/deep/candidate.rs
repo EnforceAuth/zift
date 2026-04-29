@@ -180,7 +180,8 @@ fn build_cold_regions(
         return Ok(Vec::new());
     }
 
-    let discovered = discover_files_for_deep(scan_root, &[], &[]);
+    let discovered =
+        discover_files_for_deep(scan_root, &runtime.excludes, &runtime.language_filter);
     let mut out: Vec<Candidate> = Vec::new();
 
     for file in discovered {
@@ -318,6 +319,8 @@ mod tests {
             max_concurrent: 1,
             temperature: 0.0,
             max_prompt_chars: 16_000,
+            excludes: Vec::new(),
+            language_filter: Vec::new(),
         }
     }
 
@@ -525,17 +528,59 @@ mod tests {
     #[test]
     fn max_candidates_cap_respected() {
         let dir = tempdir().unwrap();
-        // 20 files, each with one auth-y name.
+        // 20 files, each with one auth-y name. Use `is_admin()` (rather than
+        // `is_admin_{i}`) — the regex's trailing \b doesn't fire after
+        // `_<digit>` because `_` is a word char.
         for i in 0..20 {
             fs::write(
                 dir.path().join(format!("f{i}.py")),
-                format!("def is_admin_{i}():\n    pass\n"),
+                "def is_admin():\n    pass\n",
             )
             .unwrap();
+            // Use the suffix only to vary file names, not the auth-y token.
+            let _ = i;
         }
         let mut runtime = rt();
         runtime.max_candidates = 5;
         let candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
-        assert!(candidates.len() <= 5);
+        // cold_budget = 5 * 0.3 → 1 candidate. Cap binds: we should get
+        // exactly 1, not 20 (the count of available cold-region hits).
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates.len() <= runtime.max_candidates);
+    }
+
+    #[test]
+    fn cold_region_respects_excludes() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("vendor")).unwrap();
+        fs::write(
+            dir.path().join("vendor/legacy.py"),
+            "def is_admin():\n    pass\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("app.py"), "def has_role(u, r):\n    pass\n").unwrap();
+
+        let mut runtime = rt();
+        runtime.excludes = vec!["vendor/**".into()];
+        let candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].file, PathBuf::from("app.py"));
+    }
+
+    #[test]
+    fn cold_region_respects_language_filter() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.py"), "def is_admin():\n    pass\n").unwrap();
+        fs::write(
+            dir.path().join("b.go"),
+            "func IsAdmin() bool { return true }\n",
+        )
+        .unwrap();
+
+        let mut runtime = rt();
+        runtime.language_filter = vec![Language::Python];
+        let candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].language, Language::Python);
     }
 }
