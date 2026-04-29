@@ -105,3 +105,38 @@ Each commit small and reviewable.
 
 - **Hard to debug.** When a user's `agent_cmd` returns garbage, the failure mode is opaque. Surface a generic, non-sensitive error to the user (e.g. "agent_cmd failed to parse output"). Gate verbose stdout/stderr capture behind explicit debug logging (e.g. `RUST_LOG=zift::deep=debug`), and even there cap the snippet length and apply the same redaction discipline as `src/deep/client.rs` — `agent_cmd` output can mirror prompt text and scanned source verbatim, which would re-create the secret/source-leak class we already avoid in the HTTP client.
 - **Security.** Running arbitrary shell commands the user configured is a footgun if `.zift.toml` is checked in to a repo and Zift is run by another user. Document; consider warning when `agent_cmd` is read from a `.zift.toml` not owned by the running user.
+
+---
+
+## 10. Shipped
+
+**Branch**: `feat/deep-subprocess`
+**Status**: open as PR.
+
+### Module additions
+
+- `src/deep/analyzer.rs` — `Analyzer` trait + relocated `AnalyzeResponse`/`TokenUsage` from `client.rs`. The seam between `deep::run` and concrete transports.
+- `src/deep/subprocess.rs` — `SubprocessClient`, ~280 lines including unit tests. Spawns the user's command through the platform shell (`sh -c` on Unix, `cmd /C` on Windows), writes a JSON envelope to stdin, reads stdout to EOF with a wall-clock timeout enforced by polling `try_wait` at 50ms granularity. Stderr is captured for debug logs only.
+- `tests/deep_subprocess_integration.rs` — 6 end-to-end tests against shell-script fixtures (`#![cfg(unix)]`).
+
+### Plan deviations (all flagged in commit messages)
+
+1. **`base_url`/`model` remain `String`, not `Option<String>`.** Plan §3 implied separate fields per mode. Switching to `Option` would have churned every call site (HTTP client constructor, `cost::CostTracker::new`, every test rt() helper). Empty strings in subprocess mode work because `OpenAiCompatibleClient::new` is never instantiated when `mode == Subprocess` — guarded by the `match` in `deep::run`. Documented on `DeepRuntime`.
+2. **Spawn failures (sh exits 127) surface as `BadResponse`, not `Config`.** Plan §9 implied any spawn error was misconfiguration. In practice, `sh -c` itself spawns fine and returns 127 for "command not found" — that surfaces as nonzero exit, mapped to `BadResponse`, which the orchestrator skips. The user still gets a clear error from the per-candidate-skip warn-log; hard-failing the whole deep run on a typo felt heavy-handed when the structural pass would have already produced findings.
+3. **Stdout/stderr drained via background threads with `mpsc::channel`.** Plan §3 sketched a single-thread-with-`read_to_string` flow. That deadlocks if the agent fills the stderr pipe (~64KB) before exiting — the writer thread blocks on stdin, the main thread blocks on stdout, and stderr never gets read. Three-thread design (writer, stdout reader, stderr reader) is necessary for backpressure correctness, not a stylistic choice.
+4. **`SubprocessClient` derives `Debug`.** Required so `Result<SubprocessClient, _>::unwrap_err` works in `#[test]` blocks. Struct only contains a command string and `Duration` — nothing sensitive.
+5. **No `wait_timeout` crate dep.** Plan §3 left the timeout strategy open. We poll `try_wait` at 50ms cadence inside the orchestrator's own loop; works on every platform without a new dependency. Latency overhead is rounding error against agent CLIs that take seconds-to-minutes per request.
+6. **Plan moved to `done/` in this same PR.** Folder convention from `00-deep-mode-overview.md`. Overview file's PR 3 cross-reference updated to point at `../done/03-...`.
+
+### Test counts
+
+After this PR:
+
+- 275 lib unit tests (was 253; +22 new in `deep::config::tests` and `deep::subprocess::tests`).
+- 18 + 6 + 6 = 30 integration tests across 3 files (`deep_http_integration`, `mcp_stdio_integration`, `deep_subprocess_integration`).
+
+### Open follow-ups
+
+- **Concurrency** — subprocess transport is hard-pinned to `max_concurrent = 1`. Rationale: `claude -p` and friends serialize internally, parallelism rarely helps. If a real workload contradicts this, lift the cap behind explicit `[deep] max_concurrent = N`.
+- **Windows fixture** — integration tests are `#![cfg(unix)]`. A Rust-binary fixture would unblock Windows CI. Defer until a Windows user files an issue.
+- **Owner-mismatch warning on `.zift.toml`.** Plan §9 floated warning when `agent_cmd` comes from a config file not owned by the running user. Useful future hardening; not in scope here.

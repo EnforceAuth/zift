@@ -116,6 +116,23 @@ pub struct ScanArgs {
     /// invocation. Build-time validation in `deep::config::build` is enough.
     #[arg(long, env = "ZIFT_AGENT_API_KEY")]
     pub api_key: Option<String>,
+
+    /// Shell command line for the subprocess transport (requires --deep)
+    ///
+    /// Selects the subprocess deep-mode transport: Zift writes a single
+    /// JSON envelope `{system, user, schema}` to the command's stdin and
+    /// reads the deep-mode JSON response from stdout. Use for agent CLIs
+    /// that don't speak the OpenAI HTTP dialect — e.g. `claude -p
+    /// --output-format json`, `aider`, or a custom wrapper script.
+    ///
+    /// Mutually exclusive with --base-url at config-build time (validated
+    /// in deep::config::build).
+    ///
+    /// Examples:
+    ///   --agent-cmd "claude -p --output-format json"
+    ///   --agent-cmd "./scripts/my-agent.sh"
+    #[arg(long, requires = "deep")]
+    pub agent_cmd: Option<String>,
 }
 
 // -- Extract --
@@ -361,6 +378,49 @@ mod tests {
             assert!(args.deep);
             assert_eq!(args.base_url.as_deref(), Some("http://localhost:11434/v1"));
             assert_eq!(args.model.as_deref(), Some("qwen2.5-coder:14b"));
+        } else {
+            panic!("expected Scan command");
+        }
+    }
+
+    #[test]
+    fn agent_cmd_requires_deep() {
+        // Clap's `requires = "deep"` should reject `--agent-cmd` on
+        // its own — without `--deep`, the subprocess transport never
+        // gets exercised, so accepting the flag silently would mask a
+        // misconfigured invocation.
+        let result = Cli::try_parse_from([
+            "zift",
+            "scan",
+            "--agent-cmd",
+            "claude -p --output-format json",
+            ".",
+        ]);
+        assert!(
+            result.is_err(),
+            "expected parse error for --agent-cmd without --deep, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn agent_cmd_with_deep_parses() {
+        // Companion to `agent_cmd_requires_deep`: with `--deep` the
+        // flag must round-trip into `ScanArgs`.
+        let cli = Cli::try_parse_from([
+            "zift",
+            "scan",
+            "--deep",
+            "--agent-cmd",
+            "claude -p --output-format json",
+            ".",
+        ])
+        .unwrap();
+        if let Some(Command::Scan(args)) = cli.command {
+            assert!(args.deep);
+            assert_eq!(
+                args.agent_cmd.as_deref(),
+                Some("claude -p --output-format json"),
+            );
         } else {
             panic!("expected Scan command");
         }

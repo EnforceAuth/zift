@@ -44,11 +44,24 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
     let mut result = scanner::scan(&path, &loaded_rules, &args, &config)?;
 
     if let Some(runtime) = deep_runtime.as_ref() {
-        tracing::info!(
-            "running deep scan: base_url={} model={}",
-            runtime.base_url,
-            runtime.model,
-        );
+        match runtime.mode {
+            deep::config::DeepMode::Http => tracing::info!(
+                "running deep scan via HTTP: base_url={} model={}",
+                runtime.base_url,
+                runtime.model,
+            ),
+            // Deliberately omit `agent_cmd` from the log — wrapper
+            // commands frequently embed API keys or tokens
+            // (`./run.sh --token=$X`), and emitting them at info level
+            // would leak credentials into shared CI logs. Same instinct
+            // as the redacted `Debug` impl on `DeepRuntime` for
+            // `api_key`. Operators who need to verify the configured
+            // command can read it from `.zift.toml` or pass `--debug`.
+            deep::config::DeepMode::Subprocess => tracing::info!(
+                "running deep scan via subprocess: timeout={}s",
+                runtime.agent_timeout_secs,
+            ),
+        }
         result.findings = deep::run(result.findings, &path, runtime)?;
     }
 

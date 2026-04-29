@@ -11,6 +11,7 @@
 //! emit JSON in the message body anyway. The retry strips the directive
 //! and re-parses; if that still fails, we return [`DeepError::BadResponse`].
 
+use crate::deep::analyzer::Analyzer;
 use crate::deep::config::DeepRuntime;
 use crate::deep::error::DeepError;
 use crate::deep::finding::SemanticFinding;
@@ -18,17 +19,10 @@ use crate::deep::prompt::RenderedPrompt;
 use serde::Deserialize;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TokenUsage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-}
-
-#[derive(Debug)]
-pub struct AnalyzeResponse {
-    pub findings: Vec<SemanticFinding>,
-    pub usage: TokenUsage,
-}
+// Re-export so existing call sites (`use zift::deep::client::TokenUsage`)
+// keep compiling after the move to `analyzer.rs`. Keeps the diff minimal
+// and avoids a churn ripple across the integration test suite.
+pub use crate::deep::analyzer::{AnalyzeResponse, TokenUsage};
 
 pub struct OpenAiCompatibleClient {
     http: reqwest::blocking::Client,
@@ -209,11 +203,21 @@ impl OpenAiCompatibleClient {
     }
 }
 
+impl Analyzer for OpenAiCompatibleClient {
+    fn analyze(&self, prompt: &RenderedPrompt) -> Result<AnalyzeResponse, DeepError> {
+        OpenAiCompatibleClient::analyze(self, prompt)
+    }
+}
+
 /// Strip a leading/trailing markdown fence if present, regardless of the
 /// optional language tag (` ```json `, ` ```javascript `, plain ` ``` `, …).
 /// Some local models wrap JSON in fences despite system-prompt instructions
 /// not to.
-fn strip_markdown_fence(s: &str) -> &str {
+///
+/// `pub(crate)` so the subprocess transport ([`crate::deep::subprocess`])
+/// can reuse it — agent CLIs that wrap LLMs (e.g. `claude -p`) emit fenced
+/// JSON for the same reason raw chat-completions endpoints do.
+pub(crate) fn strip_markdown_fence(s: &str) -> &str {
     let trimmed = s.trim();
     let after_fence = match trimmed.strip_prefix("```") {
         Some(rest) => {
@@ -233,7 +237,10 @@ fn strip_markdown_fence(s: &str) -> &str {
         .trim()
 }
 
-fn truncate_for_log(s: &str) -> String {
+/// `pub(crate)` for the same reason as [`strip_markdown_fence`] — both
+/// transports want truncated, UTF-8-safe debug previews of agent output
+/// without leaking full prompts/source into log strings.
+pub(crate) fn truncate_for_log(s: &str) -> String {
     const MAX: usize = 200;
     if s.len() <= MAX {
         s.to_string()

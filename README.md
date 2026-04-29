@@ -27,7 +27,17 @@ zift report .                   # detailed findings report
 
 ## Deep mode (`--deep`)
 
-`--deep` talks to **any OpenAI-compatible chat-completions endpoint** — one client speaks to Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, OpenAI, and Anthropic-via-proxy. Pick where you want your bytes to go.
+`--deep` ships three transports — pick whichever fits your existing tooling. Pick exactly one:
+
+| Tier | Transport | When |
+|------|-----------|------|
+| 1 | **MCP server** (`zift mcp`) | You already use an agent host (Claude Code, Cursor, Continue, Cline, Zed). The host owns the model; Zift is a tool provider. |
+| 2 | **OpenAI-compatible HTTP** (`--base-url`) | Headless / CI runs against any OpenAI-shaped chat-completions endpoint — Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, OpenAI, Anthropic-via-proxy. |
+| 3 | **Subprocess hook** (`--agent-cmd`) | Anything else — `claude -p`, `aider`, custom shell scripts. Stdin: prompt + JSON envelope. Stdout: JSON matching the deep-mode schema. |
+
+### HTTP transport (`--base-url`)
+
+One client speaks to **any OpenAI-compatible chat-completions endpoint** — Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, OpenAI, and Anthropic-via-proxy. Pick where you want your bytes to go.
 
 ### Local model (Ollama, LM Studio, llama.cpp)
 
@@ -66,6 +76,56 @@ cost_per_1k_output = 0.0   #                e.g. 0.0006  for gpt-4o-mini output
 ```
 
 `api_key` is intentionally **not** readable from `.zift.toml` — keys belong in `$ZIFT_AGENT_API_KEY` or `--api-key`, not in source-controlled files.
+
+### Subprocess transport (`--agent-cmd`)
+
+For agents that don't speak the OpenAI HTTP dialect — `claude -p`, `aider`, or any user wrapper script — drive them through stdin/stdout:
+
+```bash
+zift scan ./src --deep --agent-cmd "claude -p --output-format json"
+```
+
+Zift writes one JSON envelope to the command's stdin and reads the deep-mode JSON response from stdout:
+
+```jsonc
+// stdin (one line, then EOF)
+{"system": "...", "user": "...", "schema": { /* JSON Schema */ }}
+
+// stdout (the deep-mode response schema)
+{"findings": [{"line_start": 12, "line_end": 18, "category": "rbac", ...}]}
+```
+
+The schema is identical to the HTTP transport's response — wrappers around real LLMs forward `system`/`user` straight through.
+
+#### `.zift.toml` for subprocess
+
+```toml
+[deep]
+mode               = "subprocess"
+agent_cmd          = "claude -p --output-format json"
+agent_timeout_secs = 600     # generous; LLM CLIs can be slow (default)
+```
+
+#### Example wrappers
+
+```bash
+# Claude Code CLI in print mode — already emits structured JSON.
+zift scan . --deep --agent-cmd "claude -p --output-format json"
+
+# Custom shell script — read envelope from stdin, call your favorite agent,
+# emit `{"findings": [...]}` on stdout.
+zift scan . --deep --agent-cmd "./scripts/zift-agent.sh"
+
+# Pipeline with jq for response massaging.
+zift scan . --deep --agent-cmd "my-agent | jq -c '{findings: .results}'"
+```
+
+#### Caveats
+
+- **No token tracking.** Subprocess agents don't return token counts in any standard way; `--max-cost` has no effect. Enforce ceilings externally (timeouts, ulimits, wrapper scripts).
+- **No retry.** Each candidate gets one subprocess invocation. Nonzero exit, bad JSON, or timeout → skip the candidate, keep going.
+- **Unix-only for v0.1.4.** Windows users: use the HTTP transport or wrap the agent in a WSL command.
+- **Security note.** `agent_cmd` is run through your platform shell. Don't run Zift against an untrusted `.zift.toml` — same threat model as `.editorconfig`-style attacks.
 
 ## MCP server (`zift mcp`)
 

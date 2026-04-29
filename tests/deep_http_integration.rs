@@ -17,6 +17,7 @@ use zift::types::{AuthCategory, Confidence, Language};
 
 fn runtime_for(server_url: &str) -> DeepRuntime {
     DeepRuntime {
+        mode: zift::deep::config::DeepMode::Http,
         base_url: server_url.to_string(),
         model: "test-model".into(),
         api_key: Some("test-key".into()),
@@ -30,6 +31,8 @@ fn runtime_for(server_url: &str) -> DeepRuntime {
         max_prompt_chars: 16_000,
         excludes: Vec::new(),
         language_filter: Vec::new(),
+        agent_cmd: None,
+        agent_timeout_secs: 600,
     }
 }
 
