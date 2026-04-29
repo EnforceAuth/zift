@@ -81,28 +81,32 @@ impl Response {
 /// - `Err(FrameError::Parse)` — line was not valid JSON-RPC; caller should
 ///   respond with a parse-error response (id: null) and continue serving
 pub fn read_request<R: BufRead>(reader: &mut R) -> Result<Option<Request>, FrameError> {
-    let mut buf = String::new();
-    let n = reader.read_line(&mut buf).map_err(FrameError::Io)?;
-    if n == 0 {
-        return Ok(None);
-    }
-    let trimmed = buf.trim();
     // Tolerate keepalive blanks — agent hosts sometimes send them between
-    // sessions, and a strict parser rejecting them would break the loop.
-    if trimmed.is_empty() {
-        return read_request(reader);
-    }
-    let req: Request = serde_json::from_str(trimmed).map_err(|e| FrameError::Parse {
-        message: e.to_string(),
-        raw: trimmed.to_string(),
-    })?;
-    if req.jsonrpc != "2.0" {
-        return Err(FrameError::Parse {
-            message: format!("unexpected jsonrpc version: {}", req.jsonrpc),
+    // sessions, and a strict parser rejecting them would break the serve
+    // loop. Iterate (rather than recurse) so a peer pumping blank lines
+    // can't grow the stack.
+    loop {
+        let mut buf = String::new();
+        let n = reader.read_line(&mut buf).map_err(FrameError::Io)?;
+        if n == 0 {
+            return Ok(None);
+        }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let req: Request = serde_json::from_str(trimmed).map_err(|e| FrameError::Parse {
+            message: e.to_string(),
             raw: trimmed.to_string(),
-        });
+        })?;
+        if req.jsonrpc != "2.0" {
+            return Err(FrameError::Parse {
+                message: format!("unexpected jsonrpc version: {}", req.jsonrpc),
+                raw: trimmed.to_string(),
+            });
+        }
+        return Ok(Some(req));
     }
-    Ok(Some(req))
 }
 
 /// Write a response as a single JSON line + `\n` and flush. The MCP spec

@@ -29,7 +29,6 @@ pub fn execute(args: McpArgs, config: ZiftConfig) -> Result<()> {
     mcp::server::run(mcp::server::ServerContext {
         scan_root,
         rules: loaded_rules,
-        rules_dir: args.rules_dir,
         config,
     })
 }

@@ -73,7 +73,8 @@ pub fn read_resource(ctx: &ServerContext, uri: &str) -> Option<ResourceContent> 
         return Some(ResourceContent {
             uri: uri.to_string(),
             mime_type: "application/json",
-            text: serde_json::to_string_pretty(&output_schema()).unwrap(),
+            text: serde_json::to_string_pretty(&output_schema())
+                .expect("output_schema is always serializable"),
         });
     }
     if let Some(slug) = uri.strip_prefix("category://") {
@@ -87,7 +88,8 @@ pub fn read_resource(ctx: &ServerContext, uri: &str) -> Option<ResourceContent> 
         return Some(ResourceContent {
             uri: uri.to_string(),
             mime_type: "application/json",
-            text: serde_json::to_string_pretty(&body).unwrap(),
+            text: serde_json::to_string_pretty(&body)
+                .expect("category body is always serializable"),
         });
     }
     if let Some(rule_id) = uri.strip_prefix("rule://") {
@@ -95,7 +97,8 @@ pub fn read_resource(ctx: &ServerContext, uri: &str) -> Option<ResourceContent> 
         return Some(ResourceContent {
             uri: uri.to_string(),
             mime_type: "application/json",
-            text: serde_json::to_string_pretty(&rule_to_json(rule)).unwrap(),
+            text: serde_json::to_string_pretty(&rule_to_json(rule))
+                .expect("rule_to_json output is always serializable"),
         });
     }
     None
@@ -232,7 +235,6 @@ mod tests {
         ServerContext {
             scan_root: PathBuf::from("."),
             rules,
-            rules_dir: None,
             config,
         }
     }

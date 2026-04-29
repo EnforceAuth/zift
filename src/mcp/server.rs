@@ -29,9 +29,6 @@ pub struct ServerContext {
     pub scan_root: PathBuf,
     /// Pre-loaded rule library (embedded + any `--rules-dir` overlay).
     pub rules: Vec<PatternRule>,
-    /// Reflection of `--rules-dir` so the server can re-resolve paths if a
-    /// future tool needs them. Today only used for diagnostics.
-    pub rules_dir: Option<PathBuf>,
     pub config: ZiftConfig,
 }
 
@@ -108,11 +105,14 @@ fn handle_notification(req: &Request) {
 /// `Response` ready to be written.
 pub fn handle_request(ctx: &ServerContext, req: &Request, id: Value) -> Response {
     let result = match req.method.as_str() {
-        "initialize" => handle_initialize(req).map(|r| serde_json::to_value(r).unwrap()),
+        "initialize" => handle_initialize(req)
+            .map(|r| serde_json::to_value(r).expect("InitializeResult is always serializable")),
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(serde_json::to_value(tools::list_tools()).unwrap()),
+        "tools/list" => Ok(serde_json::to_value(tools::list_tools())
+            .expect("ToolsListResult is always serializable")),
         "tools/call" => handle_tools_call(ctx, req),
-        "resources/list" => Ok(serde_json::to_value(resources::list_resources(ctx)).unwrap()),
+        "resources/list" => Ok(serde_json::to_value(resources::list_resources(ctx))
+            .expect("ResourcesListResult is always serializable")),
         "resources/read" => handle_resources_read(ctx, req),
         other => {
             return Response::error(
@@ -186,7 +186,7 @@ fn handle_tools_call(
         })?;
 
     let result = tools::dispatch(ctx, &params.name, &params.arguments);
-    Ok(serde_json::to_value(result).unwrap())
+    Ok(serde_json::to_value(result).expect("ToolsCallResult is always serializable"))
 }
 
 fn handle_resources_read(
@@ -211,7 +211,7 @@ fn handle_resources_read(
     let result = ResourcesReadResult {
         contents: vec![content],
     };
-    Ok(serde_json::to_value(result).unwrap())
+    Ok(serde_json::to_value(result).expect("ResourcesReadResult is always serializable"))
 }
 
 #[cfg(test)]
@@ -226,7 +226,6 @@ mod tests {
         ServerContext {
             scan_root: std::env::current_dir().unwrap(),
             rules,
-            rules_dir: None,
             config,
         }
     }

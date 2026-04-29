@@ -10,6 +10,14 @@
 //! logic, zero prompt content, zero candidate-selection rules — those all
 //! live under [`crate::deep`] and [`crate::rules`] and are imported here
 //! verbatim.
+//!
+//! Coding rule: production code in this module forbids `.unwrap()`. Use
+//! `.expect("…")` with a message that documents *why* the call is infallible,
+//! or propagate the error. Tests are allowed to `unwrap` (panic = test
+//! failure). Enforced by `clippy::unwrap_used` + `allow-unwrap-in-tests` in
+//! the workspace `clippy.toml`.
+
+#![warn(clippy::unwrap_used)]
 
 pub mod jsonrpc;
 pub mod protocol;

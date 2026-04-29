@@ -417,11 +417,25 @@ fn build_template_vars(snippet: &str) -> std::collections::HashMap<String, Strin
     use crate::rego::templates::extract_string_literals;
     let mut vars = std::collections::HashMap::new();
     let literals = extract_string_literals(snippet);
+    // Single-value placeholders. Tree-sitter captures used by rule templates
+    // are listed exhaustively so a rule using e.g. {{plan_value}} or
+    // {{perm_value}} doesn't render with the literal placeholder still in
+    // place. `expr` (SpEL passthrough in spring-preauthorize.toml) has no
+    // sensible literal-derived value and is intentionally omitted —
+    // unsubstituted is the right behavior there.
     if let Some(first) = literals.first() {
-        vars.insert("role_value".to_string(), first.clone());
-        vars.insert("attribute".to_string(), first.clone());
-        vars.insert("value".to_string(), first.clone());
+        for key in [
+            "role_value",
+            "plan_value",
+            "perm_value",
+            "permission",
+            "attribute",
+            "value",
+        ] {
+            vars.insert(key.to_string(), first.clone());
+        }
     }
+    // Set-form placeholders used by category-default templates.
     if !literals.is_empty() {
         let set = format!(
             "{{{}}}",
@@ -601,8 +615,12 @@ fn parse_args<T: for<'de> Deserialize<'de>>(args: &Value, tool: &str) -> Result<
 }
 
 /// Resolve `path` (defaulting to ".") against `scan_root` and verify the
-/// canonical result is inside the canonical scan_root. Returns the canonical
-/// absolute path on success.
+/// canonical result is inside `scan_root`. Returns the canonical absolute
+/// path on success.
+///
+/// `scan_root` is already canonicalized at startup
+/// (`commands::mcp::execute`), so we don't re-canonicalize it here — both
+/// to save the syscall and to keep a single canonical-root invariant.
 fn resolve_inside_scan_root(scan_root: &Path, path: Option<&str>) -> Result<PathBuf, String> {
     let candidate = match path {
         Some(p) if !p.is_empty() => scan_root.join(p),
@@ -611,33 +629,28 @@ fn resolve_inside_scan_root(scan_root: &Path, path: Option<&str>) -> Result<Path
     let canonical = candidate
         .canonicalize()
         .map_err(|e| format!("cannot resolve path {}: {e}", candidate.display()))?;
-    let canonical_root = scan_root
-        .canonicalize()
-        .map_err(|e| format!("cannot resolve scan_root: {e}"))?;
-    if !canonical.starts_with(&canonical_root) {
+    if !canonical.starts_with(scan_root) {
         return Err(format!(
             "path {} is outside scan_root {}",
             canonical.display(),
-            canonical_root.display(),
+            scan_root.display(),
         ));
     }
     Ok(canonical)
 }
 
 /// Same containment check, but for an explicit relative path argument.
+/// `scan_root` is assumed canonical (see [`resolve_inside_scan_root`]).
 fn ensure_inside_scan_root(scan_root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let absolute = scan_root.join(relative);
     let canonical = absolute
         .canonicalize()
         .map_err(|e| format!("cannot resolve {}: {e}", absolute.display()))?;
-    let canonical_root = scan_root
-        .canonicalize()
-        .map_err(|e| format!("cannot resolve scan_root: {e}"))?;
-    if !canonical.starts_with(&canonical_root) {
+    if !canonical.starts_with(scan_root) {
         return Err(format!(
             "path {} is outside scan_root {}",
             canonical.display(),
-            canonical_root.display(),
+            scan_root.display(),
         ));
     }
     Ok(canonical)
@@ -657,7 +670,6 @@ mod tests {
         ServerContext {
             scan_root: root,
             rules,
-            rules_dir: None,
             config,
         }
     }
@@ -827,6 +839,41 @@ function check(user: { role: string }) {
         let rego = payload["rego"].as_str().unwrap();
         assert!(rego.contains("input.user.role"));
         assert!(rego.contains("admin"));
+    }
+
+    #[test]
+    fn suggest_rego_with_rule_id_substitutes_all_placeholder_names() {
+        // Regression: build_template_vars used to only fill role_value /
+        // attribute / value / roles / plans, leaving rules with
+        // {{plan_value}} or {{perm_value}} or {{permission}} placeholders
+        // unrendered. Verify suggest_rego with a feature-gate rule
+        // ({{plan_value}}) and a permission rule ({{perm_value}}) come back
+        // fully substituted.
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+
+        let res = dispatch(
+            &ctx,
+            "suggest_rego",
+            &json!({
+                "category": "feature_gate",
+                "confidence": "high",
+                "code_snippet": "if (user.plan === \"enterprise\") { ... }",
+                "rule_id": "ts-feature-gate-check",
+            }),
+        );
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        let rego = payload["rego"].as_str().unwrap();
+        assert!(
+            !rego.contains("{{"),
+            "unrendered placeholder in suggest_rego output: {rego}"
+        );
+        assert!(rego.contains("enterprise"));
     }
 
     #[test]
