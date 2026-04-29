@@ -1,6 +1,6 @@
 [package]
 name = "zift"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Scan codebases for embedded authorization logic and generate Rego policies for OPA"
 license = "Apache-2.0"

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/EnforceAuth/zift/compare/v0.1.2...v0.1.3) - 2026-04-29
+
+### Added
+
+- *(deep)* subprocess transport via --agent-cmd ([#22](https://github.com/EnforceAuth/zift/pull/22))
+- *(mcp)* add zift mcp subcommand exposing scanner, prompt, and Rego primitives over stdio ([#21](https://github.com/EnforceAuth/zift/pull/21))
+- *(deep)* OpenAI-compatible HTTP transport for --deep mode ([#17](https://github.com/EnforceAuth/zift/pull/17))
+
+### Fixed
+
+- *(deep)* error prefix, semantic pattern_rule lineage, category serialization ([#23](https://github.com/EnforceAuth/zift/pull/23))
+
 ## [0.1.2](https://github.com/EnforceAuth/zift/compare/v0.1.1...v0.1.2) - 2026-04-28
 
 ### Added
