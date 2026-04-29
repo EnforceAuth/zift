@@ -14,15 +14,10 @@
 //!
 //! Candidates are sorted deterministically by `(file, line_start)`.
 
-// The deep module is wired into the binary only when `deep::run` actually
-// does work (commit 6). Until then it's "dead" from the binary's perspective
-// even though tests cover it. This allow goes away in commit 6.
-#![allow(dead_code)]
-
 use crate::deep::config::DeepRuntime;
 use crate::deep::context::{expand_finding, expand_region};
 use crate::deep::error::DeepError;
-use crate::scanner::discovery::{detect_language_for_deep, discover_files_for_deep};
+use crate::scanner::discovery::discover_files_for_deep;
 use crate::types::{AuthCategory, Confidence, Finding, Language};
 use regex::Regex;
 use std::collections::HashSet;
@@ -284,13 +279,6 @@ fn overlaps_any(
         // Same file + line ranges intersect.
         f.as_path() == file && start <= *e && *s <= end
     })
-}
-
-/// Lookup a language's tsx/jsx flavor for a given file path.
-pub(crate) fn is_tsx_jsx(path: &Path) -> bool {
-    detect_language_for_deep(path)
-        .map(|(_, tsx)| tsx)
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

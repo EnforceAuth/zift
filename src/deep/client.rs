@@ -11,8 +11,6 @@
 //! emit JSON in the message body anyway. The retry strips the directive
 //! and re-parses; if that still fails, we return [`DeepError::BadResponse`].
 
-#![allow(dead_code)] // wired into the binary in commit 6
-
 use crate::deep::config::DeepRuntime;
 use crate::deep::error::DeepError;
 use crate::deep::finding::SemanticFinding;

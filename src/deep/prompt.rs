@@ -11,9 +11,6 @@
 //! detected in the candidate's imports — keeps the base prompt small for
 //! the common case, adds targeted hints when relevant.
 
-// Wired into the binary in commit 6; until then, dead from main()'s view.
-#![allow(dead_code)]
-
 use crate::deep::candidate::Candidate;
 use crate::types::{Finding, Language};
 

@@ -5,8 +5,6 @@
 //! running concurrent requests. If both per-1k rates are unset (or zero),
 //! tracking is a no-op and `record` always returns `Ok`.
 
-#![allow(dead_code)] // wired into the binary in commit 6
-
 use crate::deep::client::TokenUsage;
 use crate::deep::config::DeepRuntime;
 use crate::deep::error::DeepError;

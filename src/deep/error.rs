@@ -1,6 +1,3 @@
-// Some variants are constructed only by code that lands in commits 5/6.
-#![allow(dead_code)]
-
 use thiserror::Error;
 
 /// Errors produced by the deep (semantic) scan pipeline.

@@ -7,10 +7,6 @@
 //!   from `.zift.toml` — keys belong in env or CLI, not source-controlled
 //!   files.
 
-// Most DeepRuntime fields are read by the HTTP client (commit 5) and
-// orchestrator (commit 6); skipped here until those land.
-#![allow(dead_code)]
-
 use crate::cli::ScanArgs;
 use crate::config::ZiftConfig;
 use crate::deep::error::DeepError;

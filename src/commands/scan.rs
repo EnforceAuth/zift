@@ -50,10 +50,7 @@ pub fn execute(args: ScanArgs, config: ZiftConfig) -> Result<()> {
             runtime.model,
             runtime.max_concurrent
         );
-        let semantic = deep::run(&result.findings, &path, runtime)?;
-        if !semantic.is_empty() {
-            result.findings = deep::merge::merge(result.findings, semantic);
-        }
+        result.findings = deep::run(result.findings, &path, runtime)?;
     }
 
     let stdout = std::io::stdout();

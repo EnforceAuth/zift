@@ -1,8 +1,5 @@
 //! LLM-side finding shape and translation to the canonical [`Finding`].
 
-// Wired into the binary in commit 6; until then, dead from main()'s view.
-#![allow(dead_code)]
-
 use crate::deep::candidate::Candidate;
 use crate::scanner::matcher::compute_finding_id;
 use crate::types::{AuthCategory, Confidence, Finding, ScanPass};

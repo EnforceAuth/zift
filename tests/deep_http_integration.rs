@@ -334,3 +334,137 @@ fn missing_usage_field_defaults_to_zero() {
     assert_eq!(response.usage.output_tokens, 0);
     m.assert();
 }
+
+// -- End-to-end deep::run tests --------------------------------------------
+
+use std::fs;
+use std::path::PathBuf;
+use tempfile::tempdir;
+use zift::types::{Finding, ScanPass};
+
+fn structural_finding(file: &str, line: usize) -> Finding {
+    Finding {
+        id: format!("structural-{file}-{line}"),
+        file: PathBuf::from(file),
+        line_start: line,
+        line_end: line + 2,
+        code_snippet: String::new(),
+        language: Language::TypeScript,
+        category: AuthCategory::Custom,
+        confidence: Confidence::Low,
+        description: "matched custom rule".into(),
+        pattern_rule: Some("ts-custom".into()),
+        rego_stub: None,
+        pass: ScanPass::Structural,
+    }
+}
+
+#[test]
+fn deep_run_end_to_end_produces_semantic_finding() {
+    let dir = tempdir().unwrap();
+    // Write a source file containing an auth-y function so cold-region picks it up.
+    fs::write(
+        dir.path().join("auth.ts"),
+        "// imports here\nfunction isAdmin(user) {\n  return user.role === 'admin';\n}\n",
+    )
+    .unwrap();
+
+    let mut server = Server::new();
+    let _m = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_body(ok_response(
+            &json!({
+                "findings": [{
+                    "line_start": 2,
+                    "line_end": 4,
+                    "category": "rbac",
+                    "confidence": "high",
+                    "description": "isAdmin role check",
+                    "reasoning": "function name + role comparison",
+                    "is_false_positive": false
+                }]
+            })
+            .to_string(),
+            120,
+            40,
+        ))
+        .expect_at_least(1)
+        .create();
+
+    let runtime = runtime_for(&server.url());
+
+    // No structural findings — cold-region scan should pick up isAdmin.
+    let merged = zift::deep::run(Vec::new(), dir.path(), &runtime).unwrap();
+
+    assert!(!merged.is_empty(), "expected at least one semantic finding");
+    let semantic: Vec<&Finding> = merged
+        .iter()
+        .filter(|f| f.pass == ScanPass::Semantic)
+        .collect();
+    assert_eq!(semantic.len(), 1);
+    assert_eq!(semantic[0].category, AuthCategory::Rbac);
+    assert_eq!(semantic[0].confidence, Confidence::High);
+}
+
+#[test]
+fn deep_run_drops_structural_when_model_flags_false_positive() {
+    let dir = tempdir().unwrap();
+    // Write a source file with auth-y content so the structural finding can resolve.
+    fs::write(
+        dir.path().join("auth.ts"),
+        "function maybeAuth() {\n  // not actually authz\n  return true;\n}\n",
+    )
+    .unwrap();
+
+    let mut server = Server::new();
+    let _m = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_body(ok_response(
+            &json!({
+                "findings": [{
+                    "line_start": 1,
+                    "line_end": 3,
+                    "category": "custom",
+                    "confidence": "low",
+                    "description": "not really auth",
+                    "reasoning": "function name is misleading; no actual authz logic",
+                    "is_false_positive": true
+                }]
+            })
+            .to_string(),
+            80,
+            20,
+        ))
+        .expect_at_least(1)
+        .create();
+
+    let runtime = runtime_for(&server.url());
+    let structural = vec![structural_finding("auth.ts", 1)];
+
+    let merged = zift::deep::run(structural, dir.path(), &runtime).unwrap();
+
+    // The structural finding was the only input; the model rejected it.
+    // Result should be empty (no semantic finding emitted, no structural retained).
+    assert!(merged.is_empty(), "expected empty result, got: {merged:?}");
+}
+
+#[test]
+fn deep_run_returns_structural_unchanged_when_no_candidates() {
+    let dir = tempdir().unwrap();
+    // No source files; no auth-y content; no structural findings.
+    // deep::run should return the empty input as-is without making HTTP calls.
+
+    let mut server = Server::new();
+    let m = server
+        .mock("POST", "/chat/completions")
+        .with_status(500) // would fail if called; we shouldn't call it
+        .expect(0)
+        .create();
+
+    let runtime = runtime_for(&server.url());
+    let merged = zift::deep::run(Vec::new(), dir.path(), &runtime).unwrap();
+    assert!(merged.is_empty());
+    m.assert();
+}

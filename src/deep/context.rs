@@ -10,10 +10,6 @@
 //!   sufficient for v1. Most local 7B-14B models can figure out function
 //!   boundaries from a generous line window with imports included.
 
-// ExpandedContext.imports/file_relative/language are populated here but
-// consumed by prompt rendering in commit 4. The allow goes away then.
-#![allow(dead_code)]
-
 use crate::deep::error::DeepError;
 use crate::types::{Finding, Language};
 use std::path::{Path, PathBuf};
