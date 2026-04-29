@@ -5,7 +5,7 @@
 //! running concurrent requests. If both per-1k rates are unset (or zero),
 //! tracking is a no-op and `record` always returns `Ok`.
 
-use crate::deep::client::TokenUsage;
+use crate::deep::analyzer::TokenUsage;
 use crate::deep::config::DeepRuntime;
 use crate::deep::error::DeepError;
 use std::sync::atomic::{AtomicU64, Ordering};

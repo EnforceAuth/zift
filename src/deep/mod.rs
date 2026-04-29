@@ -5,6 +5,7 @@
 //! The primitives in this module are intentionally transport-agnostic so
 //! that PR 2 (MCP server) and PR 3 (subprocess hook) can reuse them.
 
+pub mod analyzer;
 pub mod candidate;
 pub mod client;
 pub mod config;
