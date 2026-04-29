@@ -2,7 +2,7 @@
 
 Sift through your codebase for embedded authorization logic. Extract it into Rego for [OPA](https://www.openpolicyagent.org/).
 
-> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, and Java. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint.
+> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, and Java. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
 
 ## What is zift?
 
@@ -66,6 +66,66 @@ cost_per_1k_output = 0.0   #                e.g. 0.0006  for gpt-4o-mini output
 ```
 
 `api_key` is intentionally **not** readable from `.zift.toml` — keys belong in `$ZIFT_AGENT_API_KEY` or `--api-key`, not in source-controlled files.
+
+## MCP server (`zift mcp`)
+
+If you already use an agent host — Claude Code, Cursor, Continue, Cline, Zed, or anything else that speaks the [Model Context Protocol](https://modelcontextprotocol.io) — Zift can plug in as a tool provider over stdio:
+
+```bash
+zift mcp --scan-root .
+```
+
+Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, Rego validation).
+
+### Tools exposed
+
+| Tool | Purpose |
+|---|---|
+| `scan_authz` | Run a structural scan; return findings + enforcement-point count |
+| `get_finding_context` | Expand a finding's surrounding code window |
+| `list_rules` | Enumerate the rule library (filter by language / category) |
+| `get_rule` | Fetch a rule's full definition (tree-sitter query, predicates, Rego template) |
+| `suggest_rego` | Render a Rego stub for a finding (template-driven or category default) |
+| `validate_rego` | Parse a Rego policy with the embedded `regorus` engine |
+| `analyze_snippet` | Render the deep-scan prompt + JSON Schema *without* calling any model — the agent host's model produces the response |
+
+### Resources exposed
+
+| URI | Content |
+|---|---|
+| `prompt://system` | The system prompt sent on every deep-scan request |
+| `prompt://schema` | The JSON Schema deep-scan responses must validate against |
+| `category://<auth_category>` | Definition + canonical examples per category |
+| `rule://<rule_id>` | One rule's full definition |
+
+### Example agent host configs
+
+#### Claude Code
+
+```jsonc
+// ~/.config/claude-code/mcp.json (or wherever your host stores MCP configs)
+{
+  "mcpServers": {
+    "zift": {
+      "command": "zift",
+      "args": ["mcp", "--scan-root", "/path/to/your/repo"]
+    }
+  }
+}
+```
+
+#### Cursor / Continue / Cline / Zed
+
+These hosts ship their own MCP config UI. Point them at the `zift` binary with `mcp` and `--scan-root <repo>` as arguments; the protocol is identical.
+
+#### Manual smoke-test from the shell
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' | zift mcp
+```
+
+You should see a single line back with `serverInfo.name == "zift"` and capability flags for tools/resources.
+Then call `tools/list` to see the seven tool descriptors.
 
 ## Supported languages
 

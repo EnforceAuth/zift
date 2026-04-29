@@ -43,6 +43,14 @@ pub enum Command {
 
     /// Create a .zift.toml configuration file
     Init(InitArgs),
+
+    /// Run Zift as an MCP server over stdio
+    ///
+    /// Speaks JSON-RPC 2.0 per the Model Context Protocol spec. Agent hosts
+    /// (Claude Code, Cursor, Continue, Cline, Zed, …) call Zift's tools to
+    /// scan, render prompts, and validate Rego — the host owns the model;
+    /// Zift owns the authz expertise.
+    Mcp(McpArgs),
 }
 
 // -- Scan --
@@ -171,6 +179,20 @@ pub struct InitArgs {
     pub path: PathBuf,
 }
 
+// -- Mcp --
+
+#[derive(Debug, clap::Args)]
+pub struct McpArgs {
+    /// Additional pattern rules directory (overlays embedded rules)
+    #[arg(long)]
+    pub rules_dir: Option<PathBuf>,
+
+    /// Default root used by the `scan_authz` tool when the agent doesn't
+    /// supply an explicit path. Tools may scan paths inside this root only.
+    #[arg(long, default_value = ".")]
+    pub scan_root: PathBuf,
+}
+
 // -- Value enums --
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -287,6 +309,39 @@ mod tests {
     fn verbose_flag() {
         let cli = Cli::try_parse_from(["zift", "-vvv", "."]).unwrap();
         assert_eq!(cli.verbose, 3);
+    }
+
+    #[test]
+    fn mcp_subcommand_default_scan_root() {
+        let cli = Cli::try_parse_from(["zift", "mcp"]).unwrap();
+        if let Some(Command::Mcp(args)) = cli.command {
+            assert_eq!(args.scan_root, PathBuf::from("."));
+            assert!(args.rules_dir.is_none());
+        } else {
+            panic!("expected Mcp command");
+        }
+    }
+
+    #[test]
+    fn mcp_subcommand_with_rules_dir_and_scan_root() {
+        let cli = Cli::try_parse_from([
+            "zift",
+            "mcp",
+            "--rules-dir",
+            "./custom-rules",
+            "--scan-root",
+            "/repo",
+        ])
+        .unwrap();
+        if let Some(Command::Mcp(args)) = cli.command {
+            assert_eq!(
+                args.rules_dir.as_deref(),
+                Some(std::path::Path::new("./custom-rules"))
+            );
+            assert_eq!(args.scan_root, PathBuf::from("/repo"));
+        } else {
+            panic!("expected Mcp command");
+        }
     }
 
     #[test]

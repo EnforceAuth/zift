@@ -1,5 +1,6 @@
 mod extract;
 mod init;
+mod mcp;
 mod report;
 mod rules;
 mod scan;
@@ -15,6 +16,7 @@ pub fn dispatch(cli: Cli, config: ZiftConfig) -> Result<()> {
         Some(Command::Report(args)) => report::execute(args, config),
         Some(Command::Rules(args)) => rules::execute(args, config),
         Some(Command::Init(args)) => init::execute(args),
+        Some(Command::Mcp(args)) => mcp::execute(args, config),
         None => {
             let mut args = cli.scan_args.unwrap_or_default();
             if args.path.as_os_str().is_empty() {
