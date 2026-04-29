@@ -107,6 +107,7 @@ languages = ["java", "typescript"]
 min_confidence = "medium"
 
 [deep]
+mode = "http"
 base_url = "http://localhost:11434/v1"
 model = "qwen2.5-coder:14b"
 max_cost = 5.00
@@ -123,16 +124,43 @@ additional = ["./custom-rules"]
         let config: ZiftConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.scan.exclude.len(), 2);
         assert_eq!(config.scan.languages, vec!["java", "typescript"]);
+        assert_eq!(config.deep.mode.as_deref(), Some("http"));
         assert_eq!(
             config.deep.base_url.as_deref(),
             Some("http://localhost:11434/v1")
         );
         assert_eq!(config.deep.model.as_deref(), Some("qwen2.5-coder:14b"));
+        // HTTP mode leaves the subprocess fields unset so transport
+        // selection in `deep::config::resolve_mode` stays unambiguous.
+        assert!(config.deep.agent_cmd.is_none());
+        assert!(config.deep.agent_timeout_secs.is_none());
         assert_eq!(config.deep.max_cost, Some(5.0));
         assert_eq!(config.deep.cost_per_1k_input, Some(0.00015));
         assert_eq!(config.deep.cost_per_1k_output, Some(0.0006));
         assert_eq!(config.extract.package_prefix.as_deref(), Some("app.authz"));
         assert_eq!(config.rules.additional, vec!["./custom-rules"]);
+    }
+
+    #[test]
+    fn parse_subprocess_deep_config() {
+        // Mirror of `parse_full_config` for the subprocess transport,
+        // pinned so the new fields can't silently break deserialization.
+        let toml = r#"
+[deep]
+mode = "subprocess"
+agent_cmd = "claude -p --output-format json"
+agent_timeout_secs = 300
+"#;
+        let config: ZiftConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.deep.mode.as_deref(), Some("subprocess"));
+        assert_eq!(
+            config.deep.agent_cmd.as_deref(),
+            Some("claude -p --output-format json"),
+        );
+        assert_eq!(config.deep.agent_timeout_secs, Some(300));
+        // Subprocess mode legitimately leaves HTTP fields blank.
+        assert!(config.deep.base_url.is_none());
+        assert!(config.deep.model.is_none());
     }
 
     #[test]

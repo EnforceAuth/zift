@@ -176,13 +176,27 @@ impl SubprocessClient {
                 Ok(Some(status)) => break status,
                 Ok(None) => {
                     if start.elapsed() >= self.timeout {
-                        // Kill the child, reap it, and let the reader
-                        // threads drain naturally as the pipes close.
-                        let _ = child.kill();
+                        // Kill the entire process tree (group on Unix),
+                        // reap the immediate child, and let the reader
+                        // threads drain as the pipes close. Killing the
+                        // whole group matters because `sh -c 'cmd'` on
+                        // Linux dash forks `cmd` rather than execing
+                        // into it — leaving the immediate `sh` reaped
+                        // but `cmd` orphaned with our pipes open.
+                        #[cfg(unix)]
+                        kill_process_tree(&child);
+                        #[cfg(not(unix))]
+                        kill_process_tree(&mut child);
                         let _ = child.wait();
                         let _ = writer.join();
-                        let _ = stdout_rx.recv();
-                        let _ = stderr_rx.recv();
+                        // Bound the drain so a misbehaving descendant
+                        // that somehow survived `SIGKILL` (unkillable
+                        // kernel state, ptrace stop, etc.) cannot hang
+                        // the analyzer. 500ms is well past the kernel's
+                        // signal-delivery latency in practice.
+                        let drain_timeout = Duration::from_millis(500);
+                        let _ = stdout_rx.recv_timeout(drain_timeout);
+                        let _ = stderr_rx.recv_timeout(drain_timeout);
                         return Err(DeepError::Timeout {
                             secs: self.timeout.as_secs(),
                         });
@@ -272,10 +286,30 @@ fn build_envelope(prompt: &RenderedPrompt) -> String {
 /// CLI surface friendly (pipes, redirects, env-var expansion) at the
 /// cost of inheriting whatever quoting the user's shell does — same
 /// trade-off as `npm scripts` or `Makefile` recipes.
+///
+/// On Unix the child is placed in its own session/process group via
+/// `setsid` in a pre-exec hook so [`kill_process_tree`] can later send
+/// `SIGKILL` to the entire tree. Without that, `sh -c 'sleep 30'` on
+/// Linux dash forks `sleep` as a grandchild — killing the immediate
+/// child reaps `sh` but leaves `sleep` running with our pipes still
+/// open, and the reader threads block until `sleep` finishes naturally.
 #[cfg(unix)]
 fn shell_command(cmd: &str) -> Command {
+    use std::os::unix::process::CommandExt;
     let mut c = Command::new("sh");
     c.arg("-c").arg(cmd);
+    // SAFETY: `setsid` is async-signal-safe and only mutates this
+    // process's session/pgid — exactly the call documented as
+    // permissible inside `pre_exec`. We do not allocate, lock, or
+    // touch shared state here.
+    unsafe {
+        c.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     c
 }
 
@@ -284,6 +318,32 @@ fn shell_command(cmd: &str) -> Command {
     let mut c = Command::new("cmd");
     c.arg("/C").arg(cmd);
     c
+}
+
+/// Kill the child and any grandchildren it spawned.
+///
+/// On Unix we send `SIGKILL` to the negated PID, which addresses the
+/// process group (the child became its own group leader via `setsid`
+/// in [`shell_command`]). This reaches every descendant — closing
+/// inherited pipes promptly so the reader threads can drain. On
+/// Windows we fall back to [`std::process::Child::kill`], which the
+/// platform implements as `TerminateProcess` on the immediate child
+/// only; the trade-off is acceptable here because the same Linux dash
+/// vs. macOS bash divergence does not arise on Windows shells.
+#[cfg(unix)]
+fn kill_process_tree(child: &std::process::Child) {
+    // SAFETY: `kill(2)` is async-signal-safe and stateless from our
+    // perspective; the negative PID addresses the process group, and
+    // an invalid PID just returns ESRCH which we ignore.
+    unsafe {
+        let pid = child.id() as libc::pid_t;
+        libc::kill(-pid, libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_process_tree(child: &mut std::process::Child) {
+    let _ = child.kill();
 }
 
 /// Brief, allocation-free string form of [`std::process::ExitStatus`]

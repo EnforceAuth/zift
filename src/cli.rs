@@ -382,4 +382,47 @@ mod tests {
             panic!("expected Scan command");
         }
     }
+
+    #[test]
+    fn agent_cmd_requires_deep() {
+        // Clap's `requires = "deep"` should reject `--agent-cmd` on
+        // its own — without `--deep`, the subprocess transport never
+        // gets exercised, so accepting the flag silently would mask a
+        // misconfigured invocation.
+        let result = Cli::try_parse_from([
+            "zift",
+            "scan",
+            "--agent-cmd",
+            "claude -p --output-format json",
+            ".",
+        ]);
+        assert!(
+            result.is_err(),
+            "expected parse error for --agent-cmd without --deep, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn agent_cmd_with_deep_parses() {
+        // Companion to `agent_cmd_requires_deep`: with `--deep` the
+        // flag must round-trip into `ScanArgs`.
+        let cli = Cli::try_parse_from([
+            "zift",
+            "scan",
+            "--deep",
+            "--agent-cmd",
+            "claude -p --output-format json",
+            ".",
+        ])
+        .unwrap();
+        if let Some(Command::Scan(args)) = cli.command {
+            assert!(args.deep);
+            assert_eq!(
+                args.agent_cmd.as_deref(),
+                Some("claude -p --output-format json"),
+            );
+        } else {
+            panic!("expected Scan command");
+        }
+    }
 }
