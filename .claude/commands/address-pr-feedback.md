@@ -120,7 +120,7 @@ gh api "repos/{owner}/{repo}/pulls/{pr}/reviews" --paginate \
      has_agent_prompt: (.body | test("Prompt for AI Agents"))}'
 ```
 
-**Only fetch the full review body** if `has_nitpicks`, `has_duplicates`, `has_outside_diff`, or `has_agent_prompt` is true AND the review is from the latest round (i.e., after your last push). For earlier rounds where inline comments were already replied to, skip the full body fetch.
+**Only fetch the full review body** if `has_nitpicks`, `has_duplicates`, `has_outside_diff`, or `has_agent_prompt` is true AND the review is from the latest round (i.e., after your last push). For earlier rounds where inline comments were already replied to, skip the full-body fetch.
 
 ```bash
 # Fetch full body ONLY for reviews that need it (one at a time)

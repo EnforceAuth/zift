@@ -127,10 +127,14 @@ pub fn build(args: &ScanArgs, config: &ZiftConfig) -> Result<DeepRuntime, DeepEr
         )));
     }
 
+    // Trim before the emptiness check so whitespace-only values like "   "
+    // are treated as missing — otherwise the failure moves from config-build
+    // (clear, actionable) to request-time as an opaque upstream rejection.
     let model = args
         .model
         .clone()
         .or_else(|| config.deep.model.clone())
+        .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
             DeepError::Config(
@@ -358,6 +362,21 @@ mod tests {
         let args = args_with(Some("http://x/v1"), None, None, None);
         let err = build(&args, &ZiftConfig::default()).unwrap_err();
         assert!(matches!(err, DeepError::Config(_)));
+    }
+
+    #[test]
+    fn whitespace_only_model_treated_as_missing() {
+        // Without trim, "   " sneaks past `!is_empty()` and the failure moves
+        // to request time as an opaque upstream rejection — defeating the
+        // fail-fast config contract.
+        for model in ["   ", "\t", "\n", " \t\n "] {
+            let args = args_with(Some("http://x/v1"), Some(model), None, None);
+            let err = build(&args, &ZiftConfig::default()).unwrap_err();
+            assert!(
+                matches!(err, DeepError::Config(_)),
+                "expected Config error for model={model:?}, got: {err:?}",
+            );
+        }
     }
 
     #[test]

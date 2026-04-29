@@ -99,6 +99,14 @@ pub fn run(
                 );
                 continue;
             }
+            Err(DeepError::Transient(msg)) => {
+                tracing::warn!(
+                    "deep: transient upstream failure on {}:{} (skipping): {msg}",
+                    candidate.file.display(),
+                    candidate.line_start
+                );
+                continue;
+            }
             Err(DeepError::Timeout { secs }) => {
                 tracing::warn!(
                     "deep: timeout ({}s) on {}:{} (skipping)",

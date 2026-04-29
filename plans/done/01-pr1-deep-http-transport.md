@@ -71,7 +71,7 @@ Resolution precedence:
 - `base_url`, `model`, `max_cost`: CLI flag > `[deep]` config > built-in default.
 - `api_key`: CLI flag (`--api-key`) > env var (`ZIFT_AGENT_API_KEY`) > unset. **Intentionally NOT readable from `.zift.toml`** — keys belong in env vars or CLI to avoid accidental secret commits.
 
-Validation: empty `base_url` is hard error; missing `model` is hard error; missing `api_key` is a warning (not an error — Ollama/llama.cpp accept any value).
+Validation: empty `base_url` is hard error; missing `model` is hard error; missing `api_key` is silently accepted (Ollama/llama.cpp accept any value, so requiring a key — or even warning — would create friction for the local-LLM path that motivated this design).
 
 ### `src/deep/error.rs`
 
@@ -387,7 +387,7 @@ CLI test for `--provider` no longer applies; replace with `--base-url`. Existing
 |---|---|
 | Malformed JSON from model | One retry with degraded prompt; if still bad, log warning + drop candidate, continue |
 | HTTP timeout | Configurable per-request timeout (default 120s); on timeout, log + drop candidate |
-| API key missing | Warn at startup if base_url is non-localhost; allow it (local servers don't need keys) |
+| API key missing | Silently accept (`api_key: None`); local servers don't need keys, and remote endpoints will surface their own 401/403, which we already hard-fail on with a clear "auth rejected by {base_url}" message |
 | Cost ceiling hit mid-run | Stop dispatching new candidates; finalize in-flight; warn with spent total; return findings collected so far |
 | HTTP 401/403 | Hard fail with clear "auth rejected by {base_url}" message |
 | HTTP 5xx | Exponential backoff (3 attempts at 1s, 4s, 16s) then drop |
@@ -425,7 +425,7 @@ CLI `--max-cost` wins over toml; CLI flags for the rates intentionally not added
 
 Six commits, each compiling and passing tests:
 
-1. **`refactor(cli): drop closed LlmProvider enum, add --base-url, rename env var`** — `cli.rs`, `config.rs`, `commands/init.rs`, `docs/DESIGN.md`, CLI tests. Renames `ZIFT_API_KEY` → `ZIFT_AGENT_API_KEY`; `api_key` removed from config-file schema. Stub-only deep scan still prints the warning.
+1. **`refactor(cli): drop closed LlmProvider enum, add --base-url, rename env var`** — `cli.rs`, `config.rs`, `commands/init.rs`, `docs/DESIGN.md`, CLI tests. Renames `ZIFT_API_KEY` → `ZIFT_AGENT_API_KEY`; `api_key` removed from config-file schema.
 2. **`feat(deep): add deep module skeleton with config + error types`** — empty modules with type definitions; `deep::run` returns `Ok(vec![])`; wired into `commands/scan.rs`; tests for `config::build`. Expose `compute_finding_id` from scanner.
 3. **`feat(deep): candidate selection and context expansion`** — `candidate.rs`, `context.rs` with tests. `deep::run` produces candidates but returns empty findings.
 4. **`feat(deep): prompt rendering and JSON schema`** — `prompt.rs`, `finding.rs`. `output_schema()` and `SYSTEM_PROMPT` exported. Tests for prompt validity.

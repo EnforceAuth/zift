@@ -15,6 +15,14 @@ pub enum DeepError {
     #[error("model returned malformed JSON: {0}")]
     BadResponse(String),
 
+    /// Transient upstream failure (5xx, 429, etc.). The orchestrator skips
+    /// the affected candidate and continues; this is *not* hard-failed as
+    /// `Config`, and unlike `BadResponse` it does NOT trigger the
+    /// schema-fallback retry — removing `response_format` cannot fix a
+    /// rate-limit or server outage, and retrying just doubles traffic.
+    #[error("transient upstream failure: {0}")]
+    Transient(String),
+
     #[error("cost ceiling reached after ${spent:.4} USD")]
     CostExceeded { spent: f64 },
 

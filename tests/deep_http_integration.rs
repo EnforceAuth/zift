@@ -314,17 +314,20 @@ fn http_401_surfaces_as_config_error() {
 }
 
 #[test]
-fn http_500_surfaces_as_bad_response_for_per_candidate_skip() {
+fn http_500_surfaces_as_transient_for_per_candidate_skip() {
     // 5xx is a transient server-side failure, NOT misconfiguration. It must
-    // surface as `BadResponse` so the orchestrator's per-candidate skip path
-    // takes it; mapping to `Config` would hard-fail the whole deep run on
-    // one upstream blip.
+    // surface as `Transient` so the orchestrator's per-candidate skip path
+    // takes it. Mapping to `Config` would hard-fail the whole deep run on
+    // one upstream blip; mapping to `BadResponse` would (incorrectly) trigger
+    // the schema-fallback retry — pointless during an outage and just doubles
+    // upstream traffic.
     let mut server = Server::new();
     let m = server
         .mock("POST", "/chat/completions")
         .with_status(500)
         .with_body("internal server error")
-        .expect_at_least(1) // analyze() retries without response_format once
+        // EXACTLY one request: `analyze()` must NOT retry transient failures.
+        .expect(1)
         .create();
 
     let runtime = runtime_for(&server.url());
@@ -336,8 +339,8 @@ fn http_500_surfaces_as_bad_response_for_per_candidate_skip() {
 
     let err = client.analyze(&prompt).unwrap_err();
     assert!(
-        matches!(err, DeepError::BadResponse(_)),
-        "expected BadResponse for 5xx, got: {err:?}",
+        matches!(err, DeepError::Transient(_)),
+        "expected Transient for 5xx, got: {err:?}",
     );
     let msg = format!("{err}");
     assert!(msg.contains("500"), "msg should reference status: {msg}");
@@ -345,16 +348,18 @@ fn http_500_surfaces_as_bad_response_for_per_candidate_skip() {
 }
 
 #[test]
-fn http_429_surfaces_as_bad_response_for_per_candidate_skip() {
+fn http_429_surfaces_as_transient_for_per_candidate_skip() {
     // 429 Too Many Requests is transient (rate-limit / quota), same bucket
-    // as 5xx — must hit the per-candidate skip path, NOT abort the whole
-    // deep run via `Config`.
+    // as 5xx — must hit the per-candidate skip path, NOT abort via `Config`,
+    // and NOT trigger the schema-fallback retry (it would just re-hit the
+    // rate limit and worsen the situation).
     let mut server = Server::new();
     let m = server
         .mock("POST", "/chat/completions")
         .with_status(429)
         .with_body("rate limited")
-        .expect_at_least(1)
+        // EXACTLY one request: `analyze()` must NOT retry rate-limited responses.
+        .expect(1)
         .create();
 
     let runtime = runtime_for(&server.url());
@@ -366,8 +371,8 @@ fn http_429_surfaces_as_bad_response_for_per_candidate_skip() {
 
     let err = client.analyze(&prompt).unwrap_err();
     assert!(
-        matches!(err, DeepError::BadResponse(_)),
-        "expected BadResponse for 429, got: {err:?}",
+        matches!(err, DeepError::Transient(_)),
+        "expected Transient for 429, got: {err:?}",
     );
     let msg = format!("{err}");
     assert!(msg.contains("429"), "msg should reference status: {msg}");

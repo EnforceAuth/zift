@@ -137,21 +137,24 @@ impl OpenAiCompatibleClient {
                 )));
             }
             // 5xx is a transient/server-side failure, not misconfiguration.
-            // Surface as `BadResponse` so the orchestrator's per-candidate
+            // Surface as `Transient` so the orchestrator's per-candidate
             // skip path takes it instead of aborting the entire deep run
             // (which `Config` would do — that bucket is reserved for
-            // operator-actionable misconfiguration).
+            // operator-actionable misconfiguration). NOT `BadResponse`,
+            // because that triggers `analyze()`'s schema-fallback retry —
+            // removing `response_format` cannot fix a 5xx, so retrying
+            // just doubles traffic during outages.
             if status.is_server_error() {
-                return Err(DeepError::BadResponse(format!(
+                return Err(DeepError::Transient(format!(
                     "upstream {} from {}",
                     status, self.base_url
                 )));
             }
             // 429 Too Many Requests is transient (rate-limit / quota), same
-            // bucket as 5xx — let the orchestrator skip this candidate rather
-            // than abort the whole deep run.
+            // bucket as 5xx — skip the candidate, do NOT trigger the
+            // schema-fallback retry (it would just re-hit the rate limit).
             if code == 429 {
-                return Err(DeepError::BadResponse(format!(
+                return Err(DeepError::Transient(format!(
                     "upstream rate-limited ({} from {})",
                     status, self.base_url
                 )));

@@ -103,5 +103,5 @@ Each commit small and reviewable.
 
 ## 9. Risks
 
-- **Hard to debug.** When a user's `agent_cmd` returns garbage, the failure mode is opaque. Always print the first ~500 bytes of stdout to stderr on parse failure. Always print stderr from the subprocess on nonzero exit.
+- **Hard to debug.** When a user's `agent_cmd` returns garbage, the failure mode is opaque. Surface a generic, non-sensitive error to the user (e.g. "agent_cmd failed to parse output"). Gate verbose stdout/stderr capture behind explicit debug logging (e.g. `RUST_LOG=zift::deep=debug`), and even there cap the snippet length and apply the same redaction discipline as `src/deep/client.rs` — `agent_cmd` output can mirror prompt text and scanned source verbatim, which would re-create the secret/source-leak class we already avoid in the HTTP client.
 - **Security.** Running arbitrary shell commands the user configured is a footgun if `.zift.toml` is checked in to a repo and Zift is run by another user. Document; consider warning when `agent_cmd` is read from a `.zift.toml` not owned by the running user.
