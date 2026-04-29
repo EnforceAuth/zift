@@ -29,17 +29,9 @@ TypeScript, JavaScript, and Java (Python, Go, C#, Kotlin, Ruby, PHP planned).
 
 ## Installation
 
-### Homebrew
-
-```bash
-brew tap EnforceAuth/tap
-brew install zift
-```
-
 ### Cargo
 
 ```bash
-cargo binstall zift    # prebuilt binary
 cargo install zift     # build from source
 ```
 
