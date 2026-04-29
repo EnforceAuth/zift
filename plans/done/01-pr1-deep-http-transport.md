@@ -457,3 +457,59 @@ Each commit ~150-400 lines of diff, reviewable independently. PR title for the m
 - `/Users/brad/dev/zift/src/types.rs`
 - `/Users/brad/dev/zift/src/scanner/matcher.rs` (expose finding_id)
 - `/Users/brad/dev/zift/Cargo.toml`
+
+---
+
+## 14. Shipped
+
+**Branch**: `feat/deep-http`
+**Test count**: 199 passing (186 lib unit + 13 integration); clippy clean with `-D warnings`.
+
+### Commits (in order)
+
+| Commit | Title |
+|---|---|
+| `10f2643` | docs: add plans/ tree with PR 1-3 plan for --deep |
+| `5743690` | docs(plans): lock three decisions for PR 1 deep-mode design |
+| `e29eb42` | refactor(cli): replace closed LlmProvider enum with --base-url |
+| `08ad940` | feat(deep): add deep module skeleton with config + error types |
+| `4a1a110` | feat(deep): candidate selection and context expansion |
+| `0b0ecef` | feat(deep): prompt rendering and JSON schema |
+| `fd2683a` | feat(deep): OpenAI-compatible HTTP client + cost tracker |
+| `c9a5004` | feat(deep): wire orchestrator end-to-end and merge semantic findings |
+
+The plan called for 6 implementation commits; we shipped 6, plus 2 doc commits up front and 1 commit to move this plan to `done/`.
+
+### Plan deviations (all flagged in commit messages)
+
+1. **`api_key` excluded from `.zift.toml`.** Originally §2 said precedence was CLI > env > config; security review during commit 1 dropped the config-file step — keys belong in env or CLI, not source-controlled files. Plan §2 was updated in commit 1.
+2. **CLI flag rename**: `ZIFT_API_KEY` → `ZIFT_AGENT_API_KEY` (commit 1). Decided mid-implementation; namespaced + semantic.
+3. **`Candidate.imports` field added.** §2 didn't specify it; needed by `prompt::render` for per-call framework detection. Populated from `ExpandedContext.imports` in `select_candidates`.
+4. **Smart-path tree-sitter expansion deferred.** Plan §7 specced both fast-path and smart-path for commit 3; only fast-path shipped. The line-window with imports is sufficient for the model to figure out function boundaries on the languages we support, and adding tree-sitter walking can land later if measurement says it matters. Smart-path comments preserved as TODOs in `src/deep/context.rs`.
+5. **Concurrency is sequential, not fan-out.** Plan §4 mentioned `std::thread::scope` over `reqwest::blocking::Client` to honor `runtime.max_concurrent`. Commit 6 ships sequential dispatch with a TODO in `src/deep/mod.rs::run`. Local servers (localhost auto-capped to 1) wouldn't benefit anyway, and remote endpoints can have this added later without API changes.
+6. **`src/lib.rs` split added in commit 5.** Required to let `tests/deep_http_integration.rs` reach internal modules. `src/main.rs` is now a thin shim. Future-proofs PR 2 (the MCP server can depend on `zift` as a library).
+7. **Markdown-fence stripping added to client.** Not in original plan; shipped after observing that some local models wrap JSON in ` ```json ` fences despite system-prompt instructions. `strip_markdown_fence` in `src/deep/client.rs`.
+8. **`AUTH_NAME_REGEX` tweak**: pattern is `authori[sz]\w*` not `authori[sz]e\w*`. The plan-suggested regex would have missed "authorization" (no `e` between `z` and `ation`). Caught by tests in commit 3.
+
+### Open follow-ups (from §12 "Open issues" + new ones)
+
+- **Concurrency fan-out** — implement `std::thread::scope` parallelism for non-localhost backends (commit 6 TODO).
+- **Smart-path tree-sitter expansion** — walk to enclosing function for TS/JS/Java findings. Useful when fast-path snippet is < 8 lines after window (commit 3 TODO in `context.rs`).
+- **`response_format` capability detection at startup** — current model is "send it, retry without on parse failure"; could be one-off probe instead.
+- **HTTP 5xx exponential backoff** — currently any 5xx is a hard skip; plan §9 specced 3 attempts at 1s/4s/16s. Worth adding for flaky remote endpoints.
+- **`compute_finding_id` move** — currently `pub(crate)` in `scanner/matcher.rs`; cleaner home would be `types::compute_finding_id`.
+
+### Ready for PR 2
+
+The shared primitives are stable and exported:
+
+- `crate::deep::prompt::SYSTEM_PROMPT`
+- `crate::deep::prompt::output_schema()`
+- `crate::deep::prompt::render(...)`
+- `crate::deep::candidate::select_candidates(...)`
+- `crate::deep::context::expand_finding(...)`, `expand_region(...)`
+- `crate::deep::finding::SemanticFinding`, `into_finding(...)`
+- `crate::deep::merge::merge(...)`
+- `crate::deep::cost::CostTracker`
+
+PR 2 (MCP server) can wrap these without reimplementing.
