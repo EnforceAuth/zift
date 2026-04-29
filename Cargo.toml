@@ -29,7 +29,7 @@ tempfile = "3"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/zift-{ target }{ archive-suffix }"
-bin-dir = "zift{ binary-ext }"
+bin-dir = "{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]

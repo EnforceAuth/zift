@@ -37,7 +37,7 @@ cargo install --git https://github.com/EnforceAuth/zift
 
 ### Binary download
 
-Prebuilt binaries for Linux, macOS, and Windows are available from [Releases](https://github.com/EnforceAuth/zift/releases).
+Prebuilt binaries for Linux (x86_64), macOS (x86_64 and arm64), and Windows (x86_64) are available from [Releases](https://github.com/EnforceAuth/zift/releases).
 
 ## License
 
