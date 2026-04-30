@@ -6,7 +6,7 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor, Tree};
 
 use crate::error::{Result, ZiftError};
-use crate::rules::{PatternRule, Predicate};
+use crate::rules::{CrossPredicate, PatternRule, Predicate};
 use crate::types::{Confidence, Finding, Language, ScanPass};
 
 pub struct CompiledRule<'a> {
@@ -38,6 +38,37 @@ pub fn compile_rule<'a>(
             rule_id: rule.id.clone(),
             message: "query must have a @match capture".into(),
         })? as u32;
+
+    // Validate that every per-capture predicate references a real capture.
+    for (capture_name, _) in &rule.predicates {
+        if !capture_names.iter().any(|n| n == capture_name) {
+            return Err(ZiftError::QueryError {
+                rule_id: rule.id.clone(),
+                message: format!(
+                    "predicate references unknown capture '{capture_name}' \
+                     (query captures: {})",
+                    capture_names.join(", "),
+                ),
+            });
+        }
+    }
+
+    // Validate that every cross-predicate references real captures.
+    for (i, cp) in rule.cross_predicates.iter().enumerate() {
+        for capture_name in cp.referenced_captures() {
+            if !capture_names.iter().any(|n| n == capture_name) {
+                return Err(ZiftError::QueryError {
+                    rule_id: rule.id.clone(),
+                    message: format!(
+                        "cross_predicate[{i}] ({}) references unknown capture \
+                         '{capture_name}' (query captures: {})",
+                        cp.kind_label(),
+                        capture_names.join(", "),
+                    ),
+                });
+            }
+        }
+    }
 
     Ok(CompiledRule {
         rule,
@@ -91,8 +122,12 @@ pub fn execute_query(
             continue;
         };
 
-        // Apply predicates
+        // Apply predicates. Per-capture predicates run first because they're
+        // typically more selective and short-circuit more matches.
         if !check_predicates(&compiled.rule.predicates, &captures) {
+            continue;
+        }
+        if !check_cross_predicates(&compiled.rule.cross_predicates, &captures) {
             continue;
         }
 
@@ -156,6 +191,48 @@ fn check_predicates(predicates: &[(String, Predicate)], captures: &HashMap<&str,
             }
             Predicate::NotEq(expected) => {
                 if text == expected {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Apply cross-capture predicates. Each cross-predicate is an AND term —
+/// all must hold for the match to pass. A capture missing from `captures`
+/// (e.g. an optional sub-pattern that didn't fire) is treated as not
+/// matching the regex; for `any_match` other listed captures may still
+/// satisfy the predicate, while `all_match` fails closed.
+fn check_cross_predicates(
+    cross_predicates: &[CrossPredicate],
+    captures: &HashMap<&str, String>,
+) -> bool {
+    for cp in cross_predicates {
+        match cp {
+            CrossPredicate::AnyMatch {
+                captures: names,
+                regex,
+            } => {
+                let any = names.iter().any(|name| {
+                    captures
+                        .get(name.as_str())
+                        .is_some_and(|text| regex.is_match(text))
+                });
+                if !any {
+                    return false;
+                }
+            }
+            CrossPredicate::AllMatch {
+                captures: names,
+                regex,
+            } => {
+                let all = names.iter().all(|name| {
+                    captures
+                        .get(name.as_str())
+                        .is_some_and(|text| regex.is_match(text))
+                });
+                if !all {
                     return false;
                 }
             }
@@ -744,6 +821,213 @@ public class MyService implements Serializable {
             !findings.is_empty(),
             "should match hasFeature with identifier arg (variable feature key)"
         );
+    }
+
+    // -- cross_predicates tests (synthetic rules) --
+
+    /// A synthetic rule shaped like ownership-check: two getters in an
+    /// `equals(...)` invocation. The cross-predicate requires at least one
+    /// side to look like a principal getter. Per-capture predicates stay
+    /// broad on purpose (`getId|getUserId|...`) so the cross-predicate is
+    /// what's actually doing the asymmetry check.
+    const CROSS_ANY_MATCH_RULE: &str = r#"
+[rule]
+id = "test-cross-any-match"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Synthetic any_match cross-predicate test"
+query = """
+(method_invocation
+  object: (method_invocation
+    name: (identifier) @getter)
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (method_invocation
+      name: (identifier) @other_getter))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "equals"
+
+[rule.predicates.getter]
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+
+[rule.predicates.other_getter]
+match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+
+[[rule.cross_predicates]]
+kind = "any_match"
+captures = ["getter", "other_getter"]
+match = "(?i)^(getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+"#;
+
+    #[test]
+    fn cross_any_match_matches_when_left_side_is_principal() {
+        let findings = parse_and_match_java(
+            r#"user.getUserId().equals(resource.getId());"#,
+            CROSS_ANY_MATCH_RULE,
+        );
+        assert!(
+            !findings.is_empty(),
+            "any_match should accept principal-flavored left side"
+        );
+    }
+
+    #[test]
+    fn cross_any_match_matches_when_right_side_is_principal() {
+        let findings = parse_and_match_java(
+            r#"record.getId().equals(other.getOwnerId());"#,
+            CROSS_ANY_MATCH_RULE,
+        );
+        assert!(
+            !findings.is_empty(),
+            "any_match should accept principal-flavored right side"
+        );
+    }
+
+    #[test]
+    fn cross_any_match_rejects_when_neither_side_is_principal() {
+        // Both sides are bare getId() — no principal hint anywhere.
+        let findings = parse_and_match_java(
+            r#"record.getId().equals(other.getId());"#,
+            CROSS_ANY_MATCH_RULE,
+        );
+        assert!(
+            findings.is_empty(),
+            "any_match should reject when neither side names a principal-flavored getter"
+        );
+    }
+
+    const CROSS_ALL_MATCH_RULE: &str = r#"
+[rule]
+id = "test-cross-all-match"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Synthetic all_match cross-predicate test"
+query = """
+(method_invocation
+  object: (method_invocation
+    name: (identifier) @getter)
+  name: (identifier) @method_name
+  arguments: (argument_list
+    (method_invocation
+      name: (identifier) @other_getter))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "equals"
+
+[[rule.cross_predicates]]
+kind = "all_match"
+captures = ["getter", "other_getter"]
+match = "^get[A-Z]"
+"#;
+
+    #[test]
+    fn cross_all_match_requires_every_capture() {
+        let findings =
+            parse_and_match_java(r#"a.getFoo().equals(b.getBar());"#, CROSS_ALL_MATCH_RULE);
+        assert!(
+            !findings.is_empty(),
+            "all_match should accept when all captures match"
+        );
+    }
+
+    #[test]
+    fn cross_all_match_rejects_when_one_capture_fails() {
+        // `lookupBar` does not start with `get[A-Z]`.
+        let findings =
+            parse_and_match_java(r#"a.getFoo().equals(b.lookupBar());"#, CROSS_ALL_MATCH_RULE);
+        assert!(
+            findings.is_empty(),
+            "all_match should reject when any capture fails the regex"
+        );
+    }
+
+    #[test]
+    fn cross_predicate_unknown_capture_is_compile_error() {
+        let bad_rule = r#"
+[rule]
+id = "test-cross-bad-capture"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Cross-predicate references a capture that doesn't exist in the query"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+) @match
+"""
+
+[[rule.cross_predicates]]
+kind = "any_match"
+captures = ["nonexistent_capture"]
+match = ".*"
+"#;
+        let rule = rules::parse_rule_for_test(bad_rule);
+        let ts_lang = parser::get_language(Language::Java, false).unwrap();
+        match compile_rule(&rule, &ts_lang) {
+            Ok(_) => {
+                panic!("compile_rule should reject cross_predicate referencing an unknown capture")
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("nonexistent_capture"),
+                    "error should name the missing capture; got: {msg}"
+                );
+                // The error should also identify the kind of the failing
+                // cross-predicate so multi-cross_predicate rules are
+                // diagnosable.
+                assert!(
+                    msg.contains("any_match"),
+                    "error should name the predicate kind; got: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn predicate_unknown_capture_is_compile_error() {
+        // Mirror of the cross-predicate test, but for per-capture
+        // predicates. A typo'd capture name in `[rule.predicates.X]` used
+        // to silently make the rule never match (the predicate would look
+        // up a non-existent capture and fail at runtime); compile_rule now
+        // surfaces it eagerly.
+        let bad_rule = r#"
+[rule]
+id = "test-predicate-bad-capture"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Per-capture predicate references a capture that doesn't exist in the query"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+) @match
+"""
+
+[rule.predicates.nonexistent_capture]
+match = ".*"
+"#;
+        let rule = rules::parse_rule_for_test(bad_rule);
+        let ts_lang = parser::get_language(Language::Java, false).unwrap();
+        match compile_rule(&rule, &ts_lang) {
+            Ok(_) => {
+                panic!("compile_rule should reject predicate referencing an unknown capture")
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("nonexistent_capture"),
+                    "error should name the missing capture; got: {msg}"
+                );
+            }
+        }
     }
 
     #[test]

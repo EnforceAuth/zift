@@ -17,6 +17,7 @@ pub struct PatternRule {
     pub description: String,
     pub query_source: String,
     pub predicates: Vec<(String, Predicate)>,
+    pub cross_predicates: Vec<CrossPredicate>,
     pub rego_template: Option<String>,
     pub tests: Vec<RuleTest>,
 }
@@ -27,6 +28,54 @@ pub enum Predicate {
     Eq(String),
     NotMatch(regex::Regex),
     NotEq(String),
+}
+
+/// A predicate that operates over multiple captures at once. Per-capture
+/// predicates (`Predicate`) check a single capture against a value; cross
+/// predicates check a *relationship* across two or more captures — e.g.
+/// "at least one of these captures must look like a principal getter".
+#[derive(Debug, Clone)]
+pub enum CrossPredicate {
+    /// At least one of the listed captures must match the regex.
+    AnyMatch {
+        captures: Vec<String>,
+        regex: regex::Regex,
+    },
+    /// All of the listed captures must match the regex.
+    AllMatch {
+        captures: Vec<String>,
+        regex: regex::Regex,
+    },
+}
+
+impl CrossPredicate {
+    /// The captures this predicate references. Centralized so traversal
+    /// sites (matcher capture validation, MCP serialization, future tools)
+    /// don't each need a `match` arm per variant.
+    pub fn referenced_captures(&self) -> &[String] {
+        match self {
+            CrossPredicate::AnyMatch { captures, .. }
+            | CrossPredicate::AllMatch { captures, .. } => captures,
+        }
+    }
+
+    /// The compiled regex this predicate evaluates captures against.
+    pub fn regex(&self) -> &regex::Regex {
+        match self {
+            CrossPredicate::AnyMatch { regex, .. } | CrossPredicate::AllMatch { regex, .. } => {
+                regex
+            }
+        }
+    }
+
+    /// Snake-case variant label, matching the TOML `kind` discriminator.
+    /// Used in error messages and JSON serialization.
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            CrossPredicate::AnyMatch { .. } => "any_match",
+            CrossPredicate::AllMatch { .. } => "all_match",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +102,8 @@ struct RuleToml {
     query: String,
     #[serde(default)]
     predicates: std::collections::HashMap<String, PredicateToml>,
+    #[serde(default)]
+    cross_predicates: Vec<CrossPredicateToml>,
     rego_template: Option<RegoTemplateToml>,
     #[serde(default)]
     tests: Vec<RuleTestToml>,
@@ -68,6 +119,21 @@ struct PredicateToml {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CrossPredicateToml {
+    AnyMatch {
+        captures: Vec<String>,
+        #[serde(rename = "match")]
+        match_re: String,
+    },
+    AllMatch {
+        captures: Vec<String>,
+        #[serde(rename = "match")]
+        match_re: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
 struct RegoTemplateToml {
     template: String,
 }
@@ -77,6 +143,42 @@ struct RuleTestToml {
     input: String,
     language: Option<Language>,
     expect_match: bool,
+}
+
+/// Validate the shared shape of a cross-predicate's TOML fields and compile
+/// the regex. Captures must be non-empty and free of duplicates; the regex
+/// must parse. Errors include `cross_predicate[i] (kind_label): ...` so a
+/// failing rule load points at the exact entry.
+fn parse_cross_predicate_fields(
+    rule_id: &str,
+    index: usize,
+    kind_label: &str,
+    captures: Vec<String>,
+    match_re: &str,
+) -> Result<(Vec<String>, regex::Regex)> {
+    if captures.is_empty() {
+        return Err(ZiftError::RuleParse {
+            rule_id: rule_id.to_string(),
+            message: format!("cross_predicate[{index}] ({kind_label}): captures must not be empty"),
+        });
+    }
+    let mut seen = std::collections::HashSet::new();
+    for capture in &captures {
+        if !seen.insert(capture.as_str()) {
+            return Err(ZiftError::RuleParse {
+                rule_id: rule_id.to_string(),
+                message: format!(
+                    "cross_predicate[{index}] ({kind_label}): duplicate capture \
+                     '{capture}' in captures list"
+                ),
+            });
+        }
+    }
+    let regex = regex::Regex::new(match_re).map_err(|e| ZiftError::RuleParse {
+        rule_id: rule_id.to_string(),
+        message: format!("cross_predicate[{index}] ({kind_label}): invalid regex: {e}"),
+    })?;
+    Ok((captures, regex))
 }
 
 fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
@@ -131,6 +233,23 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         predicates.push((capture_name, p));
     }
 
+    let mut cross_predicates = Vec::new();
+    for (i, cp) in r.cross_predicates.into_iter().enumerate() {
+        let parsed = match cp {
+            CrossPredicateToml::AnyMatch { captures, match_re } => {
+                let (captures, regex) =
+                    parse_cross_predicate_fields(&r.id, i, "any_match", captures, &match_re)?;
+                CrossPredicate::AnyMatch { captures, regex }
+            }
+            CrossPredicateToml::AllMatch { captures, match_re } => {
+                let (captures, regex) =
+                    parse_cross_predicate_fields(&r.id, i, "all_match", captures, &match_re)?;
+                CrossPredicate::AllMatch { captures, regex }
+            }
+        };
+        cross_predicates.push(parsed);
+    }
+
     Ok(PatternRule {
         id: r.id,
         languages: r.languages,
@@ -139,6 +258,7 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         description: r.description,
         query_source: r.query,
         predicates,
+        cross_predicates,
         rego_template: r.rego_template.map(|t| t.template),
         tests: r
             .tests
@@ -264,6 +384,80 @@ expect_match = true
     }
 
     #[test]
+    fn cross_predicate_duplicate_captures_is_parse_error() {
+        // A duplicated capture is harmless for any_match/all_match (just
+        // redundant work) but indicates user confusion or copy-paste —
+        // future variants like `none_match` may treat duplicates
+        // differently, so fail loud now.
+        let bad_rule = r#"
+[rule]
+id = "test-cross-dup-captures"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Cross-predicate has a duplicated capture"
+query = """
+(method_invocation
+  name: (identifier) @getter
+) @match
+"""
+
+[[rule.cross_predicates]]
+kind = "any_match"
+captures = ["getter", "getter"]
+match = ".*"
+"#;
+        let err = parse_rule(bad_rule, "test").expect_err("duplicate captures must error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("duplicate capture"),
+            "error should mention duplicate capture; got: {msg}"
+        );
+        assert!(
+            msg.contains("'getter'"),
+            "error should name the duplicated capture; got: {msg}"
+        );
+        assert!(
+            msg.contains("any_match"),
+            "error should name the predicate kind; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn cross_predicate_empty_captures_is_parse_error() {
+        // Empty captures list is meaningless; same diagnostic family as
+        // the duplicate case so users get a consistent error vocabulary.
+        let bad_rule = r#"
+[rule]
+id = "test-cross-empty-captures"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Cross-predicate has an empty captures list"
+query = """
+(method_invocation
+  name: (identifier) @getter
+) @match
+"""
+
+[[rule.cross_predicates]]
+kind = "all_match"
+captures = []
+match = ".*"
+"#;
+        let err = parse_rule(bad_rule, "test").expect_err("empty captures must error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("captures must not be empty"),
+            "error should mention empty captures; got: {msg}"
+        );
+        assert!(
+            msg.contains("all_match"),
+            "error should name the predicate kind; got: {msg}"
+        );
+    }
+
+    #[test]
     fn merge_overrides_by_id() {
         let r1 = PatternRule {
             id: "rule-a".into(),
@@ -273,6 +467,7 @@ expect_match = true
             description: "original".into(),
             query_source: "".into(),
             predicates: vec![],
+            cross_predicates: vec![],
             rego_template: None,
             tests: vec![],
         };
@@ -284,6 +479,7 @@ expect_match = true
             description: "override".into(),
             query_source: "".into(),
             predicates: vec![],
+            cross_predicates: vec![],
             rego_template: None,
             tests: vec![],
         };

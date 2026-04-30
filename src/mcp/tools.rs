@@ -322,6 +322,18 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         })
         .collect();
 
+    let cross_predicates: Vec<Value> = rule
+        .cross_predicates
+        .iter()
+        .map(|cp| {
+            json!({
+                "kind": cp.kind_label(),
+                "captures": cp.referenced_captures(),
+                "match": cp.regex().as_str(),
+            })
+        })
+        .collect();
+
     let tests: Vec<Value> = rule
         .tests
         .iter()
@@ -342,6 +354,7 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         "description": rule.description,
         "query": rule.query_source,
         "predicates": predicates,
+        "cross_predicates": cross_predicates,
         "rego_template": rule.rego_template,
         "tests": tests,
     }))
@@ -768,6 +781,32 @@ function check(user: { role: string }) {
         assert_eq!(payload["id"], "ts-role-check-conditional");
         assert!(payload["query"].as_str().unwrap().contains("if_statement"));
         assert!(payload["rego_template"].is_string());
+        // cross_predicates is always present (empty array if the rule has none).
+        assert!(payload["cross_predicates"].is_array());
+    }
+
+    #[test]
+    fn get_rule_serializes_cross_predicates() {
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+        // java-ownership-check carries an any_match cross-predicate.
+        let res = dispatch(&ctx, "get_rule", &json!({"id": "java-ownership-check"}));
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        let cps = payload["cross_predicates"].as_array().unwrap();
+        assert!(
+            !cps.is_empty(),
+            "java-ownership-check must expose its cross_predicates"
+        );
+        assert_eq!(cps[0]["kind"], "any_match");
+        let captures = cps[0]["captures"].as_array().unwrap();
+        assert!(captures.iter().any(|c| c == "getter"));
+        assert!(captures.iter().any(|c| c == "other_getter"));
+        assert!(cps[0]["match"].is_string());
     }
 
     #[test]
