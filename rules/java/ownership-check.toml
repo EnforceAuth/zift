@@ -24,6 +24,15 @@ eq = "equals"
 [rule.predicates.other_getter]
 match = "(?i)^(getId|getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
 
+# At least one side of the equality must name a principal-flavored getter.
+# Without this, `record.getId().equals(other.getId())` (record filtering /
+# dedup) trips the rule even though no user-vs-resource comparison is
+# happening. See issue #19.
+[[rule.cross_predicates]]
+kind = "any_match"
+captures = ["getter", "other_getter"]
+match = "(?i)^(getUserId|getOwnerId|getCreatedBy|getAuthorId)$"
+
 [[rule.tests]]
 input = """
 public class Service {
@@ -39,6 +48,41 @@ input = """
 public class Service {
     public void check() {
         if (user.getName().equals(other.getName())) { compare(); }
+    }
+}
+"""
+expect_match = false
+
+# Reverse-side TP: principal getter on the right, plain getId on the left.
+[[rule.tests]]
+input = """
+public class Service {
+    public void check() {
+        if (record.getId().equals(other.getOwnerId())) { allow(); }
+    }
+}
+"""
+expect_match = true
+
+# FP from issue #19: filtering records out of a set in audit code —
+# both sides are bare `getId()`, no principal involved.
+[[rule.tests]]
+input = """
+public class AuditFileQueueSpool {
+    public void check() {
+        if (record.getId().equals(indexRecord.getId())) { skip(); }
+    }
+}
+"""
+expect_match = false
+
+# FP from issue #19: validating a permission isn't duplicated — again,
+# both sides are bare `getId()`.
+[[rule.tests]]
+input = """
+public class XUserPermissionServiceBase {
+    public void check() {
+        if (xUserPerm.getId().equals(mObj.getId())) { skip(); }
     }
 }
 """
