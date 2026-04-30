@@ -17,6 +17,7 @@ pub struct PatternRule {
     pub description: String,
     pub query_source: String,
     pub predicates: Vec<(String, Predicate)>,
+    pub cross_predicates: Vec<CrossPredicate>,
     pub rego_template: Option<String>,
     pub tests: Vec<RuleTest>,
 }
@@ -27,6 +28,24 @@ pub enum Predicate {
     Eq(String),
     NotMatch(regex::Regex),
     NotEq(String),
+}
+
+/// A predicate that operates over multiple captures at once. Per-capture
+/// predicates (`Predicate`) check a single capture against a value; cross
+/// predicates check a *relationship* across two or more captures — e.g.
+/// "at least one of these captures must look like a principal getter".
+#[derive(Debug, Clone)]
+pub enum CrossPredicate {
+    /// At least one of the listed captures must match the regex.
+    AnyMatch {
+        captures: Vec<String>,
+        regex: regex::Regex,
+    },
+    /// All of the listed captures must match the regex.
+    AllMatch {
+        captures: Vec<String>,
+        regex: regex::Regex,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +72,8 @@ struct RuleToml {
     query: String,
     #[serde(default)]
     predicates: std::collections::HashMap<String, PredicateToml>,
+    #[serde(default)]
+    cross_predicates: Vec<CrossPredicateToml>,
     rego_template: Option<RegoTemplateToml>,
     #[serde(default)]
     tests: Vec<RuleTestToml>,
@@ -65,6 +86,21 @@ struct PredicateToml {
     eq: Option<String>,
     not_match: Option<String>,
     not_eq: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CrossPredicateToml {
+    AnyMatch {
+        captures: Vec<String>,
+        #[serde(rename = "match")]
+        match_re: String,
+    },
+    AllMatch {
+        captures: Vec<String>,
+        #[serde(rename = "match")]
+        match_re: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +167,43 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         predicates.push((capture_name, p));
     }
 
+    let mut cross_predicates = Vec::new();
+    for (i, cp) in r.cross_predicates.into_iter().enumerate() {
+        let parsed = match cp {
+            CrossPredicateToml::AnyMatch { captures, match_re } => {
+                if captures.is_empty() {
+                    return Err(ZiftError::RuleParse {
+                        rule_id: r.id.clone(),
+                        message: format!(
+                            "cross_predicate[{i}] (any_match): captures must not be empty"
+                        ),
+                    });
+                }
+                let regex = regex::Regex::new(&match_re).map_err(|e| ZiftError::RuleParse {
+                    rule_id: r.id.clone(),
+                    message: format!("cross_predicate[{i}] (any_match): invalid regex: {e}"),
+                })?;
+                CrossPredicate::AnyMatch { captures, regex }
+            }
+            CrossPredicateToml::AllMatch { captures, match_re } => {
+                if captures.is_empty() {
+                    return Err(ZiftError::RuleParse {
+                        rule_id: r.id.clone(),
+                        message: format!(
+                            "cross_predicate[{i}] (all_match): captures must not be empty"
+                        ),
+                    });
+                }
+                let regex = regex::Regex::new(&match_re).map_err(|e| ZiftError::RuleParse {
+                    rule_id: r.id.clone(),
+                    message: format!("cross_predicate[{i}] (all_match): invalid regex: {e}"),
+                })?;
+                CrossPredicate::AllMatch { captures, regex }
+            }
+        };
+        cross_predicates.push(parsed);
+    }
+
     Ok(PatternRule {
         id: r.id,
         languages: r.languages,
@@ -139,6 +212,7 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         description: r.description,
         query_source: r.query,
         predicates,
+        cross_predicates,
         rego_template: r.rego_template.map(|t| t.template),
         tests: r
             .tests
@@ -273,6 +347,7 @@ expect_match = true
             description: "original".into(),
             query_source: "".into(),
             predicates: vec![],
+            cross_predicates: vec![],
             rego_template: None,
             tests: vec![],
         };
@@ -284,6 +359,7 @@ expect_match = true
             description: "override".into(),
             query_source: "".into(),
             predicates: vec![],
+            cross_predicates: vec![],
             rego_template: None,
             tests: vec![],
         };
