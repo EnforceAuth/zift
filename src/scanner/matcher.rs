@@ -55,17 +55,14 @@ pub fn compile_rule<'a>(
 
     // Validate that every cross-predicate references real captures.
     for (i, cp) in rule.cross_predicates.iter().enumerate() {
-        let captures = match cp {
-            CrossPredicate::AnyMatch { captures, .. } => captures,
-            CrossPredicate::AllMatch { captures, .. } => captures,
-        };
-        for capture_name in captures {
+        for capture_name in cp.referenced_captures() {
             if !capture_names.iter().any(|n| n == capture_name) {
                 return Err(ZiftError::QueryError {
                     rule_id: rule.id.clone(),
                     message: format!(
-                        "cross_predicate[{i}] references unknown capture \
+                        "cross_predicate[{i}] ({}) references unknown capture \
                          '{capture_name}' (query captures: {})",
+                        cp.kind_label(),
                         capture_names.join(", "),
                     ),
                 });
@@ -976,6 +973,52 @@ match = ".*"
         match compile_rule(&rule, &ts_lang) {
             Ok(_) => {
                 panic!("compile_rule should reject cross_predicate referencing an unknown capture")
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("nonexistent_capture"),
+                    "error should name the missing capture; got: {msg}"
+                );
+                // The error should also identify the kind of the failing
+                // cross-predicate so multi-cross_predicate rules are
+                // diagnosable.
+                assert!(
+                    msg.contains("any_match"),
+                    "error should name the predicate kind; got: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn predicate_unknown_capture_is_compile_error() {
+        // Mirror of the cross-predicate test, but for per-capture
+        // predicates. A typo'd capture name in `[rule.predicates.X]` used
+        // to silently make the rule never match (the predicate would look
+        // up a non-existent capture and fail at runtime); compile_rule now
+        // surfaces it eagerly.
+        let bad_rule = r#"
+[rule]
+id = "test-predicate-bad-capture"
+languages = ["java"]
+category = "ownership"
+confidence = "medium"
+description = "Per-capture predicate references a capture that doesn't exist in the query"
+query = """
+(method_invocation
+  name: (identifier) @method_name
+) @match
+"""
+
+[rule.predicates.nonexistent_capture]
+match = ".*"
+"#;
+        let rule = rules::parse_rule_for_test(bad_rule);
+        let ts_lang = parser::get_language(Language::Java, false).unwrap();
+        match compile_rule(&rule, &ts_lang) {
+            Ok(_) => {
+                panic!("compile_rule should reject predicate referencing an unknown capture")
             }
             Err(e) => {
                 let msg = e.to_string();

@@ -325,17 +325,12 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
     let cross_predicates: Vec<Value> = rule
         .cross_predicates
         .iter()
-        .map(|cp| match cp {
-            crate::rules::CrossPredicate::AnyMatch { captures, regex } => json!({
-                "kind": "any_match",
-                "captures": captures,
-                "match": regex.as_str(),
-            }),
-            crate::rules::CrossPredicate::AllMatch { captures, regex } => json!({
-                "kind": "all_match",
-                "captures": captures,
-                "match": regex.as_str(),
-            }),
+        .map(|cp| {
+            json!({
+                "kind": cp.kind_label(),
+                "captures": cp.referenced_captures(),
+                "match": cp.regex().as_str(),
+            })
         })
         .collect();
 

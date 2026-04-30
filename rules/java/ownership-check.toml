@@ -3,7 +3,7 @@ id = "java-ownership-check"
 languages = ["java"]
 category = "ownership"
 confidence = "medium"
-description = "Resource ownership comparison (e.g., getUserId().equals(resource.getOwnerId()))"
+description = "Resource ownership comparison where at least one side names a principal-flavored getter (e.g., getUserId().equals(resource.getOwnerId()))"
 query = """
 (method_invocation
   object: (method_invocation
