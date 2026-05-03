@@ -96,7 +96,7 @@ pub fn print(
         let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
         writeln!(
             writer,
-            "       {enforcement_points} enforcement points (already using OPA/policy engine, not flagged) — {pct}% externalized",
+            "       {enforcement_points} enforcement points (already using a policy engine, not flagged) — {pct}% externalized",
         )?;
     }
 

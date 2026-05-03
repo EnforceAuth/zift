@@ -8,7 +8,7 @@ use crate::types::{AuthCategory, Confidence, Language};
 #[command(
     name = "zift",
     version,
-    about = "Scan codebases for embedded authorization logic and generate Rego policies for OPA"
+    about = "Sift through codebases for embedded authorization logic and generate Policy as Code"
 )]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
@@ -32,7 +32,7 @@ pub enum Command {
     /// Scan a codebase for embedded authorization logic
     Scan(ScanArgs),
 
-    /// Generate Rego files from findings
+    /// Generate Policy-as-Code files from findings
     Extract(ExtractArgs),
 
     /// Generate a detailed report
@@ -48,7 +48,7 @@ pub enum Command {
     ///
     /// Speaks JSON-RPC 2.0 per the Model Context Protocol spec. Agent hosts
     /// (Claude Code, Cursor, Continue, Cline, Zed, …) call Zift's tools to
-    /// scan, render prompts, and validate Rego — the host owns the model;
+    /// scan, render prompts, and validate policies — the host owns the model;
     /// Zift owns the authz expertise.
     Mcp(McpArgs),
 }
@@ -143,7 +143,7 @@ pub struct ExtractArgs {
     #[arg(short, long)]
     pub input: Option<PathBuf>,
 
-    /// Directory for generated .rego files
+    /// Directory for generated policy files
     #[arg(long, default_value = "./policies/generated")]
     pub output_dir: PathBuf,
 

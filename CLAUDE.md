@@ -1,6 +1,6 @@
 # Zift
 
-Static analysis tool that scans codebases for embedded authorization logic and generates Rego policies for OPA.
+Static analysis tool that scans codebases for embedded authorization logic and generates Policy as Code (PaC). Rego/OPA today; architecture is designed to grow into other policy languages (e.g. Cedar) over time.
 
 ## Setup
 
@@ -24,8 +24,8 @@ cargo clippy -- -D warnings
 
 - **CLI** (`src/cli.rs`): Subcommands — `scan`, `extract`, `report`, `rules`, `init`
 - **Scanner** (`src/scanner/`): Tree-sitter AST parsing and pattern matching across languages
-- **Rules** (`rules/`): TOML-based pattern definitions with tree-sitter queries and Rego templates
-- **Rego** (`src/rego/`): Policy generation from scan findings
+- **Rules** (`rules/`): TOML-based pattern definitions with tree-sitter queries and policy templates (Rego today)
+- **Rego** (`src/rego/`): Policy-as-Code generation from scan findings (Rego/OPA today; additional engines like Cedar planned)
 - **Output** (`src/output/`): Formatters (JSON, text; SARIF planned)
 
 ### Design principles
