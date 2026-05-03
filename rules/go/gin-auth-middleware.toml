@@ -1,0 +1,94 @@
+[rule]
+id = "go-gin-auth-middleware"
+languages = ["go"]
+category = "middleware"
+confidence = "medium"
+description = "Gin/Echo-style auth middleware registration (e.g. r.Use(AuthRequired()))"
+# Matches `<router>.Use(<middlewareCall>())` where the inner call's
+# function name has an auth-flavored prefix. Covers Gin, Echo, Chi, and
+# similar router APIs that share the `.Use(handler)` middleware shape.
+# Confidence is `medium` — the inner-call constraint catches the common
+# auth case but misses bare-function middleware values (e.g.
+# `r.Use(AuthRequired)` without parens). That's a valid Go middleware
+# pattern too; covering it would expand the query meaningfully and is
+# left for a follow-up rule.
+query = """
+(call_expression
+  function: (selector_expression
+    field: (field_identifier) @use_method)
+  arguments: (argument_list
+    (call_expression
+      function: [
+        (identifier) @middleware_fn
+        (selector_expression field: (field_identifier) @middleware_fn)
+      ]))
+) @match
+"""
+
+[rule.predicates.use_method]
+eq = "Use"
+
+[rule.predicates.middleware_fn]
+match = "^(Auth|Authn|Authz|AuthRequired|AuthMiddleware|RequireAuth|RequireLogin|RequireRole|JWTAuth|JWT|BasicAuth|OAuth|RequireAdmin|RequirePermission)$"
+
+[rule.rego_template]
+template = """
+# Middleware-style auth gate — every request hitting this router
+# subtree must satisfy the policy. Adapt to your concrete subject /
+# action / resource model.
+default allow := false
+
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.Use(AuthRequired())
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine, m *Middleware) {
+    r.Use(m.RequireAuth())
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.Use(JWTAuth())
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.Use(Logger())
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.GET("/users", listUsers)
+}
+"""
+expect_match = false

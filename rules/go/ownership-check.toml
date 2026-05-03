@@ -1,0 +1,91 @@
+[rule]
+id = "go-ownership-check"
+languages = ["go"]
+category = "ownership"
+confidence = "medium"
+description = "Resource ownership comparison (e.g. resource.OwnerID == user.ID)"
+# Catches `<expr>.<owner-style-field> == <expr>.<id-style-field>`.
+# Confidence is `medium` — Go's PascalCase field names give us a fair
+# signal, but unrelated identity-shaped comparisons (e.g.
+# `record.ID == indexRecord.ID` for dedup) can still slip through.
+# The `cross_predicate` requires that *at least one* side names a
+# principal-flavored field, mirroring the Java rule's defense against
+# dedup-style false positives (issue #19).
+query = """
+(binary_expression
+  left: (selector_expression field: (field_identifier) @left_prop)
+  operator: "=="
+  right: (selector_expression field: (field_identifier) @right_prop)
+) @match
+"""
+
+[rule.predicates.left_prop]
+match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId|ID|Id)$"
+
+[rule.predicates.right_prop]
+match = "^(ID|Id|UserID|UserId|Sub|AccountID|AccountId)$"
+
+[[rule.cross_predicates]]
+kind = "any_match"
+captures = ["left_prop", "right_prop"]
+match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.resource.owner == input.user.id
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(resource *Resource, user *User) {
+    if resource.OwnerID == user.ID {
+        allowEdit()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(post *Post, req *Request) {
+    if post.AuthorID == req.UserID {
+        edit()
+    }
+}
+"""
+expect_match = true
+
+# FP defense (mirrors Java rule's issue #19): plain ID-vs-ID comparisons
+# in dedup/audit code shouldn't trip the rule. Both sides are bare `ID`,
+# no principal-flavored field on either side.
+[[rule.tests]]
+input = """
+package main
+
+func handle(record, indexRecord *Record) {
+    if record.ID == indexRecord.ID {
+        skip()
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(a, b *Score) {
+    if a.Score == b.Score {
+        tie()
+    }
+}
+"""
+expect_match = false

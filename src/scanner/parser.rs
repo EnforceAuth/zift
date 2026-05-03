@@ -15,6 +15,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::JavaScript, _) => Ok(tree_sitter_javascript::LANGUAGE.into()),
         (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
         (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
+        (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
         _ => Err(ZiftError::General(format!(
             "language {lang:?} not yet supported"
         ))),
@@ -92,11 +93,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_go() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n";
+        let tree = parse_source(&mut parser, source, Language::Go, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn go_is_supported() {
+        assert!(is_language_supported(Language::Go));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
-        // Go has no structural grammar wired up yet — kept as the canary
+        // C# has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
-        // name says it does.
-        assert!(get_language(Language::Go, false).is_err());
-        assert!(!is_language_supported(Language::Go));
+        // name says it does. (Was Go before v0.2 added Go support.)
+        assert!(get_language(Language::CSharp, false).is_err());
+        assert!(!is_language_supported(Language::CSharp));
     }
 }

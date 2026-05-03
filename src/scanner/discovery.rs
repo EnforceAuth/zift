@@ -23,15 +23,15 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "jsx" => Some((Language::JavaScript, true)),
         "java" => Some((Language::Java, false)),
         "py" | "pyi" => Some((Language::Python, false)),
+        "go" => Some((Language::Go, false)),
         _ => None,
     }
 }
 
 /// Extension → language map covering **all** languages in the [`Language`]
-/// enum, including those without structural parser support yet (Go, C#,
-/// Kotlin, Ruby, PHP). Used by the deep (semantic) scan, which can run
-/// regex-based cold-region detection on any language regardless of grammar
-/// availability.
+/// enum, including those without structural parser support yet (C#, Kotlin,
+/// Ruby, PHP). Used by the deep (semantic) scan, which can run regex-based
+/// cold-region detection on any language regardless of grammar availability.
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
@@ -176,9 +176,17 @@ mod tests {
     }
 
     #[test]
+    fn detect_go_extension() {
+        assert_eq!(
+            detect_language(Path::new("foo.go")),
+            Some((Language::Go, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
-        assert_eq!(detect_language(Path::new("foo.go")), None);
+        assert_eq!(detect_language(Path::new("foo.txt")), None);
     }
 
     #[test]
@@ -249,10 +257,12 @@ mod tests {
         // Sanity: the structural detector must NOT include languages without
         // a wired-up tree-sitter grammar — otherwise the structural pass
         // would try to parse files it can't handle. The deep detector picks
-        // them up; the structural one doesn't.
-        assert_eq!(detect_language(Path::new("foo.go")), None);
+        // them up; the structural one doesn't. (Go was here before v0.2
+        // added Go structural support.)
         assert_eq!(detect_language(Path::new("Foo.cs")), None);
+        assert_eq!(detect_language(Path::new("Foo.kt")), None);
         assert_eq!(detect_language(Path::new("foo.rb")), None);
+        assert_eq!(detect_language(Path::new("foo.php")), None);
     }
 
     #[test]
@@ -263,21 +273,27 @@ mod tests {
         fs::write(dir.path().join("a.ts"), "let x = 1;").unwrap();
         fs::write(dir.path().join("b.py"), "x = 1\n").unwrap();
         fs::write(dir.path().join("c.go"), "package main\n").unwrap();
+        fs::write(dir.path().join("d.cs"), "class C {}").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
         let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
         assert_eq!(
             structural_langs,
-            HashSet::from([Language::TypeScript, Language::Python]),
-            "structural should include only TS + Python",
+            HashSet::from([Language::TypeScript, Language::Python, Language::Go]),
+            "structural should include TS + Python + Go (Go gained structural support in v0.2)",
         );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
         let deep_langs: HashSet<_> = deep.iter().map(|f| f.language).collect();
         assert_eq!(
             deep_langs,
-            HashSet::from([Language::TypeScript, Language::Python, Language::Go]),
-            "deep should include TS + Python + Go",
+            HashSet::from([
+                Language::TypeScript,
+                Language::Python,
+                Language::Go,
+                Language::CSharp
+            ]),
+            "deep should include TS + Python + Go + C#",
         );
     }
 }
