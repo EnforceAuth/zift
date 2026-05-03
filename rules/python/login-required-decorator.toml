@@ -1,0 +1,76 @@
+[rule]
+id = "py-login-required-decorator"
+languages = ["python"]
+category = "middleware"
+confidence = "high"
+description = "@login_required decorator (Django, Flask-Login, or similar)"
+# Matches both forms of @login_required:
+#   - marker form:       @login_required
+#   - call form:         @login_required(redirect_field_name='login_url')
+# Each form is allowed as either a bare identifier or a single-level
+# attribute reference (e.g. @flask_login.login_required). The decorator's
+# rightmost identifier is captured as `decorator_name`.
+query = """
+(decorator
+  [
+    (identifier) @decorator_name
+    (attribute attribute: (identifier) @decorator_name)
+    (call
+      function: [
+        (identifier) @decorator_name
+        (attribute attribute: (identifier) @decorator_name)
+      ])
+  ]
+) @match
+"""
+
+[rule.predicates.decorator_name]
+eq = "login_required"
+
+[[rule.tests]]
+input = """
+@login_required
+def my_view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@flask_login.login_required
+def index():
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@login_required(redirect_field_name='login_url')
+def my_view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@django.contrib.auth.decorators.login_required(login_url='/accounts/login/')
+def my_view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@app.route('/')
+def index():
+    pass
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+@staticmethod
+def helper():
+    pass
+"""
+expect_match = false

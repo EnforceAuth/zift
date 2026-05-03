@@ -2,7 +2,7 @@
 
 Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/) today, with other engines (e.g. Cedar) on the roadmap.
 
-> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, and Java. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
+> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, Java, and Python. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
 
 ## What is zift?
 
@@ -23,7 +23,34 @@ zift report .                   # detailed findings report
 
 1. **Structural scan** (tree-sitter) — fast, deterministic, zero-cost. Finds known authorization patterns: role checks, permission guards, auth middleware, security annotations.
 
-2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (Python, Go, etc.).
+2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (Go, etc.).
+
+## Supported languages
+
+| Language | Structural | Deep (cold-region) | Framework hints (deep) |
+|----------|-----------|---------------------|------------------------|
+| TypeScript / JavaScript | yes (v0.1) | yes (v0.1) | Express, NestJS, Next.js |
+| Java | yes (v0.1) | yes (v0.1) | Spring Security, Jakarta Security |
+| Python | yes (v0.1) | yes (v0.1) | Django, Flask, FastAPI |
+| Go | planned (v0.2) | yes (v0.1) | Gin, Echo |
+| C# | planned (v0.3) | yes (v0.1) | ASP.NET Core |
+| Kotlin | planned (v0.3) | yes (v0.1) | Spring (Kotlin) |
+| Ruby | planned (v0.3) | yes (v0.1) | Rails |
+| PHP | planned (v0.3) | yes (v0.1) | Laravel |
+
+Deep mode walks the full source tree by extension and detects auth-y function names with regex — so it produces useful results in any language well before structural support lands.
+
+## Installation
+
+### Cargo
+
+```bash
+cargo install --git https://github.com/EnforceAuth/zift
+```
+
+### Binary download
+
+Prebuilt binaries for Linux (x86_64), macOS (x86_64 and arm64), and Windows (x86_64) are available from [Releases](https://github.com/EnforceAuth/zift/releases).
 
 ## Deep mode (`--deep`)
 
@@ -188,33 +215,6 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 You should see a single line back with `serverInfo.name == "zift"` and capability flags for tools/resources.
 Then call `tools/list` to see the seven tool descriptors.
-
-## Supported languages
-
-| Language | Structural | Deep (cold-region) | Framework hints (deep) |
-|----------|-----------|---------------------|------------------------|
-| TypeScript / JavaScript | yes (v0.1) | yes (v0.1) | Express, NestJS, Next.js |
-| Java | yes (v0.1) | yes (v0.1) | Spring Security, Jakarta Security |
-| Python | planned (v0.2) | yes (v0.1) | Django, Flask, FastAPI |
-| Go | planned (v0.2) | yes (v0.1) | Gin, Echo |
-| C# | planned (v0.3) | yes (v0.1) | ASP.NET Core |
-| Kotlin | planned (v0.3) | yes (v0.1) | Spring (Kotlin) |
-| Ruby | planned (v0.3) | yes (v0.1) | Rails |
-| PHP | planned (v0.3) | yes (v0.1) | Laravel |
-
-Deep mode walks the full source tree by extension and detects auth-y function names with regex — so it produces useful results in any language well before structural support lands.
-
-## Installation
-
-### Cargo
-
-```bash
-cargo install --git https://github.com/EnforceAuth/zift
-```
-
-### Binary download
-
-Prebuilt binaries for Linux (x86_64), macOS (x86_64 and arm64), and Windows (x86_64) are available from [Releases](https://github.com/EnforceAuth/zift/releases).
 
 ## License
 

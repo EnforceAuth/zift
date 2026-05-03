@@ -14,6 +14,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::TypeScript, true) => Ok(tree_sitter_typescript::LANGUAGE_TSX.into()),
         (Language::JavaScript, _) => Ok(tree_sitter_javascript::LANGUAGE.into()),
         (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
+        (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
         _ => Err(ZiftError::General(format!(
             "language {lang:?} not yet supported"
         ))),
@@ -78,8 +79,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_python() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"def is_admin(user):\n    return user.role == 'admin'\n";
+        let tree = parse_source(&mut parser, source, Language::Python, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn python_is_supported() {
+        assert!(is_language_supported(Language::Python));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
-        assert!(get_language(Language::Python, false).is_err());
-        assert!(!is_language_supported(Language::Python));
+        // Go has no structural grammar wired up yet — kept as the canary
+        // that `unsupported_language_returns_error` keeps testing what its
+        // name says it does.
+        assert!(get_language(Language::Go, false).is_err());
+        assert!(!is_language_supported(Language::Go));
     }
 }

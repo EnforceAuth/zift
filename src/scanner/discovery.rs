@@ -22,13 +22,14 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "js" | "mjs" | "cjs" => Some((Language::JavaScript, false)),
         "jsx" => Some((Language::JavaScript, true)),
         "java" => Some((Language::Java, false)),
+        "py" | "pyi" => Some((Language::Python, false)),
         _ => None,
     }
 }
 
 /// Extension → language map covering **all** languages in the [`Language`]
-/// enum, including those without structural parser support yet (Python, Go,
-/// C#, Kotlin, Ruby, PHP). Used by the deep (semantic) scan, which can run
+/// enum, including those without structural parser support yet (Go, C#,
+/// Kotlin, Ruby, PHP). Used by the deep (semantic) scan, which can run
 /// regex-based cold-region detection on any language regardless of grammar
 /// availability.
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
@@ -163,9 +164,21 @@ mod tests {
     }
 
     #[test]
+    fn detect_python_extensions() {
+        assert_eq!(
+            detect_language(Path::new("foo.py")),
+            Some((Language::Python, false))
+        );
+        assert_eq!(
+            detect_language(Path::new("foo.pyi")),
+            Some((Language::Python, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
-        assert_eq!(detect_language(Path::new("foo.py")), None);
+        assert_eq!(detect_language(Path::new("foo.go")), None);
     }
 
     #[test]
@@ -232,25 +245,39 @@ mod tests {
     }
 
     #[test]
-    fn structural_detect_language_does_not_pick_up_python() {
-        // Sanity: the structural detector must NOT include Python — otherwise
-        // the structural pass would try to parse files for which it has no
-        // grammar. The deep detector picks them up; the structural one doesn't.
-        assert_eq!(detect_language(Path::new("foo.py")), None);
+    fn structural_detect_language_does_not_pick_up_unsupported_languages() {
+        // Sanity: the structural detector must NOT include languages without
+        // a wired-up tree-sitter grammar — otherwise the structural pass
+        // would try to parse files it can't handle. The deep detector picks
+        // them up; the structural one doesn't.
         assert_eq!(detect_language(Path::new("foo.go")), None);
+        assert_eq!(detect_language(Path::new("Foo.cs")), None);
+        assert_eq!(detect_language(Path::new("foo.rb")), None);
     }
 
     #[test]
     fn discover_for_deep_picks_up_extra_languages() {
+        use std::collections::HashSet;
+
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.ts"), "let x = 1;").unwrap();
         fs::write(dir.path().join("b.py"), "x = 1\n").unwrap();
         fs::write(dir.path().join("c.go"), "package main\n").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
-        assert_eq!(structural.len(), 1, "structural sees only TS");
+        let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
+        assert_eq!(
+            structural_langs,
+            HashSet::from([Language::TypeScript, Language::Python]),
+            "structural should include only TS + Python",
+        );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
-        assert_eq!(deep.len(), 3, "deep sees TS + Python + Go");
+        let deep_langs: HashSet<_> = deep.iter().map(|f| f.language).collect();
+        assert_eq!(
+            deep_langs,
+            HashSet::from([Language::TypeScript, Language::Python, Language::Go]),
+            "deep should include TS + Python + Go",
+        );
     }
 }

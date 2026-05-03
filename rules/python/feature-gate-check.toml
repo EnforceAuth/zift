@@ -1,0 +1,73 @@
+[rule]
+id = "py-feature-gate-check"
+languages = ["python"]
+category = "feature_gate"
+confidence = "medium"
+description = "Feature flag or plan-based gating in Python"
+# Covers two shapes:
+#   1. method call:           `flags.has_feature("X")` (mirrors the Java rule)
+#   2. property comparison:   `user.plan == "enterprise"` (mirrors the TS rule)
+# Both branches share the captures `@gate_key` (method or property name)
+# and `@gate_value` (feature/plan literal) so a single anchored regex
+# in the predicate keeps the call and comparison shapes selective.
+# Only the literal-string form is captured; dynamic feature keys
+# (Features.BETA_DASHBOARD or a variable) can be added later if false
+# negatives surface.
+query = """
+[
+  (call
+    function: (attribute
+      attribute: (identifier) @gate_key)
+    arguments: (argument_list
+      (string (string_content) @gate_value))) @match
+  (comparison_operator
+    (attribute attribute: (identifier) @gate_key)
+    operators: ["==" "is"]
+    (string (string_content) @gate_value)) @match
+]
+"""
+
+[rule.predicates.gate_key]
+match = "^(has_feature|is_feature_enabled|check_feature|has_plan|is_plan_active|plan|tier|subscription|license|edition|feature_flag|feature)$"
+
+[[rule.tests]]
+input = """
+if feature_flags.has_feature("advanced-analytics"):
+    enable()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if subscription.has_plan("pro"):
+    enable()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if user.plan == "enterprise":
+    enable_advanced_feature()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if account.tier == "pro":
+    upgrade()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if validator.is_enabled("field"):
+    validate()
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if user.role == "admin":
+    delete()
+"""
+expect_match = false

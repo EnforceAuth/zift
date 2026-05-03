@@ -137,6 +137,47 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "java-custom-authz-call",
         include_str!("../../rules/java/custom-authz-call.toml"),
     ),
+    // -- Python --
+    (
+        "py-django-permission-required",
+        include_str!("../../rules/python/django-permission-required.toml"),
+    ),
+    (
+        "py-login-required-decorator",
+        include_str!("../../rules/python/login-required-decorator.toml"),
+    ),
+    (
+        "py-django-user-passes-test",
+        include_str!("../../rules/python/django-user-passes-test.toml"),
+    ),
+    (
+        "py-has-perm-call",
+        include_str!("../../rules/python/has-perm-call.toml"),
+    ),
+    (
+        "py-fastapi-depends",
+        include_str!("../../rules/python/fastapi-depends.toml"),
+    ),
+    (
+        "py-role-check-conditional",
+        include_str!("../../rules/python/role-check-conditional.toml"),
+    ),
+    (
+        "py-has-role-call",
+        include_str!("../../rules/python/has-role-call.toml"),
+    ),
+    (
+        "py-permission-check-call",
+        include_str!("../../rules/python/permission-check-call.toml"),
+    ),
+    (
+        "py-ownership-check",
+        include_str!("../../rules/python/ownership-check.toml"),
+    ),
+    (
+        "py-feature-gate-check",
+        include_str!("../../rules/python/feature-gate-check.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {

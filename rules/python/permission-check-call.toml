@@ -1,0 +1,70 @@
+[rule]
+id = "py-permission-check-call"
+languages = ["python"]
+category = "abac"
+confidence = "high"
+description = "Permission or capability check method call (e.g. user.can(\"delete\"))"
+# Catches the allow-style ABAC family: `can`, `is_allowed`, `allows`,
+# `has_access`, `check_access`, `has_permission`, `check_permission`.
+# Deny-style methods (`cannot`, `denies`) are intentionally excluded —
+# the rego template below is allow-style, and emitting it for a deny
+# call would invert the semantics. Deep mode picks up those calls.
+# Django's `has_perm`/`has_perms` are also excluded — they have a
+# dedicated RBAC-flavored rule (`py-has-perm-call`) so the same call
+# doesn't surface as both abac and rbac findings. The anchored
+# alternation below already excludes both groups.
+query = """
+(call
+  function: (attribute
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string (string_content) @permission))
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(can|has_permission|check_permission|is_allowed|allows|has_access|check_access)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.action == "{{permission}}"
+}
+"""
+
+[[rule.tests]]
+input = """
+if user.can("delete"):
+    delete_resource()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if policy.is_allowed("read"):
+    read()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if account.has_access("billing"):
+    show_billing()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if user.has_perm("blog.add_post"):
+    create_post()
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if cache.has_value("foo"):
+    use_it()
+"""
+expect_match = false

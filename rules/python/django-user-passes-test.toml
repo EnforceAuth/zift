@@ -1,0 +1,45 @@
+[rule]
+id = "py-django-user-passes-test"
+languages = ["python"]
+category = "middleware"
+confidence = "medium"
+description = "Django @user_passes_test decorator (custom predicate gate)"
+# The decorator wraps a predicate function/lambda — we can detect the
+# decorator but the actual rule encoded inside the predicate needs human
+# review or deep-mode analysis. Confidence is `medium` for that reason.
+query = """
+(decorator
+  (call
+    function: [
+      (identifier) @decorator_name
+      (attribute attribute: (identifier) @decorator_name)
+    ])
+) @match
+"""
+
+[rule.predicates.decorator_name]
+eq = "user_passes_test"
+
+[[rule.tests]]
+input = """
+@user_passes_test(lambda u: u.is_admin)
+def view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@django.contrib.auth.decorators.user_passes_test(is_staff_check)
+def admin_view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@cache_control(max_age=60)
+def view(request):
+    pass
+"""
+expect_match = false

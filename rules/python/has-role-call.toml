@@ -1,0 +1,45 @@
+[rule]
+id = "py-has-role-call"
+languages = ["python"]
+category = "rbac"
+confidence = "high"
+description = "Bare role-checking function call (e.g. has_role(\"admin\"))"
+query = """
+(call
+  function: (identifier) @fn_name
+  arguments: (argument_list
+    (string (string_content) @role_value))
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(has_role|check_role|is_role|require_role|require_roles)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+if has_role("manager"):
+    approve_request()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+require_role("admin")
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if has_value("manager"):
+    process()
+"""
+expect_match = false
