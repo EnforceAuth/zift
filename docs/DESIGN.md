@@ -54,7 +54,7 @@ zift uses a hybrid architecture that balances speed, cost, and detection depth.
                            │
                     ┌──────▼──────┐
                     │  Findings   │
-                    │  + Rego     │
+                    │  + Policy   │
                     │  Generation │
                     └─────────────┘
 ```
@@ -242,7 +242,7 @@ zift <command> [options] [path]
 
 COMMANDS:
     (default)       Scan a codebase (alias for scan behavior)
-    extract         Generate Rego files from findings
+    extract         Generate Policy-as-Code files from findings
     report          Generate a detailed report
     rules           List/validate/test pattern rules
     init            Create a .zift.toml configuration file

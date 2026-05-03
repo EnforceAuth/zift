@@ -2,7 +2,7 @@
 
 **Status:** Draft — exploring for v0.3
 **Author:** seeded from a scoping investigation; refine before committing to a milestone
-**Companion issue:** see "Cedar / pluggable policy backends" tracking issue on GitHub
+**Companion issue:** [#27 — Cedar support / pluggable policy backends](https://github.com/EnforceAuth/zift/issues/27)
 
 ## TL;DR
 

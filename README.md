@@ -15,7 +15,7 @@ Most applications embed authorization decisions directly in application code: ro
 ```bash
 zift .                          # structural scan of current directory (fast, free)
 zift scan ./src --deep ...      # also run LLM-assisted semantic analysis
-zift extract ./findings.json    # generate Rego from scan findings
+zift extract ./findings.json    # generate Policy-as-Code from scan findings (Rego today)
 zift report .                   # detailed findings report
 ```
 
@@ -137,7 +137,7 @@ If you already use an agent host — Claude Code, Cursor, Continue, Cline, Zed, 
 zift mcp --scan-root .
 ```
 
-Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, Rego validation).
+Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, Rego validation today).
 
 ### Tools exposed
 
