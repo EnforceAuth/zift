@@ -2,17 +2,18 @@
 id = "go-casbin-enforce"
 languages = ["go"]
 category = "rbac"
-confidence = "high"
+confidence = "medium"
 description = "Casbin enforcer call (e.g. enforcer.Enforce(sub, obj, act))"
 # Casbin (https://github.com/casbin/casbin) is the dominant Go authz
 # library. Its API surface is small and distinctive: `Enforce`,
 # `EnforceEx`, `BatchEnforce`, `EnforceWithMatcher`. Match any of these
-# as a method call. We don't constrain the receiver name — projects call
-# their enforcer `e`, `enforcer`, `enf`, etc., and any of those is fine.
+# as a method call. We don't constrain the receiver — projects call
+# their enforcer `e`, `enforcer`, `enf`, etc. — so confidence is
+# `medium`: the method names are Casbin-flavored but a non-Casbin type
+# could happen to expose a method with the same name.
 query = """
 (call_expression
   function: (selector_expression
-    operand: (_) @receiver
     field: (field_identifier) @method_name)
 ) @match
 """

@@ -8,11 +8,17 @@ description = "Direct role comparison in a conditional (e.g. user.Role == \"admi
 # `!=` — the rego template below is allow-style and would be inverted
 # for `!=`. Tree-sitter-go exposes the operator under a named field, so
 # `operator: "=="` filters precisely.
+#
+# Right side accepts both interpreted (`"admin"`) and raw (`\`admin\``)
+# string literals — Go supports both spellings of a string literal.
 query = """
 (binary_expression
   left: (selector_expression field: (field_identifier) @prop)
   operator: "=="
-  right: (interpreted_string_literal (interpreted_string_literal_content) @role_value)
+  right: [
+    (interpreted_string_literal (interpreted_string_literal_content) @role_value)
+    (raw_string_literal (raw_string_literal_content) @role_value)
+  ]
 ) @match
 """
 
@@ -47,6 +53,20 @@ package main
 func handle(account *Account) {
     if account.AccountType == "enterprise" {
         enable()
+    }
+}
+"""
+expect_match = true
+
+# Raw string literals (backticks) are valid Go; the query accepts both
+# interpreted and raw forms.
+[[rule.tests]]
+input = """
+package main
+
+func handle(user *User) {
+    if user.Role == `admin` {
+        deleteUser()
     }
 }
 """

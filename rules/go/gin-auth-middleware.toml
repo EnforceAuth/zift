@@ -11,7 +11,7 @@ description = "Gin/Echo-style auth middleware registration (e.g. r.Use(AuthRequi
 # auth case but misses bare-function middleware values (e.g.
 # `r.Use(AuthRequired)` without parens). That's a valid Go middleware
 # pattern too; covering it would expand the query meaningfully and is
-# left for a follow-up rule.
+# tracked as a follow-up in issue #31.
 query = """
 (call_expression
   function: (selector_expression

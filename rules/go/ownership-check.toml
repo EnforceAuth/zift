@@ -25,10 +25,15 @@ match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|Accou
 [rule.predicates.right_prop]
 match = "^(ID|Id|UserID|UserId|Sub|AccountID|AccountId)$"
 
+# `Sub` is the JWT subject claim — a principal-flavored identifier even
+# though it doesn't carry an `Owner`/`User` prefix. Without it here, a
+# comparison like `record.ID == ctx.Sub` (resource ID vs principal
+# subject) would fail the cross-predicate even though both sides pass
+# the per-capture predicates.
 [[rule.cross_predicates]]
 kind = "any_match"
 captures = ["left_prop", "right_prop"]
-match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId)$"
+match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId|Sub)$"
 
 [rule.rego_template]
 template = """
@@ -58,6 +63,21 @@ package main
 func handle(post *Post, req *Request) {
     if post.AuthorID == req.UserID {
         edit()
+    }
+}
+"""
+expect_match = true
+
+# Resource ID vs JWT subject — `Sub` qualifies as principal-flavored, so
+# the cross-predicate accepts this even though the left side is a bare
+# `ID`. (Without `Sub` in the cross regex, the rule used to miss this.)
+[[rule.tests]]
+input = """
+package main
+
+func handle(record *Record, ctx *Context) {
+    if record.ID == ctx.Sub {
+        allowEdit()
     }
 }
 """
