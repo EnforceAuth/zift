@@ -19,11 +19,18 @@ query = """
 ) @match
 """
 
+# Both per-capture predicates use the same union of owner-flavored,
+# principal-flavored, and generic ID identifiers so that reversed
+# operand orders (e.g. `user.ID == resource.OwnerID` or
+# `ctx.Sub == record.ID`) match too. The `cross_predicate` below then
+# enforces that at least one side names an auth-relevant field, which
+# keeps plain `ID == ID` (dedup) and unrelated comparisons from tripping
+# the rule.
 [rule.predicates.left_prop]
-match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId|ID|Id)$"
+match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId|ID|Id|Sub)$"
 
 [rule.predicates.right_prop]
-match = "^(ID|Id|UserID|UserId|Sub|AccountID|AccountId)$"
+match = "^(OwnerID|OwnerId|UserID|UserId|CreatedBy|AuthorID|AuthorId|Owner|AccountID|AccountId|ID|Id|Sub)$"
 
 # `Sub` is the JWT subject claim — a principal-flavored identifier even
 # though it doesn't carry an `Owner`/`User` prefix. Without it here, a
@@ -77,6 +84,35 @@ package main
 
 func handle(record *Record, ctx *Context) {
     if record.ID == ctx.Sub {
+        allowEdit()
+    }
+}
+"""
+expect_match = true
+
+# Reversed operand order: principal-flavored field on the left, owner-flavored
+# field on the right. The unified per-capture predicates plus the auth-relevant
+# cross_predicate let this match symmetrically with the canonical ordering.
+[[rule.tests]]
+input = """
+package main
+
+func handle(resource *Resource, user *User) {
+    if user.ID == resource.OwnerID {
+        allowEdit()
+    }
+}
+"""
+expect_match = true
+
+# Reversed operand order with JWT subject on the left and bare `ID` on the
+# right. Same shape as the `record.ID == ctx.Sub` case above, just flipped.
+[[rule.tests]]
+input = """
+package main
+
+func handle(record *Record, ctx *Context) {
+    if ctx.Sub == record.ID {
         allowEdit()
     }
 }
