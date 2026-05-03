@@ -1,0 +1,69 @@
+[rule]
+id = "go-casbin-enforce"
+languages = ["go"]
+category = "rbac"
+confidence = "medium"
+description = "Casbin enforcer call (e.g. enforcer.Enforce(sub, obj, act))"
+# Casbin (https://github.com/casbin/casbin) is the dominant Go authz
+# library. Its API surface is small and distinctive: `Enforce`,
+# `EnforceEx`, `BatchEnforce`, `EnforceWithMatcher`. Match any of these
+# as a method call. We don't constrain the receiver — projects call
+# their enforcer `e`, `enforcer`, `enf`, etc. — so confidence is
+# `medium`: the method names are Casbin-flavored but a non-Casbin type
+# could happen to expose a method with the same name.
+query = """
+(call_expression
+  function: (selector_expression
+    field: (field_identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(Enforce|EnforceEx|BatchEnforce|EnforceWithMatcher|EnforceExWithMatcher|EnforceContext)$"
+
+[rule.rego_template]
+template = """
+# Casbin enforce calls are already policy decision requests — the rego
+# stub below mirrors the canonical Casbin (sub, obj, act) tuple. Adapt
+# `input.action`, `input.resource`, etc. to your model file.
+default allow := false
+
+allow if {
+    input.user.subject == input.policy.subject
+    input.resource    == input.policy.resource
+    input.action      == input.policy.action
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(e *casbin.Enforcer, sub, obj, act string) {
+    ok, _ := e.Enforce(sub, obj, act)
+    _ = ok
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(enforcer *casbin.Enforcer) {
+    if ok, _ := enforcer.BatchEnforce(requests); ok != nil {
+        run()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(svc *Service) {
+    svc.Process(input)
+}
+"""
+expect_match = false

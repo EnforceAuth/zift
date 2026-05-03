@@ -178,6 +178,35 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "py-feature-gate-check",
         include_str!("../../rules/python/feature-gate-check.toml"),
     ),
+    // -- Go --
+    (
+        "go-has-role-call",
+        include_str!("../../rules/go/has-role-call.toml"),
+    ),
+    (
+        "go-permission-check-call",
+        include_str!("../../rules/go/permission-check-call.toml"),
+    ),
+    (
+        "go-role-check-conditional",
+        include_str!("../../rules/go/role-check-conditional.toml"),
+    ),
+    (
+        "go-ownership-check",
+        include_str!("../../rules/go/ownership-check.toml"),
+    ),
+    (
+        "go-casbin-enforce",
+        include_str!("../../rules/go/casbin-enforce.toml"),
+    ),
+    (
+        "go-feature-gate-check",
+        include_str!("../../rules/go/feature-gate-check.toml"),
+    ),
+    (
+        "go-gin-auth-middleware",
+        include_str!("../../rules/go/gin-auth-middleware.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {

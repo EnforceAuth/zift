@@ -1,0 +1,103 @@
+[rule]
+id = "go-feature-gate-check"
+languages = ["go"]
+category = "feature_gate"
+confidence = "medium"
+description = "Feature flag / gate check (e.g. features.IsEnabled(\"new-checkout\"))"
+# Same call-site shape as has-role-call/permission-check-call but for
+# feature-gate names. Confidence is `medium` rather than `high` because
+# `IsEnabled` is a generic English verb pattern and can name non-flag
+# concepts (e.g. `device.IsEnabled()`).
+#
+# The argument is constrained to a string literal (interpreted or raw —
+# Go supports both `"foo"` and `\`foo\``). Identifier args (e.g.
+# `IsEnabled(flagKey)`) intentionally don't match: the rego template
+# substitutes `{{flag_value}}` with the captured text, so non-literal
+# args would emit nonsense stubs. Mirrors the Python rule.
+query = """
+(call_expression
+  function: [
+    (identifier) @fn_name
+    (selector_expression field: (field_identifier) @fn_name)
+  ]
+  arguments: (argument_list
+    [
+      (interpreted_string_literal (interpreted_string_literal_content) @flag_value)
+      (raw_string_literal (raw_string_literal_content) @flag_value)
+    ])
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(IsEnabled|IsActive|FeatureEnabled|FlagEnabled|HasFeature|FeatureFlag)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.features["{{flag_value}}"] == true
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+func handle() {
+    if features.IsEnabled("new-checkout") {
+        runNewFlow()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle() {
+    if HasFeature("beta") {
+        enable()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(flags *Flags) {
+    if flags.FeatureEnabled("dark-mode") {
+        applyDark()
+    }
+}
+"""
+expect_match = true
+
+# Raw string literals (backticks) are valid Go; the query accepts both
+# interpreted and raw forms.
+[[rule.tests]]
+input = """
+package main
+
+func handle() {
+    if features.IsEnabled(`new-checkout`) {
+        runNewFlow()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle() {
+    if HasRole("admin") {
+        run()
+    }
+}
+"""
+expect_match = false
