@@ -1,0 +1,53 @@
+[rule]
+id = "py-login-required-decorator"
+languages = ["python"]
+category = "middleware"
+confidence = "high"
+description = "@login_required marker decorator (Django, Flask-Login, or similar)"
+# Matches the marker form (no call/parens) of @login_required as either a bare
+# identifier or a single-level attribute reference (e.g. @flask_login.login_required).
+# The call form (@login_required(redirect_field_name='...')) is intentionally a
+# distinct AST shape and would need a separate rule if observed in the wild.
+query = """
+(decorator
+  [
+    (identifier) @decorator_name
+    (attribute attribute: (identifier) @decorator_name)
+  ]
+) @match
+"""
+
+[rule.predicates.decorator_name]
+eq = "login_required"
+
+[[rule.tests]]
+input = """
+@login_required
+def my_view(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@flask_login.login_required
+def index():
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@app.route('/')
+def index():
+    pass
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+@staticmethod
+def helper():
+    pass
+"""
+expect_match = false

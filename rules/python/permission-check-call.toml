@@ -1,0 +1,69 @@
+[rule]
+id = "py-permission-check-call"
+languages = ["python"]
+category = "abac"
+confidence = "high"
+description = "Permission or capability check method call (e.g. user.can(\"delete\"))"
+# Catches the broader ABAC family: `can`, `cannot`, `is_allowed`, `allows`,
+# `denies`, `has_access`, `check_access`, `check_permission`. Django's
+# `has_perm`/`has_perms` are intentionally excluded — they have a dedicated
+# RBAC-flavored rule (`py-has-perm-call`) so the same call doesn't surface
+# as both abac and rbac findings.
+query = """
+(call
+  function: (attribute
+    attribute: (identifier) @method @method_excl)
+  arguments: (argument_list
+    (string (string_content) @permission))
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(can|cannot|has_permission|check_permission|is_allowed|allows|denies|has_access|check_access)$"
+
+[rule.predicates.method_excl]
+not_match = "^(has_perm|has_perms)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.action == "{{permission}}"
+}
+"""
+
+[[rule.tests]]
+input = """
+if user.can("delete"):
+    delete_resource()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if policy.is_allowed("read"):
+    read()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if account.has_access("billing"):
+    show_billing()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if user.has_perm("blog.add_post"):
+    create_post()
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if cache.has_value("foo"):
+    use_it()
+"""
+expect_match = false

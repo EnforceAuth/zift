@@ -1,0 +1,58 @@
+[rule]
+id = "py-django-permission-required"
+languages = ["python"]
+category = "middleware"
+confidence = "high"
+description = "Django @permission_required decorator (with permission codename argument)"
+# Matches both bare and module-qualified forms of the decorator:
+#   @permission_required('app.delete_user')
+#   @django.contrib.auth.decorators.permission_required('app.delete_user')
+# The decorator's call function is captured at the rightmost identifier, so
+# arbitrarily deep import paths still bind to `decorator_name`.
+query = """
+(decorator
+  (call
+    function: [
+      (identifier) @decorator_name
+      (attribute attribute: (identifier) @decorator_name)
+    ]
+    arguments: (argument_list
+      (string (string_content) @perm_name)))
+) @match
+"""
+
+[rule.predicates.decorator_name]
+eq = "permission_required"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{perm_name}}" in input.user.permissions
+}
+"""
+
+[[rule.tests]]
+input = """
+@permission_required('app.delete_user')
+def delete_user(request, id):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@django.contrib.auth.decorators.permission_required('app.delete_user')
+def delete_user(request, id):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@cache_page(60)
+def index(request):
+    pass
+"""
+expect_match = false

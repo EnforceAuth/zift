@@ -1,0 +1,53 @@
+[rule]
+id = "py-ownership-check"
+languages = ["python"]
+category = "ownership"
+confidence = "medium"
+description = "Resource ownership comparison (e.g. resource.owner_id == user.id)"
+# Catches `<expr>.<owner-style-attr> == <expr>.<id-style-attr>`.
+# Confidence is `medium` — the snake_case naming convention makes false
+# positives less likely than in TS/Java, but unrelated identity-shaped
+# comparisons can still slip through.
+query = """
+(comparison_operator
+  (attribute attribute: (identifier) @left_prop)
+  operators: "=="
+  (attribute attribute: (identifier) @right_prop)
+) @match
+"""
+
+[rule.predicates.left_prop]
+match = "(?i)^(owner_id|user_id|created_by|author_id|owner|account_id)$"
+
+[rule.predicates.right_prop]
+match = "(?i)^(id|user_id|sub|account_id)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.resource.owner == input.user.id
+}
+"""
+
+[[rule.tests]]
+input = """
+if resource.owner_id == user.id:
+    allow_edit()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if post.author_id == request.user.id:
+    edit()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if a.score == b.score:
+    tie()
+"""
+expect_match = false

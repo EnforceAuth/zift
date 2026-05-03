@@ -1,0 +1,59 @@
+[rule]
+id = "py-role-check-conditional"
+languages = ["python"]
+category = "rbac"
+confidence = "high"
+description = "Direct role comparison in a conditional (e.g. user.role == \"admin\")"
+# Captures `<obj>.<role-attr> == \"value\"`. The `not_match` on `role_value`
+# filters out chat/LLM-message roles ("assistant", "user", "system",
+# "tool", "function") that share the same shape but aren't auth.
+query = """
+(comparison_operator
+  (attribute attribute: (identifier) @prop)
+  operators: "=="
+  (string (string_content) @role_value)
+) @match
+"""
+
+[rule.predicates.prop]
+match = "^(role|roles|user_role|user_type|account_type)$"
+
+[rule.predicates.role_value]
+not_match = "^(assistant|user|system|tool|function)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role == "{{role_value}}"
+}
+"""
+
+[[rule.tests]]
+input = """
+if user.role == "admin":
+    delete_user()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if account.account_type == "enterprise":
+    enable()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if user.name == "admin":
+    greet()
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if msg.role == "assistant":
+    process_response()
+"""
+expect_match = false

@@ -823,6 +823,178 @@ public class MyService implements Serializable {
         );
     }
 
+    // -- Python rule tests --
+
+    fn parse_and_match_python(source: &str, rule_toml: &str) -> Vec<Finding> {
+        let rule = rules::parse_rule_for_test(rule_toml);
+        let mut ts_parser = tree_sitter::Parser::new();
+        let lang = Language::Python;
+        let ts_lang = parser::get_language(lang, false).unwrap();
+        let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
+        let compiled = compile_rule(&rule, &ts_lang).unwrap();
+        execute_query(
+            &compiled,
+            &tree,
+            source.as_bytes(),
+            Path::new("test.py"),
+            lang,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn py_django_permission_required_matches() {
+        let findings = parse_and_match_python(
+            "@permission_required('app.delete_user')\ndef delete_user(request, id):\n    pass\n",
+            include_str!("../../rules/python/django-permission-required.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @permission_required");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Middleware);
+    }
+
+    #[test]
+    fn py_django_permission_required_qualified_matches() {
+        let findings = parse_and_match_python(
+            "@django.contrib.auth.decorators.permission_required('app.delete_user')\ndef delete_user(request, id):\n    pass\n",
+            include_str!("../../rules/python/django-permission-required.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match module-qualified @permission_required"
+        );
+    }
+
+    #[test]
+    fn py_login_required_decorator_matches() {
+        let findings = parse_and_match_python(
+            "@login_required\ndef my_view(request):\n    pass\n",
+            include_str!("../../rules/python/login-required-decorator.toml"),
+        );
+        assert!(!findings.is_empty(), "should match bare @login_required");
+    }
+
+    #[test]
+    fn py_login_required_decorator_no_false_positive_on_unrelated_decorator() {
+        let findings = parse_and_match_python(
+            "@staticmethod\ndef helper():\n    pass\n",
+            include_str!("../../rules/python/login-required-decorator.toml"),
+        );
+        assert!(findings.is_empty(), "should not match @staticmethod");
+    }
+
+    #[test]
+    fn py_has_perm_call_matches() {
+        let findings = parse_and_match_python(
+            "if request.user.has_perm('app.delete_user'):\n    delete_user()\n",
+            include_str!("../../rules/python/has-perm-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match request.user.has_perm()");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn py_fastapi_depends_typed_default_matches() {
+        let findings = parse_and_match_python(
+            "def read_items(token: str = Depends(oauth2_scheme)):\n    pass\n",
+            include_str!("../../rules/python/fastapi-depends.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Depends() typed default");
+    }
+
+    #[test]
+    fn py_fastapi_depends_untyped_default_matches() {
+        let findings = parse_and_match_python(
+            "def read_items(token = Depends(get_current_user)):\n    pass\n",
+            include_str!("../../rules/python/fastapi-depends.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match Depends() untyped default"
+        );
+    }
+
+    #[test]
+    fn py_role_check_conditional_matches() {
+        let findings = parse_and_match_python(
+            "if user.role == \"admin\":\n    delete_user()\n",
+            include_str!("../../rules/python/role-check-conditional.toml"),
+        );
+        assert!(!findings.is_empty(), "should match user.role == \"admin\"");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn py_role_check_conditional_excludes_chat_message_role() {
+        let findings = parse_and_match_python(
+            "if msg.role == \"assistant\":\n    process_response()\n",
+            include_str!("../../rules/python/role-check-conditional.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "should not match LLM chat message role"
+        );
+    }
+
+    #[test]
+    fn py_has_role_call_matches() {
+        let findings = parse_and_match_python(
+            "if has_role(\"manager\"):\n    approve_request()\n",
+            include_str!("../../rules/python/has-role-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match has_role()");
+    }
+
+    #[test]
+    fn py_permission_check_call_matches() {
+        let findings = parse_and_match_python(
+            "if user.can(\"delete\"):\n    delete_resource()\n",
+            include_str!("../../rules/python/permission-check-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match user.can()");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Abac);
+    }
+
+    #[test]
+    fn py_permission_check_call_excludes_django_has_perm() {
+        // `has_perm` belongs to py-has-perm-call (rbac); it must not also
+        // surface here as abac, otherwise the same call produces two
+        // findings with conflicting categories.
+        let findings = parse_and_match_python(
+            "if user.has_perm(\"blog.add_post\"):\n    create_post()\n",
+            include_str!("../../rules/python/permission-check-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "permission-check-call must not duplicate has_perm (covered by py-has-perm-call)"
+        );
+    }
+
+    #[test]
+    fn py_ownership_check_matches() {
+        let findings = parse_and_match_python(
+            "if resource.owner_id == user.id:\n    allow_edit()\n",
+            include_str!("../../rules/python/ownership-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match owner_id == user.id ownership check"
+        );
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Ownership);
+    }
+
+    #[test]
+    fn py_feature_gate_matches() {
+        let findings = parse_and_match_python(
+            "if feature_flags.has_feature(\"advanced\"):\n    enable()\n",
+            include_str!("../../rules/python/feature-gate-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match has_feature()");
+        assert_eq!(
+            findings[0].category,
+            crate::types::AuthCategory::FeatureGate
+        );
+    }
+
     // -- cross_predicates tests (synthetic rules) --
 
     /// A synthetic rule shaped like ownership-check: two getters in an
