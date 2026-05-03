@@ -69,7 +69,7 @@ So: log the design now while context is fresh; revisit when v0.2 is shipping.
 
 3. **New `src/cedar/` module**
    Mirrors `src/rego/` but smaller. Cedar has no packages and a flatter file model, so `grouping.rs` is simpler. Validation can use the [`cedar-policy`](https://crates.io/crates/cedar-policy) crate directly.
-   ```
+   ```text
    src/cedar/
      mod.rs
      templates.rs    # render + confidence wrapping (Cedar uses // for comments)
@@ -79,7 +79,7 @@ So: log the design now while context is fresh; revisit when v0.2 is shipping.
    Estimate: ~200 lines.
 
 4. **CLI: `--engine` on `extract`**
-   ```
+   ```bash
    zift extract findings.json --engine cedar --output-dir ./policies/cedar
    ```
    Default remains `rego` for backward compatibility.

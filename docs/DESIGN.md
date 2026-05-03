@@ -267,7 +267,7 @@ DEEP SCAN OPTIONS:
 
 EXTRACT OPTIONS:
     --input, -i         Findings file (default: stdin or last scan)
-    --output-dir        Directory for generated .rego files
+    --output-dir        Directory for generated policy files (Rego today)
     --package-prefix    Rego package prefix (default: app)
     --min-confidence    Skip findings below this confidence
 
