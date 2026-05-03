@@ -1,6 +1,6 @@
 # zift
 
-Sift through your codebase for embedded authorization logic. Extract it into Rego for [OPA](https://www.openpolicyagent.org/).
+Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/) today, with other engines (e.g. Cedar) on the roadmap.
 
 > **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, and Java. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
 
@@ -8,7 +8,7 @@ Sift through your codebase for embedded authorization logic. Extract it into Reg
 
 Most applications embed authorization decisions directly in application code: role checks in `if` statements, permission guards in middleware, business rules that act as access control. This scattered auth logic is hard to audit, hard to test, and impossible to enforce consistently.
 
-**zift** scans your codebase, finds these embedded authorization patterns, and helps you externalize them into Rego policies that OPA can enforce centrally.
+**zift** scans your codebase, finds these embedded authorization patterns, and helps you externalize them into Policy as Code (PaC) — Rego policies for OPA today — that a policy engine can enforce centrally.
 
 ## How it works
 
