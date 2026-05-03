@@ -4,25 +4,26 @@ languages = ["python"]
 category = "abac"
 confidence = "high"
 description = "Permission or capability check method call (e.g. user.can(\"delete\"))"
-# Catches the broader ABAC family: `can`, `cannot`, `is_allowed`, `allows`,
-# `denies`, `has_access`, `check_access`, `check_permission`. Django's
-# `has_perm`/`has_perms` are intentionally excluded — they have a dedicated
-# RBAC-flavored rule (`py-has-perm-call`) so the same call doesn't surface
-# as both abac and rbac findings.
+# Catches the allow-style ABAC family: `can`, `is_allowed`, `allows`,
+# `has_access`, `check_access`, `has_permission`, `check_permission`.
+# Deny-style methods (`cannot`, `denies`) are intentionally excluded —
+# the rego template below is allow-style, and emitting it for a deny
+# call would invert the semantics. Deep mode picks up those calls.
+# Django's `has_perm`/`has_perms` are also excluded — they have a
+# dedicated RBAC-flavored rule (`py-has-perm-call`) so the same call
+# doesn't surface as both abac and rbac findings. The anchored
+# alternation below already excludes both groups.
 query = """
 (call
   function: (attribute
-    attribute: (identifier) @method @method_excl)
+    attribute: (identifier) @method)
   arguments: (argument_list
     (string (string_content) @permission))
 ) @match
 """
 
 [rule.predicates.method]
-match = "^(can|cannot|has_permission|check_permission|is_allowed|allows|denies|has_access|check_access)$"
-
-[rule.predicates.method_excl]
-not_match = "^(has_perm|has_perms)$"
+match = "^(can|has_permission|check_permission|is_allowed|allows|has_access|check_access)$"
 
 [rule.rego_template]
 template = """

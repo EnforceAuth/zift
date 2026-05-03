@@ -8,7 +8,8 @@ description = "FastAPI Depends(...) used as a parameter default (dependency-inje
 # (untyped) parameter defaults. `Depends` is FastAPI's idiomatic way to wire
 # auth dependencies (`oauth2_scheme`, `get_current_user`, `require_role`),
 # but it's also used for non-auth dependency injection — confidence is
-# `medium` and the rego template is intentionally a stub for human review.
+# `medium` and we intentionally emit no rego template (the wrapped callable
+# is what encodes the policy, and that needs human or deep-mode review).
 query = """
 [
   (typed_default_parameter

@@ -4,13 +4,18 @@ languages = ["python"]
 category = "rbac"
 confidence = "high"
 description = "Direct role comparison in a conditional (e.g. user.role == \"admin\")"
-# Captures `<obj>.<role-attr> == \"value\"`. The `not_match` on `role_value`
-# filters out chat/LLM-message roles ("assistant", "user", "system",
-# "tool", "function") that share the same shape but aren't auth.
+# Captures `<obj>.<role-attr> {==, is} \"value\"`. Both `==` (value equality)
+# and `is` (identity equality, an anti-pattern for strings but seen in
+# real code via interned literals) are matched. `is not` and `!=` are
+# intentionally excluded: their semantics are inverted relative to the
+# allow-style rego template emitted below.
+# The `not_match` on `role_value` filters out chat/LLM-message roles
+# ("assistant", "user", "system", "tool", "function") that share the
+# same shape but aren't auth.
 query = """
 (comparison_operator
   (attribute attribute: (identifier) @prop)
-  operators: "=="
+  operators: ["==" "is"]
   (string (string_content) @role_value)
 ) @match
 """
@@ -41,6 +46,13 @@ expect_match = true
 input = """
 if account.account_type == "enterprise":
     enable()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if user.role is "admin":
+    delete_user()
 """
 expect_match = true
 

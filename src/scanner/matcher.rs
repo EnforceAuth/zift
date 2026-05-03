@@ -883,6 +883,18 @@ public class MyService implements Serializable {
     }
 
     #[test]
+    fn py_login_required_decorator_call_form_matches() {
+        let findings = parse_and_match_python(
+            "@login_required(redirect_field_name='login_url')\ndef my_view(request):\n    pass\n",
+            include_str!("../../rules/python/login-required-decorator.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match @login_required(...) call form"
+        );
+    }
+
+    #[test]
     fn py_has_perm_call_matches() {
         let findings = parse_and_match_python(
             "if request.user.has_perm('app.delete_user'):\n    delete_user()\n",
@@ -932,6 +944,18 @@ public class MyService implements Serializable {
         assert!(
             findings.is_empty(),
             "should not match LLM chat message role"
+        );
+    }
+
+    #[test]
+    fn py_role_check_conditional_is_operator_matches() {
+        let findings = parse_and_match_python(
+            "if user.role is \"admin\":\n    delete_user()\n",
+            include_str!("../../rules/python/role-check-conditional.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match `is` operator (string identity equality)"
         );
     }
 
@@ -992,6 +1016,36 @@ public class MyService implements Serializable {
         assert_eq!(
             findings[0].category,
             crate::types::AuthCategory::FeatureGate
+        );
+    }
+
+    #[test]
+    fn py_feature_gate_property_comparison_matches() {
+        let findings = parse_and_match_python(
+            "if user.plan == \"enterprise\":\n    enable_advanced()\n",
+            include_str!("../../rules/python/feature-gate-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match property comparison shape (user.plan == ...)"
+        );
+        assert_eq!(
+            findings[0].category,
+            crate::types::AuthCategory::FeatureGate
+        );
+    }
+
+    #[test]
+    fn py_feature_gate_property_comparison_excludes_role() {
+        // `role` is not a feature-gate key; this should be picked up by
+        // py-role-check-conditional, not py-feature-gate-check.
+        let findings = parse_and_match_python(
+            "if user.role == \"admin\":\n    delete()\n",
+            include_str!("../../rules/python/feature-gate-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "feature-gate must not match role-style property comparisons"
         );
     }
 
