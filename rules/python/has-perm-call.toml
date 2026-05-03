@@ -4,15 +4,19 @@ languages = ["python"]
 category = "rbac"
 confidence = "high"
 description = "Django-style permission check (request.user.has_perm / has_perms)"
-# Matches `<expr>.has_perm("app.codename")` and the bulk variant
-# `<expr>.has_perms(["app.a", "app.b"])`. Only the literal-string form is
-# captured today; dynamic permission codes will surface via deep mode.
+# Matches both `<expr>.has_perm("app.codename")` and the bulk variant
+# `<expr>.has_perms(["app.a", "app.b"])` when permission codes are literal
+# strings. Dynamic (non-literal) permission codes will surface via deep mode.
 query = """
 (call
   function: (attribute
     attribute: (identifier) @method)
   arguments: (argument_list
-    (string (string_content) @perm_name))
+    [
+      (string (string_content) @perm_name)
+      (list
+        (string (string_content) @perm_name))
+    ])
 ) @match
 """
 
@@ -39,6 +43,13 @@ expect_match = true
 input = """
 if user.has_perm('blog.add_post'):
     create()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if request.user.has_perms(['blog.add_post', 'blog.change_post']):
+    bulk_edit()
 """
 expect_match = true
 

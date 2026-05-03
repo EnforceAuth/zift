@@ -257,15 +257,27 @@ mod tests {
 
     #[test]
     fn discover_for_deep_picks_up_extra_languages() {
+        use std::collections::HashSet;
+
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.ts"), "let x = 1;").unwrap();
         fs::write(dir.path().join("b.py"), "x = 1\n").unwrap();
         fs::write(dir.path().join("c.go"), "package main\n").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
-        assert_eq!(structural.len(), 2, "structural sees TS + Python");
+        let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
+        assert_eq!(
+            structural_langs,
+            HashSet::from([Language::TypeScript, Language::Python]),
+            "structural should include only TS + Python",
+        );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
-        assert_eq!(deep.len(), 3, "deep sees TS + Python + Go");
+        let deep_langs: HashSet<_> = deep.iter().map(|f| f.language).collect();
+        assert_eq!(
+            deep_langs,
+            HashSet::from([Language::TypeScript, Language::Python, Language::Go]),
+            "deep should include TS + Python + Go",
+        );
     }
 }
