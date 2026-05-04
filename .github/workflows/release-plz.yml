@@ -46,6 +46,10 @@ jobs:
           # workflows (e.g. release-binaries.yml). Events created by the
           # default GITHUB_TOKEN do not trigger other workflow runs.
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # crates.io API token — release-plz invokes `cargo publish`,
+          # which reads this env var. Without it the publish step fails
+          # with "no token found, please run `cargo login`".
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   release-plz-pr:
     runs-on: ubuntu-latest
