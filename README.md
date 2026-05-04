@@ -46,7 +46,7 @@ Deep mode walks the full source tree by extension and detects auth-y function na
 
 ## Installation
 
-### Homebrew (macOS / Linux)
+### Homebrew (macOS / Linux x86_64)
 
 ```bash
 brew install enforceauth/tap/zift

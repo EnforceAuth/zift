@@ -137,5 +137,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/zift.rb
-          git commit -m "zift ${VERSION}"
-          git push
+          if git diff --cached --quiet; then
+            echo "No formula changes; skipping commit."
+          else
+            git commit -m "zift ${VERSION}"
+            git push
+          fi
