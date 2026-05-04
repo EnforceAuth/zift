@@ -188,6 +188,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/go/permission-check-call.toml"),
     ),
     (
+        "go-permission-predicate-call",
+        include_str!("../../rules/go/permission-predicate-call.toml"),
+    ),
+    (
         "go-role-check-conditional",
         include_str!("../../rules/go/role-check-conditional.toml"),
     ),
