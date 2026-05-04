@@ -58,3 +58,84 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: zift-${{ matrix.target }}.${{ matrix.archive }}
+
+  update-homebrew:
+    name: Update Homebrew tap
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts
+        run: |
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "zift-*-apple-darwin.tar.gz" \
+            --pattern "zift-*-linux-gnu.tar.gz"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute checksums
+        id: sha
+        run: |
+          echo "arm64=$(sha256sum zift-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "x86_64_mac=$(sha256sum zift-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "x86_64_linux=$(sha256sum zift-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: EnforceAuth/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Generate formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA_ARM64: ${{ steps.sha.outputs.arm64 }}
+          SHA_X86_64_MAC: ${{ steps.sha.outputs.x86_64_mac }}
+          SHA_X86_64_LINUX: ${{ steps.sha.outputs.x86_64_linux }}
+        run: |
+          mkdir -p Formula
+          cat > Formula/zift.rb << EOF
+          class Zift < Formula
+            desc "Scan codebases for embedded authorization logic and generate Rego policies"
+            homepage "https://github.com/EnforceAuth/zift"
+            version "${VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/EnforceAuth/zift/releases/download/v#{version}/zift-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_ARM64}"
+              else
+                url "https://github.com/EnforceAuth/zift/releases/download/v#{version}/zift-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_X86_64_MAC}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/EnforceAuth/zift/releases/download/v#{version}/zift-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${SHA_X86_64_LINUX}"
+            end
+
+            def install
+              bin.install "zift"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/zift --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/zift.rb
+          git commit -m "zift ${VERSION}"
+          git push
