@@ -4,14 +4,17 @@ languages = ["typescript", "javascript"]
 category = "abac"
 confidence = "high"
 description = "Permission or capability check function call"
-# Method name regex covers two families:
-#   1. Allow-style ABAC verbs: can, hasPermission, checkPermission, isAllowed, allows,
-#      hasAccess, checkAccess, hasClaim. Deny-style (cannot, denies) are accepted too
-#      for completeness, though the rego template below is allow-shaped.
-#   2. Membership/role helpers: belongsTo, isTeamAdmin, isOrgOwner, hasMembership,
-#      and the userIs<Role> family (e.g. userIsAdmin, userIsOwner). Surfaced by the
-#      Cal.com corpus shakedown — these are first-class authz checks but were
-#      previously unmatched.
+# Allow-style ABAC verbs: can, hasPermission, checkPermission, isAllowed,
+# allows, hasAccess, checkAccess, hasClaim. Deny-style (cannot, denies)
+# are accepted for completeness, though the rego template below is
+# allow-shaped.
+#
+# Role/membership helpers (belongsTo, isTeamAdmin, isOrgOwner,
+# hasMembership, userIs<Role>) intentionally live in
+# ts-membership-check-call. Their literal arg is typically a *resource
+# identifier* (e.g. "team-42") rather than a permission name, so they
+# need a different rego template shape. Keeping the rules separated
+# preserves the project's role-vs-permission separation.
 query = """
 (call_expression
   function: (member_expression
@@ -22,7 +25,7 @@ query = """
 """
 
 [rule.predicates.method]
-match = "^(can|cannot|hasPermission|checkPermission|isAllowed|allows|denies|hasAccess|checkAccess|hasClaim|belongsTo|isTeamAdmin|isOrgOwner|hasMembership|userIs[A-Z][A-Za-z]*)$"
+match = "^(can|cannot|hasPermission|checkPermission|isAllowed|allows|denies|hasAccess|checkAccess|hasClaim)$"
 
 [rule.rego_template]
 template = """
@@ -37,31 +40,6 @@ allow if {
 input = """
 if (user.can("delete", resource)) {
   deleteResource();
-}
-"""
-expect_match = true
-
-# Cal.com-style membership/role helpers when called with a string literal.
-[[rule.tests]]
-input = """
-if (membership.belongsTo("team-42")) {
-  showTeam();
-}
-"""
-expect_match = true
-
-[[rule.tests]]
-input = """
-if (acl.isTeamAdmin("team-42")) {
-  manageTeam();
-}
-"""
-expect_match = true
-
-[[rule.tests]]
-input = """
-if (session.userIsOwner("org-1")) {
-  manageOrg();
 }
 """
 expect_match = true

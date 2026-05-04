@@ -10,13 +10,9 @@ description = "Chained permission DSL (e.g. canThis(user).edit.post(post), CASL/
 # ports that follow the same pattern.
 #
 # Predicate on the callee is a prefix match so common variants like
-# `canThis`, `mayDo`, `allowFor`, `checkAbility` all qualify. No rego
-# template: the verb/resource pair is captured as identifiers, not
-# string literals — emitting a stub would require synthesizing
-# `input.action`/`input.resource` and would be misleading without
-# more context. Confidence is medium because the shape is distinctive
-# but the callee predicate (`can`/`may`/`allow`/`check`/`ability`) is
-# generic English.
+# `canThis`, `mayDo`, `allowFor`, `checkAbility` all qualify.
+# Confidence is medium because the shape is distinctive but the callee
+# predicate (`can`/`may`/`allow`/`check`/`ability`) is generic English.
 query = """
 (call_expression
   function: (member_expression
@@ -30,6 +26,25 @@ query = """
 
 [rule.predicates.callee]
 match = "(?i)^(can|may|allow|check|ability)([A-Z]\\w*)?$"
+
+# Stub Rego template. The verb/resource pair is captured as identifiers
+# (not string literals), so {{verb}} and {{resource}} substitute in the
+# *names* (e.g. "edit", "post") rather than runtime values. Imprecise
+# by design — generated policies are meant for manual review. Sister
+# rules without literal-arg captures (e.g. java-spring-preauthorize)
+# follow the same TODO-stub convention.
+[rule.rego_template]
+template = """
+default allow := false
+
+# TODO: chained DSL — captured verb/resource are identifiers, not
+# runtime values. Replace input.action/input.resource with the actual
+# inputs your policy receives.
+allow if {
+    input.action == "{{verb}}"
+    input.resource == "{{resource}}"
+}
+"""
 
 # -- Positive: Ghost-style permission DSL --
 
