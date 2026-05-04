@@ -1,6 +1,6 @@
 # Corpus shakedown — follow-ups
 
-Concrete rule / scanner fixes surfaced by the day-of-OSS corpus shakedown ([04-pre-oss-corpus-shakedown.md](04-pre-oss-corpus-shakedown.md)). Each item is sized to land as a tight, single-PR fix; ordered by impact.
+Concrete rule / scanner fixes surfaced by the day-of-OSS corpus shakedown ([04-pre-oss-corpus-shakedown.md](../done/04-pre-oss-corpus-shakedown.md)). Each item is sized to land as a tight, single-PR fix; ordered by impact.
 
 ## P0 — high-leverage rule predicate fixes
 

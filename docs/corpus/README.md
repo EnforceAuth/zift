@@ -30,7 +30,7 @@ We are **not** shipping policies for these projects. The runs exist to stress-te
 | Go | [go-gitea/gitea](https://github.com/go-gitea/gitea) | 18 | 23 (perm subset) | Deep surfaces the entire `IsAdmin`/`IsOwner`/`Has*` family the structural pass missed; one predicate widening on `go-has-role-call` closes most of the gap. See [go.md](go.md). |
 
 > The "deep" column is intentionally a **scoped subset** rather than the whole repo — running deep against 5,000+ files per language is neither cheap nor necessary to surface gaps. Each per-language doc explains the subset and why.
-
+>
 > The numbers move as we tighten rules. Each per-language doc records the commit SHA scanned and the Zift version, so what you see here is reproducible.
 
 ## How to read these docs
