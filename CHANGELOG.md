@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/EnforceAuth/zift/compare/v0.1.6...v0.1.7) - 2026-05-04
+
+### Added
+
+- *(deep)* unwrap claude-code envelope and broaden Go authz coverage ([#48](https://github.com/EnforceAuth/zift/pull/48))
+
 ## [0.1.6](https://github.com/EnforceAuth/zift/compare/v0.1.5...v0.1.6) - 2026-05-04
 
 ### Fixed
