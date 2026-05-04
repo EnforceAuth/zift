@@ -45,7 +45,7 @@ cargo clippy -- -D warnings
 
 Uses release-plz for automated version bumping and changelog generation.
 
-Trigger prefixes (cause version bump):
+Trigger prefixes (cause version bump — see bump table below; exact bump depends on pre/post-1.0):
 - `feat:` — new feature
 - `fix:` — bug fix
 - `refactor:` — code refactoring
@@ -60,10 +60,12 @@ PR titles must use a conventional commit prefix.
 
 While the crate is below `1.0.0`, release-plz follows Cargo's 0.x convention: the **minor** position acts as the major. That changes how prefixes map to bumps:
 
-| Commit                                  | Pre-1.0 bump            | Post-1.0 bump            |
-| --------------------------------------- | ----------------------- | ------------------------ |
-| `fix:` / `refactor:` / `perf:`          | patch (`0.1.x → 0.1.y`) | patch                    |
-| `feat:`                                 | patch (`0.1.x → 0.1.y`) | minor (`1.x → 1.(x+1).0`) |
-| `feat!:` or `BREAKING CHANGE:` footer   | minor (`0.1.x → 0.2.0`) | major (`1.x → 2.0.0`)    |
+Placeholders below: pre-1.0 uses `0.M.p` (minor `M`, patch `p`); post-1.0 uses `m.n.p` (major `m`, minor `n`, patch `p`).
+
+| Commit                                  | Pre-1.0 bump                | Post-1.0 bump               |
+| --------------------------------------- | --------------------------- | --------------------------- |
+| `fix:` / `refactor:` / `perf:`          | patch (`0.M.p → 0.M.(p+1)`) | patch (`m.n.p → m.n.(p+1)`) |
+| `feat:`                                 | patch (`0.M.p → 0.M.(p+1)`) | minor (`m.n.p → m.(n+1).0`) |
+| `feat!:` or `BREAKING CHANGE:` footer   | minor (`0.M.p → 0.(M+1).0`) | major (`m.n.p → (m+1).0.0`) |
 
 Practical consequence: a plain `feat:` on `0.1.x` will **not** produce `0.2.0`. To cut `0.2.0` deliberately, land the headline change with `feat!:` (or include a `BREAKING CHANGE:` footer). For example, Python and Go structural support landed as plain `feat:` PRs and rolled into `v0.1.5`; the next language batch will use `feat!:` so it cuts `v0.2.0`.
