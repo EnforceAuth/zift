@@ -41,6 +41,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/permission-check-call.toml"),
     ),
     (
+        "chained-permission-call",
+        include_str!("../../rules/typescript/chained-permission-call.toml"),
+    ),
+    (
         "session-auth-check",
         include_str!("../../rules/typescript/session-auth-check.toml"),
     ),

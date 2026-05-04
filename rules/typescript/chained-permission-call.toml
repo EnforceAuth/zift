@@ -1,0 +1,80 @@
+[rule]
+id = "ts-chained-permission-call"
+languages = ["typescript", "javascript"]
+category = "abac"
+confidence = "medium"
+description = "Chained permission DSL (e.g. canThis(user).edit.post(post), CASL/Pundit-style ability checks)"
+# Matches the shape `<callee>(...).<verb>.<resource>(...)` where the
+# leftmost callee is a permission entry point. Surfaced by the Ghost
+# permission DSL (`canThis(user).edit.post(post)`) and by CASL/Pundit
+# ports that follow the same pattern.
+#
+# Predicate on the callee is a prefix match so common variants like
+# `canThis`, `mayDo`, `allowFor`, `checkAbility` all qualify. No rego
+# template: the verb/resource pair is captured as identifiers, not
+# string literals — emitting a stub would require synthesizing
+# `input.action`/`input.resource` and would be misleading without
+# more context. Confidence is medium because the shape is distinctive
+# but the callee predicate (`can`/`may`/`allow`/`check`/`ability`) is
+# generic English.
+query = """
+(call_expression
+  function: (member_expression
+    object: (member_expression
+      object: (call_expression
+        function: (identifier) @callee)
+      property: (property_identifier) @verb)
+    property: (property_identifier) @resource)
+) @match
+"""
+
+[rule.predicates.callee]
+match = "(?i)^(can|may|allow|check|ability)([A-Z]\\w*)?$"
+
+# -- Positive: Ghost-style permission DSL --
+
+[[rule.tests]]
+input = """
+if (canThis(user).edit.post(post)) {
+  editPost();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (canThis(req.user).browse.users()) {
+  listUsers();
+}
+"""
+expect_match = true
+
+# CASL-style: `can(user).read.Article(article)` — the actual CASL DSL is
+# slightly different (`ability.can('read', Article)`), but ports/wrappers
+# often expose this chained shape.
+[[rule.tests]]
+input = """
+if (ability(user).read.article(article)) {
+  showArticle();
+}
+"""
+expect_match = true
+
+# -- Negative: not a chained permission DSL --
+
+[[rule.tests]]
+input = """
+if (api.get.user(id)) {
+  load();
+}
+"""
+expect_match = false
+
+# Wrong shape: only one property between the call and the final invocation.
+[[rule.tests]]
+input = """
+if (canThis(user).post(post)) {
+  edit();
+}
+"""
+expect_match = false
