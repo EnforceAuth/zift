@@ -3,25 +3,31 @@ id = "go-gin-auth-middleware"
 languages = ["go"]
 category = "middleware"
 confidence = "medium"
-description = "Gin/Echo-style auth middleware registration (e.g. r.Use(AuthRequired()))"
-# Matches `<router>.Use(<middlewareCall>())` where the inner call's
-# function name has an auth-flavored prefix. Covers Gin, Echo, Chi, and
-# similar router APIs that share the `.Use(handler)` middleware shape.
-# Confidence is `medium` — the inner-call constraint catches the common
-# auth case but misses bare-function middleware values (e.g.
-# `r.Use(AuthRequired)` without parens). That's a valid Go middleware
-# pattern too; covering it would expand the query meaningfully and is
-# tracked as a follow-up in issue #31.
+description = "Gin/Echo-style auth middleware registration (e.g. r.Use(AuthRequired()) or r.Use(AuthRequired))"
+# Matches `<router>.Use(<middleware>)` where the argument is either:
+#   - a call expression like `AuthRequired()` / `m.RequireAuth()` (factory form), or
+#   - a bare function value like `AuthRequired` / `m.RequireAuth` (no parens).
+# Covers Gin, Echo, Chi, and similar router APIs that share the
+# `.Use(handler)` middleware shape. Both `gin.HandlerFunc` and
+# `echo.MiddlewareFunc` are first-class values, so middleware is often
+# passed as a value rather than a factory.
+# Confidence stays `medium` — the auth-flavored fn-name regex
+# (`AuthRequired`, `JWTAuth`, `RequireAuth`, …) is specific enough that
+# accepting bare identifiers does not meaningfully widen FP risk.
 query = """
 (call_expression
   function: (selector_expression
     field: (field_identifier) @use_method)
   arguments: (argument_list
-    (call_expression
-      function: [
-        (identifier) @middleware_fn
-        (selector_expression field: (field_identifier) @middleware_fn)
-      ]))
+    [
+      (call_expression
+        function: [
+          (identifier) @middleware_fn
+          (selector_expression field: (field_identifier) @middleware_fn)
+        ])
+      (identifier) @middleware_fn
+      (selector_expression field: (field_identifier) @middleware_fn)
+    ])
 ) @match
 """
 
@@ -89,6 +95,38 @@ package main
 
 func setup(r *gin.Engine) {
     r.GET("/users", listUsers)
+}
+"""
+expect_match = false
+
+# Bare function-value middleware (no parens) — the gin.HandlerFunc /
+# echo.MiddlewareFunc value form.
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.Use(AuthRequired)
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine, m *Middleware) {
+    r.Use(m.RequireAuth)
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func setup(r *gin.Engine) {
+    r.Use(Logger)
 }
 """
 expect_match = false
