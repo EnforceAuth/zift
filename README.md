@@ -1,5 +1,9 @@
 # zift
 
+[![CI](https://github.com/EnforceAuth/zift/actions/workflows/ci.yml/badge.svg)](https://github.com/EnforceAuth/zift/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.91%2B-orange.svg)](https://www.rust-lang.org/)
+
 Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/) today, with other engines (e.g. Cedar) on the roadmap.
 
 > **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, Java, and Python. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
@@ -216,6 +220,18 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 You should see a single line back with `serverInfo.name == "zift"` and capability flags for tools/resources.
 Then call `tools/list` to see the seven tool descriptors.
 
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for
+build instructions, the Conventional Commits / DCO sign-off conventions, and
+our PR expectations. By participating you agree to our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+For questions and ideas, start a
+[Discussion](https://github.com/EnforceAuth/zift/discussions). For
+vulnerabilities, see [SECURITY.md](SECURITY.md).
+
 ## License
 
-Apache-2.0
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution requirements.

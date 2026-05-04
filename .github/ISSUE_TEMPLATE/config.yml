@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/EnforceAuth/zift/discussions
+    about: Ask questions, share ideas, or workshop a proposal before filing an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/EnforceAuth/zift/security/advisories/new
+    about: Privately report a vulnerability. Please do not file a public issue.

@@ -2,9 +2,15 @@
 name = "zift"
 version = "0.1.5"
 edition = "2024"
+rust-version = "1.91"
 description = "Scan codebases for embedded authorization logic and generate Policy as Code (Rego/OPA today)"
 license = "Apache-2.0"
 repository = "https://github.com/EnforceAuth/zift"
+homepage = "https://github.com/EnforceAuth/zift"
+documentation = "https://docs.rs/zift"
+readme = "README.md"
+keywords = ["authorization", "policy-as-code", "opa", "rego", "static-analysis"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
