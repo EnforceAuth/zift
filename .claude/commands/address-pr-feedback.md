@@ -37,8 +37,10 @@ gh api "repos/{owner}/{repo}/pulls/{pr}/comments" --paginate \
 - review/inline comments (pulls comments endpoint), or
 - PR-level comments (issues comments endpoint — this is where AQ posts its "Critical Issue" summary).
 
-If neither is present, inform the user:
-> "Amazon Q hasn't reviewed this PR yet. Wait for its review, then re-run this command."
+**Important — Amazon Q does NOT auto-trigger.** AQ only reviews on initial PR open (and only if the org has the integration installed) or when explicitly asked via `/q review` as a PR comment. Waiting alone will never produce a review if it hasn't already started.
+
+If no AQ activity is present, inform the user:
+> "Amazon Q hasn't reviewed this PR yet. Post `/q review` as a PR comment to request a review (AQ does not auto-trigger on push), then re-run this command once it lands."
 
 ```bash
 # Check both channels for AQ activity
@@ -54,7 +56,9 @@ gh api "repos/{owner}/{repo}/issues/{pr}/comments" --paginate \
 
 CodeRabbit re-reviews on every push. If you ran a previous round of `/address-pr-feedback`, pushed a fix commit, and CodeRabbit's response to that push hasn't landed yet, the next round will miss the new findings and cause exactly the bug this section exists to prevent.
 
-**Amazon Q does NOT re-review automatically on push** — it only reviews on initial PR open (or when explicitly triggered). After any fix push, AQ's `commit_id` will lag HEAD and that is *expected*. Don't block on it.
+**Amazon Q does NOT re-review automatically on push** — it only reviews when explicitly triggered (initial PR open if the integration is wired up, or by posting `/q review` as a PR comment). After any fix push, AQ's `commit_id` will lag HEAD and that is *expected*. Don't block on it.
+
+If you (or the user) want AQ to re-review the latest commit before processing feedback, post `/q review` as a PR comment and wait for the new review to land. Otherwise, proceed with the existing AQ findings and note that they reflect an earlier commit.
 
 ```bash
 # Compare the head SHA of the PR to the most recent CodeRabbit review's commit_id
@@ -68,7 +72,7 @@ echo "Last CR review commit: $LATEST_CR_COMMIT"
 If `$LATEST_CR_COMMIT` does not match `$HEAD_SHA`, CodeRabbit hasn't reviewed the latest commit yet. Tell the user:
 > "CodeRabbit's latest review is on commit `<short-SHA>` but PR head is `<short-SHA>`. Wait a few minutes for the new review to land, then re-run."
 
-For Amazon Q, optionally surface its review `commit_id` for context but **do not block** on a mismatch — note to the user that AQ's findings (if any) will be from its initial review pass and proceed.
+For Amazon Q, optionally surface its review `commit_id` for context but **do not block** on a mismatch — note to the user that AQ's findings (if any) will be from its initial review pass and proceed. If the user wants a fresh AQ review on the latest commit, they (or you) must post `/q review` as a PR comment; AQ will not catch up on its own.
 
 ### 3. Fetch review comments (token-efficient two-pass approach)
 
