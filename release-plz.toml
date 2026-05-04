@@ -1,8 +1,7 @@
 [workspace]
 release_commits = "^(feat|fix|refactor|perf)[(!:]"
-publish = false
+publish = true
 semver_check = false
-git_only = true
 git_tag_enable = true
 git_release_enable = true
 

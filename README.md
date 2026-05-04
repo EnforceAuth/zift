@@ -46,11 +46,19 @@ Deep mode walks the full source tree by extension and detects auth-y function na
 
 ## Installation
 
+### Homebrew (macOS / Linux x86_64)
+
+```bash
+brew install enforceauth/tap/zift
+```
+
 ### Cargo
 
 ```bash
-cargo install --git https://github.com/EnforceAuth/zift
+cargo install zift
 ```
+
+Prefer prebuilt binaries? [`cargo binstall zift`](https://github.com/cargo-bins/cargo-binstall) pulls the right archive from GitHub Releases automatically.
 
 ### Binary download
 
