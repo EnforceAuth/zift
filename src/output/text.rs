@@ -10,8 +10,26 @@ pub fn print(
     enforcement_points: usize,
     writer: &mut dyn Write,
 ) -> Result<()> {
-    if findings.is_empty() {
+    let total = findings.len() + enforcement_points;
+
+    if total == 0 {
         writeln!(writer, "No authorization patterns found.")?;
+        return Ok(());
+    }
+
+    // Headline: the externalization percentage. This is the unit of
+    // progress the v0.1 launch asks every adopter to share back, so it
+    // leads the report and is emitted unconditionally — including the
+    // 0% case, which is the case worth shouting about.
+    let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
+    writeln!(
+        writer,
+        "Externalization: {pct}%  ({enforcement_points} externalized / {total} enforcement points)",
+    )?;
+    writeln!(writer)?;
+
+    if findings.is_empty() {
+        // 100% externalized — headline says it all, nothing to enumerate.
         return Ok(());
     }
 
@@ -90,15 +108,6 @@ pub fn print(
         write!(writer, " ({})", parts.join(", "))?;
     }
     writeln!(writer)?;
-
-    if enforcement_points > 0 {
-        let total = findings.len() + enforcement_points;
-        let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
-        writeln!(
-            writer,
-            "       {enforcement_points} enforcement points (already using a policy engine, not flagged) — {pct}% externalized",
-        )?;
-    }
 
     Ok(())
 }

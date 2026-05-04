@@ -11,8 +11,29 @@ use crate::types::Finding;
 struct ScanReport<'a> {
     version: &'static str,
     scan_root: &'a Path,
+    /// Top-level headline so `jq .headline scan.json` is the one-liner for
+    /// "share the externalization number back". Mirrors the leading line of
+    /// the text formatter. The same numbers also appear inside `summary`,
+    /// so existing consumers keep working.
+    headline: Headline,
     findings: &'a [Finding],
     summary: Summary,
+}
+
+#[derive(Serialize)]
+struct Headline {
+    /// Fraction of identified enforcement points that already consult an
+    /// external policy engine, as a 0–100 integer percentage.
+    externalized_pct: usize,
+    /// Enforcement points that were detected as already going through an
+    /// external policy engine (numerator).
+    enforcement_points: usize,
+    /// Authorization decisions found embedded in source code (i.e. the
+    /// findings count) — the piece of the surface still to externalize.
+    embedded_findings: usize,
+    /// `enforcement_points + embedded_findings` — the denominator behind
+    /// `externalized_pct`.
+    total_enforcement_points: usize,
 }
 
 #[derive(Serialize)]
@@ -49,19 +70,27 @@ pub fn print(
         files.insert(&f.file);
     }
 
+    let total = findings.len() + enforcement_points;
+    let externalized_pct = if total == 0 {
+        0
+    } else {
+        (enforcement_points as f64 / total as f64 * 100.0).round() as usize
+    };
+
     let report = ScanReport {
         version: env!("CARGO_PKG_VERSION"),
         scan_root,
+        headline: Headline {
+            externalized_pct,
+            enforcement_points,
+            embedded_findings: findings.len(),
+            total_enforcement_points: total,
+        },
         findings,
         summary: Summary {
             total_findings: findings.len(),
             enforcement_points,
-            externalized_pct: if findings.is_empty() && enforcement_points == 0 {
-                0
-            } else {
-                let total = findings.len() + enforcement_points;
-                (enforcement_points as f64 / total as f64 * 100.0).round() as usize
-            },
+            externalized_pct,
             by_category,
             by_confidence,
             files_with_findings: files.len(),
