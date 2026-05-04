@@ -293,8 +293,26 @@ impl SubprocessClient {
         // and same truncated-debug-log discipline as the HTTP client —
         // model-or-CLI output may mirror prompt text and should not
         // appear verbatim in error strings.
+        //
+        // Claude Code's `--output-format json` wraps the agent's reply
+        // in `{"type":"result","result":"<stringified-json>",...}`. If
+        // we recognise that envelope, peel one layer (and re-strip any
+        // markdown fence the inner text might carry) before parsing
+        // into [`FindingsEnvelope`]. This means users can pass
+        // `--agent-cmd "claude -p --output-format json"` directly,
+        // without a `jq -r .result` shell wrapper.
         let cleaned = strip_markdown_fence(&stdout_buf);
-        let parsed: FindingsEnvelope = serde_json::from_str(cleaned).map_err(|e| {
+        let unwrapped = unwrap_claude_code_envelope(cleaned)?;
+        let inner_owned;
+        let parse_target: &str = match unwrapped {
+            Some(inner) => {
+                tracing::debug!("subprocess: unwrapped claude-code result envelope");
+                inner_owned = strip_markdown_fence(&inner).to_string();
+                &inner_owned
+            }
+            None => cleaned,
+        };
+        let parsed: FindingsEnvelope = serde_json::from_str(parse_target).map_err(|e| {
             tracing::debug!(
                 error = %e,
                 preview = %truncate_for_log(&stdout_buf),
@@ -396,16 +414,66 @@ fn kill_process_tree(child: &mut std::process::Child) {
     let _ = child.kill();
 }
 
+#[derive(Deserialize)]
+struct FindingsEnvelope {
+    findings: Vec<SemanticFinding>,
+}
+
+/// Outer envelope emitted by `claude -p --output-format json`. Only the
+/// fields we actually consult are deserialised — Claude Code adds new
+/// fields over time (`session_id`, `api_error_status`, `duration_ms`,
+/// etc.) and we don't want a future addition to break parsing.
+///
+/// Recognised by `type == "result"` AND a string-typed `result` field;
+/// any other shape is treated as not-an-envelope and the caller falls
+/// back to parsing the original payload directly.
+#[derive(Deserialize)]
+struct ClaudeCodeEnvelope {
+    #[serde(rename = "type")]
+    ty: String,
+    /// Stringified inner JSON (the agent's actual reply). Claude Code
+    /// always emits this as a JSON string, even on error subtypes —
+    /// the inner content just isn't a valid `FindingsEnvelope` then.
+    result: String,
+    #[serde(default)]
+    is_error: bool,
+    #[serde(default)]
+    subtype: Option<String>,
+}
+
+/// If `s` is a Claude Code `--output-format json` envelope, return the
+/// inner stringified payload. Otherwise return `Ok(None)` so the caller
+/// can parse `s` directly.
+///
+/// Returns `Err(BadResponse)` only when the envelope is recognised AND
+/// reports a Claude-side error (`is_error: true` or a non-`success`
+/// subtype) — that's a real failure with no findings to recover, and
+/// the caller's per-candidate-skip path is the right home for it.
+fn unwrap_claude_code_envelope(s: &str) -> Result<Option<String>, DeepError> {
+    // `from_str` here is cheap: on the common path (no envelope) it
+    // fails fast on the first unknown field shape. We never return the
+    // serde error to the caller — that's reserved for the real parse.
+    let env: ClaudeCodeEnvelope = match serde_json::from_str(s) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    if env.ty != "result" {
+        return Ok(None);
+    }
+    if env.is_error || env.subtype.as_deref().is_some_and(|s| s != "success") {
+        return Err(DeepError::BadResponse(format!(
+            "claude-code envelope reported error (subtype={})",
+            env.subtype.as_deref().unwrap_or("<missing>"),
+        )));
+    }
+    Ok(Some(env.result))
+}
+
 /// Brief, allocation-free string form of [`std::process::ExitStatus`]
 /// for the user-visible error message. `Display` for `ExitStatus`
 /// prints "exit status: 1" / "signal: 9" already; just delegate.
 fn exit_status_brief(status: &std::process::ExitStatus) -> String {
     status.to_string()
-}
-
-#[derive(Deserialize)]
-struct FindingsEnvelope {
-    findings: Vec<SemanticFinding>,
 }
 
 #[cfg(test)]
@@ -580,6 +648,79 @@ mod tests {
         assert!(
             matches!(err, DeepError::BadResponse(_)),
             "expected BadResponse (sh exited 127), got: {err:?}",
+        );
+    }
+
+    // ---- claude-code envelope unwrap ----
+
+    #[test]
+    fn unwrap_passes_through_plain_findings_envelope() {
+        // Direct `{"findings":[]}` is NOT a claude envelope — caller
+        // should fall through to a normal parse on the original string.
+        let s = r#"{"findings":[]}"#;
+        let out = unwrap_claude_code_envelope(s).unwrap();
+        assert!(out.is_none(), "plain findings should not match envelope");
+    }
+
+    #[test]
+    fn unwrap_returns_inner_for_claude_code_success_envelope() {
+        let s = r#"{"type":"result","subtype":"success","is_error":false,"result":"{\"findings\":[]}","session_id":"abc"}"#;
+        let inner = unwrap_claude_code_envelope(s).unwrap().expect("envelope");
+        assert_eq!(inner, r#"{"findings":[]}"#);
+    }
+
+    #[test]
+    fn unwrap_returns_bad_response_when_envelope_marks_error() {
+        let s =
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":""}"#;
+        let err = unwrap_claude_code_envelope(s).unwrap_err();
+        assert!(
+            matches!(err, DeepError::BadResponse(ref msg) if msg.contains("error_during_execution")),
+            "got: {err:?}",
+        );
+    }
+
+    #[test]
+    fn unwrap_ignores_unrelated_objects_with_string_result() {
+        // An unrelated wrapper that happens to have a `result` string
+        // but no `type:"result"` must NOT be unwrapped — that would
+        // silently drop real fields from a future transport.
+        let s = r#"{"type":"other","result":"oops"}"#;
+        let out = unwrap_claude_code_envelope(s).unwrap();
+        assert!(out.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn end_to_end_claude_code_json_envelope_is_unwrapped_and_parsed() {
+        // Mimic exactly what `claude -p --output-format json` writes:
+        // a single JSON object whose `result` is a stringified
+        // `{"findings":[...]}`. The transport should pass these through.
+        let inner = r#"{\"findings\":[]}"#;
+        let envelope = format!(
+            r#"{{"type":"result","subtype":"success","is_error":false,"result":"{inner}","session_id":"x"}}"#
+        );
+        let cmd = format!("printf '%s' '{envelope}'");
+        let rt = synth_runtime(&cmd, 10);
+        let client = SubprocessClient::new(&rt).unwrap();
+        let resp = client.analyze(&synth_prompt()).unwrap();
+        assert!(resp.findings.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn end_to_end_claude_code_envelope_with_error_subtype_skips_candidate() {
+        // When the envelope itself reports failure, surface BadResponse
+        // (per-candidate skip), not a hard fail.
+        let envelope =
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":""}"#;
+        let cmd = format!("printf '%s' '{envelope}'");
+        let rt = synth_runtime(&cmd, 10);
+        let client = SubprocessClient::new(&rt).unwrap();
+        let err = client.analyze(&synth_prompt()).unwrap_err();
+        assert!(
+            matches!(err, DeepError::BadResponse(_)),
+            "expected BadResponse, got: {err:?}",
         );
     }
 
