@@ -1,0 +1,121 @@
+[rule]
+id = "go-opa-rego-eval"
+languages = ["go"]
+category = "custom"
+confidence = "high"
+description = "OPA Rego evaluation in Go (rego.New(...) entry point)"
+# OPA's Go SDK (`github.com/open-policy-agent/opa/rego`) exposes a small,
+# distinctive entry-point: `rego.New(opts...)`. Anchoring on the
+# constructor catches both straight-line evaluation (`rego.New(...)
+# .Eval(ctx)`) and partial-evaluation flows (`rego.New(...).Partial(ctx)`,
+# as in ocp's `internal/authz/authz.go`) — every call site of OPA from
+# Go has to go through `rego.New` once. We deliberately don't add a
+# second rule for `.Eval` / `.Partial` directly: those method names are
+# generic enough (lots of unrelated APIs use them) that without the
+# `rego` package qualifier they'd be noisy. Confidence is `high` because
+# applications don't typically embed OPA for non-policy reasons.
+query = """
+(call_expression
+  function: (selector_expression
+    operand: (identifier) @pkg
+    field: (field_identifier) @ctor)
+) @match
+"""
+
+[rule.predicates.pkg]
+eq = "rego"
+
+[rule.predicates.ctor]
+eq = "New"
+
+[rule.rego_template]
+template = """
+# OPA is already the policy engine here — the embedded Go code IS the
+# enforcement point. This stub is a starter scaffold; the real policy
+# almost certainly lives in a separate `.rego` file already (and the
+# Go code passes it via `rego.Module(...)` or `rego.Load(...)`). Lift
+# that policy into your bundle rather than duplicating logic here.
+default allow := false
+
+allow if {
+    input.user.permissions[_] == input.required_permission
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+import "github.com/open-policy-agent/opa/rego"
+
+func decide(ctx context.Context) {
+    r := rego.New(
+        rego.Query("data.authz.allow"),
+        rego.Module("authz.rego", src),
+    )
+    _ = r
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(ctx context.Context) {
+    pqs, err := rego.New(
+        rego.Query("data.authz.allow = true"),
+        rego.Module("authz.rego", src),
+        rego.Unknowns(unknowns),
+        rego.ParsedInput(access.ToValue()),
+    ).Partial(ctx)
+    _ = pqs
+    _ = err
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(ctx context.Context) {
+    res, _ := rego.New(rego.Query("data.x")).Eval(ctx)
+    _ = res
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func decide() {
+    foo.New("bar")
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(svc *Service) {
+    svc.Process(input)
+}
+"""
+expect_match = false
+
+# We deliberately do NOT match a bare `q.Eval(ctx)` without a preceding
+# `rego.New` capture in scope — too generic. The companion test pins
+# this behaviour so a future widening of the rule has to confront the
+# false-positive trade-off explicitly.
+[[rule.tests]]
+input = """
+package main
+
+func decide(ctx context.Context, q *rego.Rego) {
+    _, _ = q.Eval(ctx)
+}
+"""
+expect_match = false

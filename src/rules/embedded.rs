@@ -207,6 +207,14 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "go-gin-auth-middleware",
         include_str!("../../rules/go/gin-auth-middleware.toml"),
     ),
+    (
+        "go-opa-rego-eval",
+        include_str!("../../rules/go/opa-rego-eval.toml"),
+    ),
+    (
+        "go-access-descriptor-builder",
+        include_str!("../../rules/go/access-descriptor-builder.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {
