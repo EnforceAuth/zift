@@ -155,6 +155,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/python/login-required-decorator.toml"),
     ),
     (
+        "py-require-decorator",
+        include_str!("../../rules/python/require-decorator.toml"),
+    ),
+    (
         "py-django-user-passes-test",
         include_str!("../../rules/python/django-user-passes-test.toml"),
     ),
