@@ -1,5 +1,5 @@
 # CODEOWNERS — auto-assigns reviewers on pull requests.
-# Docs: https://docs.github.com/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+# Docs: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Every file falls back to the maintainers team. As the project grows, add
 # more specific paths above this line.

@@ -66,7 +66,7 @@ A breaking change uses `feat!:` or `fix!:` and bumps the **major** version.
 Zift uses the [Developer Certificate of Origin](https://developercertificate.org/)
 (DCO) instead of a CLA. Every commit must carry a `Signed-off-by:` line:
 
-```
+```text
 Signed-off-by: Jane Doe <jane@example.com>
 ```
 
