@@ -1,0 +1,98 @@
+[rule]
+id = "go-access-descriptor-builder"
+languages = ["go"]
+category = "abac"
+confidence = "high"
+description = "ABAC access-descriptor builder call (e.g. .WithPrincipal(...), .WithPermission(...))"
+# Captures the builder/fluent shape commonly used to assemble an
+# authorization input for a policy engine — e.g. ocp's
+# `NewAccess().WithPrincipal(p).WithResource(r).WithPermission(perm)
+#             .WithTenant(t)`. Each builder call is a separate
+# `call_expression`, so we surface a finding per chain link rather than
+# trying to recognise the whole chain — the model (or a human reviewer)
+# coalesces them downstream.
+#
+# The method-name allowlist is intentionally narrow: it sticks to
+# attribute names that mean "I'm assembling an authz subject/object/
+# action tuple" — `Principal`, `Subject`, `Resource`, `Permission`,
+# `Role`, `Tenant`, `Action`. Generic `WithName`, `WithID`, etc. are
+# excluded to keep this from firing on every builder in the codebase.
+# Confidence is `high` because the combination of the `With…` prefix
+# and an authz-flavored attribute is rarely incidental.
+query = """
+(call_expression
+  function: (selector_expression
+    field: (field_identifier) @attr_method)
+) @match
+"""
+
+[rule.predicates.attr_method]
+match = "^With(Principal|Subject|Resource|Permission|Role|Tenant|Action)$"
+
+[rule.rego_template]
+template = """
+# Builder calls assemble an ABAC input — `principal`, `resource`,
+# `permission`, etc. The actual decision usually happens elsewhere
+# (an OPA `.Eval(ctx)` or a custom evaluator). Adapt this stub to
+# match the attributes your builder actually accumulates.
+default allow := false
+
+allow if {
+    input.principal == input.resource.owner
+}
+
+allow if {
+    input.permission in data.permissions[input.principal]
+}
+"""
+
+[[rule.tests]]
+input = """
+package main
+
+func mk() {
+    a := NewAccess().WithPrincipal("bob").WithResource("sources").WithPermission("sources.view")
+    _ = a
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func mk(b *AccessBuilder) {
+    b.WithRole("admin")
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func mk(b *AccessBuilder) {
+    b.WithTenant("acme")
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func mk(b *Builder) {
+    b.WithName("foo")
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func mk(opt *Options) {
+    opt.WithTimeout(5)
+}
+"""
+expect_match = false

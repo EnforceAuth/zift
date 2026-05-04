@@ -28,6 +28,44 @@ use std::sync::LazyLock;
 /// escalations from structural findings always get priority.
 const COLD_REGION_FRACTION: f32 = 0.3;
 
+/// Filename / path-segment tokens that suggest a file is authz-relevant.
+/// Used as a *priority* signal in cold-region selection (not as a finding
+/// in its own right) — files whose path contains one of these tokens are
+/// scanned before everything else, so under tight `max_candidates` caps
+/// the obvious authz files always make the budget. Boundaries are path
+/// separators / `_`, `-`, `.` so substring collisions like `authoring.md`
+/// or `authentic` (without `authenticat…` continuation) don't trigger.
+///
+/// Same false-positive-tolerated stance as `AUTH_NAME_REGEX`: missing a
+/// real authz file is a worse failure than an extra deep-pass candidate.
+static AUTHZ_PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        (?: ^ | [/\\_.\-] )
+        (?:
+            authz | authn
+          | authori[sz]ation
+          | authorit\w*       # authority, authoritative, authorities
+          | authenticat\w*
+          | rbac | abac | acl | iam
+          | permissions? | roles? | polic(?:y|ies)
+          | guards?
+          | access[_\-]?control
+        )
+        (?: [/\\_.\-] | $ )
+        ",
+    )
+    .expect("AUTHZ_PATH_REGEX is a valid regex")
+});
+
+/// Lightweight priority hint for cold-region iteration: 1 if the path
+/// looks authz-flavoured, 0 otherwise. Higher beats lower; ties fall
+/// back to lexicographic path order so ranking stays deterministic.
+fn path_priority(path: &Path) -> u8 {
+    let s = path.to_string_lossy();
+    if AUTHZ_PATH_REGEX.is_match(&s) { 1 } else { 0 }
+}
+
 /// Names that suggest authorization logic. Matched case-insensitively as
 /// whole-word tokens. False positives are tolerated — the model filters them
 /// at deep-pass time. Missed real authz, on the other hand, is a worse
@@ -208,10 +246,21 @@ fn build_cold_regions(
 
     let mut discovered =
         discover_files_for_deep(scan_root, &runtime.excludes, &runtime.language_filter);
-    // Sort by path so that under tight `max_candidates`, the surviving cold
-    // subset is stable across filesystems and runs. Without this, the
-    // post-loop sort only orders the items we already happened to pick.
-    discovered.sort_by(|a, b| a.path.cmp(&b.path));
+    // Two-key ordering:
+    //   1. Path priority (descending) — files whose path looks authz-flavoured
+    //      (`authz.go`, `internal/permissions/...`, `rbac.py`, …) sort before
+    //      neutral files. This is the only place we let filenames influence
+    //      results: under a tight `max_candidates`, the obvious authz files
+    //      survive even when their content doesn't trip the structural rules
+    //      (the bug that made ocp's `internal/authz/authz.go` a no-finding
+    //      file in v0.1.6).
+    //   2. Lexicographic path (ascending) — ties break deterministically so
+    //      the surviving cold subset is stable across filesystems and runs.
+    discovered.sort_by(|a, b| {
+        path_priority(&b.path)
+            .cmp(&path_priority(&a.path))
+            .then_with(|| a.path.cmp(&b.path))
+    });
     let mut out: Vec<Candidate> = Vec::new();
 
     for file in discovered {
@@ -440,6 +489,101 @@ mod tests {
                 "regex should NOT match non-auth name: {s}"
             );
         }
+    }
+
+    // ---- filename priority ----
+
+    #[test]
+    fn path_priority_matches_obvious_authz_paths() {
+        for s in [
+            "internal/authz/authz.go",
+            "src/permissions.py",
+            "pkg/rbac/check.go",
+            "lib/abac/policy.ts",
+            "src/authn/middleware.ts",
+            "internal/iam/roles.go",
+            "src/policies.py",
+            "guards/admin.ts",
+            "access-control/rules.go",
+            "authentication.go",
+            "authorization.go",
+            "authorisation.py",       // British spelling
+            "src/authority/check.go", // authority/authoritative family
+            "pkg/authoritative_source.go",
+            "src/acl/list.go",
+        ] {
+            assert_eq!(
+                path_priority(Path::new(s)),
+                1,
+                "expected priority 1 for {s}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_priority_rejects_non_authz_paths_with_similar_substrings() {
+        for s in [
+            "docs/authoring.md",    // 'auth' but not at a separator boundary
+            "internal/author/x.go", // author != authz
+            "src/authentic/x.go",   // 'authentic' alone is not in our list (only authenticat\w*)
+            "cmd/migrate/migrate.go",
+            "pkg/utils/utils.go",
+            "src/icon.go",
+        ] {
+            assert_eq!(
+                path_priority(Path::new(s)),
+                0,
+                "expected priority 0 for {s}",
+            );
+        }
+    }
+
+    #[test]
+    fn cold_region_iterates_authz_paths_first() {
+        // 4 files, all with the same auth-y content. With `max_candidates=10`
+        // the cold-region budget is ceil(10 * 0.3) = 3, so we get exactly 3
+        // candidates. The first two MUST be the authz-flavoured filenames
+        // even though `app.py` and `core.py` sort before them lexicographically;
+        // the third tie-breaks to lex order between the two non-authz files.
+        let dir = tempdir().unwrap();
+        let body = "def is_admin(u):\n    return False\n";
+        for name in ["app.py", "authz.py", "core.py", "permissions.py"] {
+            fs::write(dir.path().join(name), body).unwrap();
+        }
+        let mut runtime = rt();
+        runtime.max_candidates = 10;
+        let mut candidates = select_candidates(&[], dir.path(), &runtime).unwrap();
+        // `select_candidates` re-sorts the final output by (file, line) for
+        // deterministic emission; that breaks the ordering signal we want
+        // to assert. Verify priority instead by checking which files made
+        // the cold-region budget.
+        candidates.sort_by(|a, b| a.file.cmp(&b.file));
+        let files: Vec<_> = candidates.iter().map(|c| c.file.clone()).collect();
+        assert_eq!(
+            files.len(),
+            3,
+            "cold budget = ceil(10 * 0.3) = 3; got {files:?}",
+        );
+        assert!(
+            files.contains(&PathBuf::from("authz.py")),
+            "authz.py must survive the cold-region cap: {files:?}",
+        );
+        assert!(
+            files.contains(&PathBuf::from("permissions.py")),
+            "permissions.py must survive the cold-region cap: {files:?}",
+        );
+        // Tertiary slot: with the two authz files locked in, the third
+        // slot tie-breaks to lex order among priority-0 files
+        // (`app.py` < `core.py`). Pin both halves so a future flip in
+        // the secondary tiebreaker is loud.
+        assert!(
+            files.contains(&PathBuf::from("app.py")),
+            "app.py should win the lex tiebreak among non-authz files: {files:?}",
+        );
+        assert!(
+            !files.contains(&PathBuf::from("core.py")),
+            "core.py should be cut by the budget: {files:?}",
+        );
     }
 
     // ---- escalation rules ----
