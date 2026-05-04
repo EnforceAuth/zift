@@ -175,6 +175,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/python/permission-check-call.toml"),
     ),
     (
+        "py-check-helper-call",
+        include_str!("../../rules/python/check-helper-call.toml"),
+    ),
+    (
         "py-ownership-check",
         include_str!("../../rules/python/ownership-check.toml"),
     ),
