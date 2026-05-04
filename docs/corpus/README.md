@@ -7,7 +7,7 @@ Real-world results from running Zift against well-known open-source codebases �
 For each target we ran two passes against a shallow clone (`git clone --depth 1`) of the upstream `main`:
 
 1. **Structural** (`zift scan <path>`) — tree-sitter pattern rules. Fast, deterministic, no network.
-2. **Deep** (`zift scan <path> --deep`) — semantic LLM-assisted pass over the same tree. Used to triangulate against the structural pass: deep-only findings are FN leads (potential new structural rules); structural-only findings deep dismisses are FP leads.
+2. **Deep** (`zift scan <path> --deep`) — semantic LLM-assisted pass over the same tree. Used to triangulate against the structural pass: deep-only findings are FN leads (potential new structural rules); structural-only findings that deep didn't echo back are FP leads.
 
 Deep mode emits a single merged report — every finding is tagged `pass: structural | semantic`. We bucket the merged output:
 
@@ -47,14 +47,14 @@ Every per-language doc has the same shape:
 
 ```bash
 # Pick a target
-git clone --depth 1 https://github.com/TryGhost/Ghost ~/zift-corpus/Ghost
+git clone --depth 1 https://github.com/TryGhost/Ghost ~/zift-corpus/js/Ghost
 
 # Structural
-zift scan ~/zift-corpus/Ghost --format json -o structural.json
+zift scan ~/zift-corpus/js/Ghost --format json -o structural.json
 
 # Deep (any transport works — examples)
-zift scan ~/zift-corpus/Ghost --deep --base-url http://localhost:11434/v1 --model llama3.1 -o deep.json
-zift scan ~/zift-corpus/Ghost --deep --agent-cmd "claude -p --output-format json" -o deep.json
+zift scan ~/zift-corpus/js/Ghost --deep --base-url http://localhost:11434/v1 --model llama3.1 -o deep.json
+zift scan ~/zift-corpus/js/Ghost --deep --agent-cmd "claude -p --output-format json" -o deep.json
 
 # Diff: deep.json already merges structural and semantic findings, each
 # tagged with `pass: structural | semantic`. So we read deep.json alone:

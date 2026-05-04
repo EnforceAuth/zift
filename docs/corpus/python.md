@@ -25,7 +25,6 @@ zift scan ~/zift-corpus/python/zulip --format json -o structural.json
 
 | | |
 |---|---|
-| Wall time | _re-time on final run_ |
 | Peak RSS | ~26 MB |
 | Total findings | **39** |
 | Files with findings | 17 |
@@ -38,7 +37,7 @@ zift scan ~/zift-corpus/python/zulip --format json -o structural.json
 | `ts-ownership-check` | 15 |
 | `py-ownership-check` | 1 |
 
-The 15 TS hits come from Zulip's `web/` frontend — that's correct routing across the mixed-language repo, not a bug.
+The 15 TS hits come from Zulip's `web/src/` frontend — that's correct routing across the mixed-language repo, not a bug.
 
 **Top Python findings (sample)**
 
@@ -113,7 +112,7 @@ zift scan ~/zift-corpus/python/zulip/zerver/lib/users.py \
 | 560 | middleware | `human_users_only` decorator blocks bot accounts from the wrapped view |
 | 577 | middleware | `zulip_login_required` decorator gates view access on `logged_in_and_active` via Django's `user_passes_test` |
 
-The 14 `middleware` findings are exactly the `@require_*` / `@zulip_login_required` / `@human_users_only` decorator family the Python ruleset doesn't currently match. **Adding a `py-require-decorator` rule would convert this entire batch into structural findings** — see follow-up #6.
+The 14 `middleware` findings are exactly the `@require_*` / `@zulip_login_required` / `@human_users_only` decorator family the Python ruleset doesn't currently match. **Adding a `py-require-decorator` rule would convert this entire batch into structural findings** — see [follow-up #6](../../plans/todo/05-corpus-shakedown-followups.md).
 
 ### `zerver/lib/users.py`
 

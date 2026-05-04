@@ -83,17 +83,17 @@ Concrete rule / scanner fixes surfaced by the day-of-OSS corpus shakedown ([04-p
 
 ## P3 — scanner / output
 
-### 11a. Empty `code_snippet` on semantic findings
+### 11. Empty `code_snippet` on semantic findings
 
 All 28 deep findings across the Zulip subsets carried `code_snippet: ""`. The structural pass populates `code_snippet` from the AST match range; the semantic pass should populate it from the reported line range (or pass through what the agent returned, if non-empty). Without it, downstream tools that show users *what was flagged* have nothing to show.
 
 **Fix.** In the semantic-finding builder, default `code_snippet` to the source slice `lines[line_start..=line_end]` when the agent didn't return one.
 
-### 11. `enforcement_points` reports 0 on every codebase
+### 12. `enforcement_points` reports 0 on every codebase
 
 The `summary.enforcement_points` field is 0 for all five corpus runs. Either the metric is broken or the scanner isn't recognizing externalized policy at all (possible — none of these repos have any). Verify the metric works on a fixture that does have OPA/Cedar files; document the behavior.
 
-### 12. Per-finding `pass` field is the correct anchor for diffs
+### 13. Per-finding `pass` field is the correct anchor for diffs
 
 Every finding carries `pass: structural | semantic`. Use this in `docs/corpus/README.md`'s diff recipe rather than file+line tuples (lines drift across deep's structural-merge step).
 
@@ -102,4 +102,4 @@ Every finding carries `pass: structural | semantic`. Use this in `docs/corpus/RE
 P0 1–4 are predicate widening — small TOML diffs. Land before OSS if there's any time, else first thing post-OSS.
 P1 5–7 are new rules — slightly bigger but each one unlocks a popular ecosystem.
 P2 9–10 are calibration — depend on having more deep-pass data than today's sample.
-P3 11 is a scanner audit; 12 is a docs cleanup.
+P3 11 is the empty-`code_snippet` fix; 12 is a scanner audit; 13 is a docs cleanup.

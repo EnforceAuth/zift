@@ -1,6 +1,6 @@
 # Pre-OSS corpus shakedown
 
-Tracks the effort to put Zift through its paces against real, recognizable open-source codebases — one per supported language — before flipping the repo public tomorrow.
+Tracks the effort to put Zift through its paces against real, recognizable open-source codebases — one per supported language — before flipping the repo public soon.
 
 ## Goal
 
@@ -36,8 +36,8 @@ For each language we picked one **primary** target (the one we will actually run
 
 Clone targets live outside the repo so we don't bloat the tree or accidentally commit them:
 
-```
-~/dev/zift-corpus/
+```text
+~/zift-corpus/
   js/Ghost/
   ts/cal.com/
   java/openmrs-core/
@@ -51,7 +51,7 @@ Clone targets live outside the repo so we don't bloat the tree or accidentally c
 
 For each codebase, run the same battery and publish results in `docs/corpus/<lang>.md` so users browsing the repo on day one can see real-world examples of what Zift finds:
 
-- [ ] Shallow clone (`git clone --depth 1`) into `~/dev/zift-corpus/<lang>/<repo>`.
+- [ ] Shallow clone (`git clone --depth 1`) into `~/zift-corpus/<lang>/<repo>`.
 - [ ] **Structural pass:** `zift scan <path> --format json > structural.json` and time it.
 - [ ] `zift scan <path> --format text` — skim for obvious garbage / panics.
 - [ ] **Deep pass:** `zift scan <path> --deep --format json > deep.json` (transport per `[deep]` config; default to MCP/HTTP whichever is wired locally). Time it; record token cost if the transport reports it.
@@ -81,7 +81,7 @@ A top-level `docs/corpus/README.md` summarizes the five runs so a visitor can sc
 
 ## Schedule
 
-We're flipping the repo public **tomorrow**, so this is a one-day shakedown:
+We're flipping the repo public **soon**, so this is a one-day shakedown:
 
 1. Clone all five primaries in parallel (cheap, network-bound).
 2. Run scans serially, capture results, file issues as we go.

@@ -25,7 +25,6 @@ zift scan ~/zift-corpus/java/openmrs-core --format json -o structural.json
 
 | | |
 |---|---|
-| Wall time | _re-time on final run_ |
 | Peak RSS | ~24 MB |
 | Total findings | **76** |
 | Files with findings | 21 |
