@@ -4,19 +4,31 @@ languages = ["typescript", "javascript"]
 category = "rbac"
 confidence = "high"
 description = "Direct role comparison in conditional expression"
+# Matches `if (<expr>.role === "ADMIN")` and the negated variant
+# `if (<expr>.role !== "ADMIN")`. The LHS is a member_expression so the
+# query already accepts arbitrarily nested paths like `session.user.role`
+# (Next.js/Cal.com handlers) — the property captured is the rightmost
+# identifier.
+#
+# The captured @op is currently informational; the rego template emits an
+# allow-shaped `==` regardless of operator. For `!==` matches the
+# generated stub will be inverted from the original intent — flagged here
+# rather than silently dropping the finding, since the policy decision
+# point itself is what matters; the operator inversion is a small manual
+# fix during extract.
 query = """
 (if_statement
   condition: (parenthesized_expression
     (binary_expression
       left: (member_expression
         property: (property_identifier) @prop)
-      operator: ["==" "==="]
+      operator: ["==" "===" "!=" "!=="] @op
       right: (string) @role_value))
 ) @match
 """
 
 [rule.predicates.prop]
-match = "^(role|roles|userRole|userType)$"
+match = "^(role|roles|roleName|userRole|userType)$"
 
 [rule.predicates.role_value]
 not_match = "^[\"'](assistant|user|system|tool|function)[\"']$"
@@ -38,6 +50,34 @@ if (user.role === "admin") {
 """
 expect_match = true
 
+# Cal.com / Next.js handler shape: nested member access on the LHS.
+[[rule.tests]]
+input = """
+if (session.user.role === "ADMIN") {
+  showAdminPanel();
+}
+"""
+expect_match = true
+
+# Negated comparison: typical "block if not admin" guard. We match this
+# now (per corpus shakedown — Cal.com uses `!==` extensively).
+[[rule.tests]]
+input = """
+if (session.user.role !== "ADMIN") {
+  throw new ForbiddenError();
+}
+"""
+expect_match = true
+
+# `roleName` is a common variant (e.g. NextAuth session.user.roleName).
+[[rule.tests]]
+input = """
+if (session.user.roleName === "ADMIN") {
+  manage();
+}
+"""
+expect_match = true
+
 [[rule.tests]]
 input = """
 if (user.name === "admin") {
@@ -46,18 +86,11 @@ if (user.name === "admin") {
 """
 expect_match = false
 
+# LLM message-role conversation pattern, not authz.
 [[rule.tests]]
 input = """
 if (msg.role === "assistant") {
   processResponse();
-}
-"""
-expect_match = false
-
-[[rule.tests]]
-input = """
-if (user.role !== "banned") {
-  proceed();
 }
 """
 expect_match = false

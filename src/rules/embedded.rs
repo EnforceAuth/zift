@@ -29,6 +29,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/nestjs-use-guards.toml"),
     ),
     (
+        "trpc-procedure",
+        include_str!("../../rules/typescript/trpc-procedure.toml"),
+    ),
+    (
         "nestjs-roles-decorator",
         include_str!("../../rules/typescript/nestjs-roles-decorator.toml"),
     ),
@@ -41,12 +45,24 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/permission-check-call.toml"),
     ),
     (
+        "chained-permission-call",
+        include_str!("../../rules/typescript/chained-permission-call.toml"),
+    ),
+    (
+        "membership-check-call",
+        include_str!("../../rules/typescript/membership-check-call.toml"),
+    ),
+    (
         "session-auth-check",
         include_str!("../../rules/typescript/session-auth-check.toml"),
     ),
     (
-        "jwt-token-check",
-        include_str!("../../rules/typescript/jwt-token-check.toml"),
+        "jwt-verify-decode",
+        include_str!("../../rules/typescript/jwt-verify-decode.toml"),
+    ),
+    (
+        "jwt-sign-issue",
+        include_str!("../../rules/typescript/jwt-sign-issue.toml"),
     ),
     (
         "ownership-check",
@@ -72,6 +88,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
     (
         "java-roles-allowed-array",
         include_str!("../../rules/java/spring-roles-allowed-array.toml"),
+    ),
+    (
+        "java-authorized-annotation",
+        include_str!("../../rules/java/authorized-annotation.toml"),
     ),
     (
         "java-spring-permit-all",
@@ -147,6 +167,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/python/login-required-decorator.toml"),
     ),
     (
+        "py-require-decorator",
+        include_str!("../../rules/python/require-decorator.toml"),
+    ),
+    (
         "py-django-user-passes-test",
         include_str!("../../rules/python/django-user-passes-test.toml"),
     ),
@@ -171,6 +195,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/python/permission-check-call.toml"),
     ),
     (
+        "py-check-helper-call",
+        include_str!("../../rules/python/check-helper-call.toml"),
+    ),
+    (
         "py-ownership-check",
         include_str!("../../rules/python/ownership-check.toml"),
     ),
@@ -186,6 +214,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
     (
         "go-permission-check-call",
         include_str!("../../rules/go/permission-check-call.toml"),
+    ),
+    (
+        "go-permission-predicate-call",
+        include_str!("../../rules/go/permission-predicate-call.toml"),
     ),
     (
         "go-role-check-conditional",

@@ -4,6 +4,17 @@ languages = ["typescript", "javascript"]
 category = "abac"
 confidence = "high"
 description = "Permission or capability check function call"
+# Allow-style ABAC verbs: can, hasPermission, checkPermission, isAllowed,
+# allows, hasAccess, checkAccess, hasClaim. Deny-style (cannot, denies)
+# are accepted for completeness, though the rego template below is
+# allow-shaped.
+#
+# Role/membership helpers (belongsTo, isTeamAdmin, isOrgOwner,
+# hasMembership, userIs<Role>) intentionally live in
+# ts-membership-check-call. Their literal arg is typically a *resource
+# identifier* (e.g. "team-42") rather than a permission name, so they
+# need a different rego template shape. Keeping the rules separated
+# preserves the project's role-vs-permission separation.
 query = """
 (call_expression
   function: (member_expression

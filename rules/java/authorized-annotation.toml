@@ -1,0 +1,76 @@
+[rule]
+id = "java-authorized-annotation"
+languages = ["java"]
+category = "rbac"
+confidence = "high"
+description = "OpenMRS-style @Authorized({\"PRIV\"}) annotation"
+# OpenMRS's primary policy surface is `@Authorized({"Manage Users"})`
+# applied to service/method calls. Surfaced by the corpus shakedown:
+# 24 files use it; before this rule we matched zero.
+#
+# Two query patterns cover the common forms:
+#   1. Single string:  @Authorized("Manage Users")
+#   2. Array of strings: @Authorized({"Manage Users", "Edit Users"})
+# Both feed the same {{role_value}} capture so the rego template emits
+# a single privilege-check shape.
+query = """
+[
+  (annotation
+    name: (identifier) @anno_name
+    arguments: (annotation_argument_list
+      (string_literal (string_fragment) @role_value)))
+  (annotation
+    name: (identifier) @anno_name
+    arguments: (annotation_argument_list
+      (element_value_array_initializer
+        (string_literal (string_fragment) @role_value))))
+] @match
+"""
+
+[rule.predicates.anno_name]
+eq = "Authorized"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{role_value}}" in input.user.privileges
+}
+"""
+
+[[rule.tests]]
+input = """
+public class UserService {
+    @Authorized("Manage Users")
+    public void delete(User u) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserService {
+    @Authorized({"Manage Users", "Edit Users"})
+    public void update(User u) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserService {
+    @Override
+    public void delete(User u) { }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class UserService {
+    @Transactional
+    public void update(User u) { }
+}
+"""
+expect_match = false
