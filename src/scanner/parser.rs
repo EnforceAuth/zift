@@ -16,9 +16,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
         (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
         (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
-        _ => Err(ZiftError::General(format!(
-            "language {lang:?} not yet supported"
-        ))),
+        _ => Err(ZiftError::UnsupportedLanguage(lang)),
     }
 }
 

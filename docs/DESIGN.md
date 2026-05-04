@@ -254,7 +254,7 @@ SCAN OPTIONS:
     --category, -c      Filter to specific auth category(s)
     --confidence        Minimum confidence level (high|medium|low)
     --exclude, -e       Glob patterns to exclude
-    --format, -f        Output format (text|json|sarif)
+    --format, -f        Output format (text|json)
     --output, -o        Write findings to file (default: stdout)
     --rules-dir         Additional pattern rules directory
     --config            Path to config file (default: .zift.toml)
@@ -344,7 +344,7 @@ additional = ["./custom-rules"]
 - Integration with findings pipeline
 
 ### Phase 5: CI integration + SARIF (3-5 days)
-- SARIF output format (for GitHub Code Scanning, VS Code)
+- SARIF output format (for GitHub Code Scanning, VS Code) — planned for v0.2
 - Exit codes for CI (findings above threshold → non-zero)
 - Baseline/diff mode (only report new findings since last scan)
 - GitHub Actions example workflow

@@ -36,7 +36,7 @@ cargo clippy -- -D warnings
 - **Scanner** (`src/scanner/`): Tree-sitter AST parsing and pattern matching across languages
 - **Rules** (`rules/`): TOML-based pattern definitions with tree-sitter queries and policy templates (Rego today)
 - **Rego** (`src/rego/`): Policy-as-Code generation from scan findings (Rego/OPA today; additional engines like Cedar planned)
-- **Output** (`src/output/`): Formatters (JSON, text; SARIF planned)
+- **Output** (`src/output/`): Formatters (JSON, text)
 
 ### Design principles
 
