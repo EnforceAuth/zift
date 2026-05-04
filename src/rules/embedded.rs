@@ -78,6 +78,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/java/spring-roles-allowed-array.toml"),
     ),
     (
+        "java-authorized-annotation",
+        include_str!("../../rules/java/authorized-annotation.toml"),
+    ),
+    (
         "java-spring-permit-all",
         include_str!("../../rules/java/spring-permit-all.toml"),
     ),
