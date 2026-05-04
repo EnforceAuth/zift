@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
@@ -254,7 +255,12 @@ pub(crate) fn compute_finding_id(
     hasher.update(line_start.to_le_bytes());
     hasher.update(line_end.to_le_bytes());
     hasher.update(snippet.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 pub fn filter_findings(
