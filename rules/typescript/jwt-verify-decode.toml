@@ -1,0 +1,64 @@
+[rule]
+id = "ts-jwt-verify-decode"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "medium"
+description = "JWT token verification or decode (authz decision point)"
+# Split out from the original `ts-jwt-token-check` rule. The `verify`
+# and `decode` family are authz decision points — they extract the
+# claims the request will be authorized against. The companion rule
+# `ts-jwt-sign-issue` covers `sign`, which is token *issuance*
+# (typically for outbound integrations) — different category, lower
+# confidence, kept separate so users can filter without losing the
+# authz signal.
+#
+# Surfaced by the corpus shakedown on Ghost: its report was dominated
+# by `jwt.sign(...)` calls — outbound token issuance, not authz
+# decisions. Keeping verify/decode here at medium confidence preserves
+# the authz signal while moving sign-issuance noise to its own rule.
+query = """
+(call_expression
+  function: (member_expression
+    object: (identifier) @obj
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (_) @arg)
+) @match
+"""
+
+[rule.predicates.obj]
+match = "(?i)^(jwt|jsonwebtoken|jose|token|auth)$"
+
+[rule.predicates.method]
+match = "^(verify|decode)$"
+
+[[rule.tests]]
+input = """
+const decoded = jwt.verify(token, secret);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+const claims = jsonwebtoken.decode(token);
+"""
+expect_match = true
+
+# `sign` now belongs to ts-jwt-sign-issue.
+[[rule.tests]]
+input = """
+const token = jwt.sign({ sub: userId }, secret);
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+signer.sign(httpRequest);
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+decoder.decode(value, { stream: true });
+"""
+expect_match = false

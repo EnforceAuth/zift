@@ -53,8 +53,12 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/session-auth-check.toml"),
     ),
     (
-        "jwt-token-check",
-        include_str!("../../rules/typescript/jwt-token-check.toml"),
+        "jwt-verify-decode",
+        include_str!("../../rules/typescript/jwt-verify-decode.toml"),
+    ),
+    (
+        "jwt-sign-issue",
+        include_str!("../../rules/typescript/jwt-sign-issue.toml"),
     ),
     (
         "ownership-check",
