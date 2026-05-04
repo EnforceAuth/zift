@@ -12,6 +12,11 @@ readme = "README.md"
 keywords = ["authorization", "policy-as-code", "opa", "rego", "static-analysis"]
 categories = ["command-line-utilities", "development-tools"]
 
+[features]
+# Exposes internal implementation modules (config, deep, mcp, output, scanner)
+# as public API. No semver stability guarantee; opt in explicitly.
+unstable = []
+
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
