@@ -431,10 +431,14 @@ struct FindingsEnvelope {
 struct ClaudeCodeEnvelope {
     #[serde(rename = "type")]
     ty: String,
-    /// Stringified inner JSON (the agent's actual reply). Claude Code
-    /// always emits this as a JSON string, even on error subtypes —
-    /// the inner content just isn't a valid `FindingsEnvelope` then.
-    result: String,
+    /// Stringified inner JSON (the agent's actual reply). Today Claude
+    /// Code emits an empty string on error subtypes rather than `null`,
+    /// but we accept `Option` defensively: a future build emitting
+    /// `result: null` for failures should still surface as a clean
+    /// `BadResponse` rather than fall through to a confusing
+    /// "not valid findings JSON" parse error.
+    #[serde(default)]
+    result: Option<String>,
     #[serde(default)]
     is_error: bool,
     #[serde(default)]
@@ -446,13 +450,17 @@ struct ClaudeCodeEnvelope {
 /// can parse `s` directly.
 ///
 /// Returns `Err(BadResponse)` only when the envelope is recognised AND
-/// reports a Claude-side error (`is_error: true` or a non-`success`
-/// subtype) — that's a real failure with no findings to recover, and
-/// the caller's per-candidate-skip path is the right home for it.
+/// reports a Claude-side error (`is_error: true`, a non-`success`
+/// subtype, or a missing/null `result`) — that's a real failure with
+/// no findings to recover, and the caller's per-candidate-skip path
+/// is the right home for it.
 fn unwrap_claude_code_envelope(s: &str) -> Result<Option<String>, DeepError> {
-    // `from_str` here is cheap: on the common path (no envelope) it
-    // fails fast on the first unknown field shape. We never return the
-    // serde error to the caller — that's reserved for the real parse.
+    // On the common (non-envelope) path, deserialisation fails because
+    // the required `type` field is missing or wrong-typed; serde's
+    // default behaviour ignores unknown fields, so we don't have to
+    // enumerate Claude Code's full envelope schema here. We never
+    // return the serde error to the caller — that's reserved for the
+    // real findings parse.
     let env: ClaudeCodeEnvelope = match serde_json::from_str(s) {
         Ok(v) => v,
         Err(_) => return Ok(None),
@@ -460,13 +468,16 @@ fn unwrap_claude_code_envelope(s: &str) -> Result<Option<String>, DeepError> {
     if env.ty != "result" {
         return Ok(None);
     }
-    if env.is_error || env.subtype.as_deref().is_some_and(|s| s != "success") {
+    let bad_subtype = env.subtype.as_deref().is_some_and(|s| s != "success");
+    if env.is_error || bad_subtype || env.result.is_none() {
         return Err(DeepError::BadResponse(format!(
-            "claude-code envelope reported error (subtype={})",
+            "claude-code envelope reported error (is_error={}, subtype={}, result_present={})",
+            env.is_error,
             env.subtype.as_deref().unwrap_or("<missing>"),
+            env.result.is_some(),
         )));
     }
-    Ok(Some(env.result))
+    Ok(env.result)
 }
 
 /// Brief, allocation-free string form of [`std::process::ExitStatus`]
@@ -674,10 +685,38 @@ mod tests {
         let s =
             r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":""}"#;
         let err = unwrap_claude_code_envelope(s).unwrap_err();
-        assert!(
-            matches!(err, DeepError::BadResponse(ref msg) if msg.contains("error_during_execution")),
-            "got: {err:?}",
-        );
+        let DeepError::BadResponse(msg) = err else {
+            panic!("expected BadResponse, got: {err:?}");
+        };
+        assert!(msg.contains("error_during_execution"), "msg={msg}");
+        assert!(msg.contains("is_error=true"), "msg={msg}");
+    }
+
+    #[test]
+    fn unwrap_returns_bad_response_when_result_is_null() {
+        // Defensive: today claude-code emits `result: ""` on error
+        // subtypes, but if a future build emits `result: null` we want
+        // a clean BadResponse, not a fall-through to the findings parser.
+        let s =
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":null}"#;
+        let err = unwrap_claude_code_envelope(s).unwrap_err();
+        let DeepError::BadResponse(msg) = err else {
+            panic!("expected BadResponse, got: {err:?}");
+        };
+        assert!(msg.contains("result_present=false"), "msg={msg}");
+    }
+
+    #[test]
+    fn unwrap_returns_bad_response_when_result_missing_on_success_subtype() {
+        // Even with subtype=success, a missing `result` field can't
+        // produce findings — surface as BadResponse rather than fall
+        // through and parse the envelope itself as the findings payload.
+        let s = r#"{"type":"result","subtype":"success","is_error":false}"#;
+        let err = unwrap_claude_code_envelope(s).unwrap_err();
+        let DeepError::BadResponse(msg) = err else {
+            panic!("expected BadResponse, got: {err:?}");
+        };
+        assert!(msg.contains("result_present=false"), "msg={msg}");
     }
 
     #[test]

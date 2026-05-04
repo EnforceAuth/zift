@@ -45,6 +45,7 @@ static AUTHZ_PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         (?:
             authz | authn
           | authori[sz]ation
+          | authorit\w*       # authority, authoritative, authorities
           | authenticat\w*
           | rbac | abac | acl | iam
           | permissions? | roles? | polic(?:y|ies)
@@ -506,7 +507,9 @@ mod tests {
             "access-control/rules.go",
             "authentication.go",
             "authorization.go",
-            "authorisation.py", // British spelling
+            "authorisation.py",       // British spelling
+            "src/authority/check.go", // authority/authoritative family
+            "pkg/authoritative_source.go",
             "src/acl/list.go",
         ] {
             assert_eq!(
@@ -568,6 +571,18 @@ mod tests {
         assert!(
             files.contains(&PathBuf::from("permissions.py")),
             "permissions.py must survive the cold-region cap: {files:?}",
+        );
+        // Tertiary slot: with the two authz files locked in, the third
+        // slot tie-breaks to lex order among priority-0 files
+        // (`app.py` < `core.py`). Pin both halves so a future flip in
+        // the secondary tiebreaker is loud.
+        assert!(
+            files.contains(&PathBuf::from("app.py")),
+            "app.py should win the lex tiebreak among non-authz files: {files:?}",
+        );
+        assert!(
+            !files.contains(&PathBuf::from("core.py")),
+            "core.py should be cut by the budget: {files:?}",
         );
     }
 
