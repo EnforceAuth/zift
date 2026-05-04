@@ -8,7 +8,7 @@ A few places to look depending on what you need:
 | Bug report or feature request       | [GitHub Issues](https://github.com/EnforceAuth/zift/issues/new/choose)       |
 | Security vulnerability              | See [SECURITY.md](SECURITY.md) — please use a private channel                |
 | How to contribute                   | [CONTRIBUTING.md](CONTRIBUTING.md)                                           |
-| Commercial support                  | Email <hello@enforceauth.com>                                                |
+| Commercial support                  | Email <info@enforceauth.com>                                                 |
 
 When in doubt, open a Discussion — we'd rather help you find the right channel
 than have a question go unasked.
