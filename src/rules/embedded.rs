@@ -29,6 +29,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/nestjs-use-guards.toml"),
     ),
     (
+        "trpc-procedure",
+        include_str!("../../rules/typescript/trpc-procedure.toml"),
+    ),
+    (
         "nestjs-roles-decorator",
         include_str!("../../rules/typescript/nestjs-roles-decorator.toml"),
     ),
