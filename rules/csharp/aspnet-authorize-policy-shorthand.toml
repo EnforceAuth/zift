@@ -21,7 +21,7 @@ query = """
 match = "(^|\\.)Authorize(Attribute)?$"
 
 [rule.predicates.match]
-not_match = "\\b(Roles|Policy)\\s*="
+not_match = "(\\(|,)\\s*[A-Za-z_][A-Za-z0-9_]*\\s*="
 
 [rule.rego_template]
 template = """
@@ -52,5 +52,12 @@ expect_match = false
 input = """
 [Authorize(Roles = "Admin")]
 public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+[Authorize(AuthenticationSchemes = "Bearer")]
+public IActionResult Api() => Ok();
 """
 expect_match = false

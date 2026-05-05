@@ -11,7 +11,7 @@ pub fn render_template(template: &str, vars: &HashMap<String, String>) -> String
     re.replace_all(template, |caps: &regex::Captures| {
         let key = &caps[1];
         match vars.get(key) {
-            Some(val) if key.ends_with("_set") => val.to_string(),
+            Some(val) if key == "roles_set" => val.to_string(),
             Some(val) => strip_quotes(val).to_string(),
             None => caps[0].to_string(), // leave placeholder
         }
@@ -206,6 +206,14 @@ mod tests {
         );
         let result = render_template("role in {{{roles_set}}}", &vars);
         assert_eq!(result, "role in {\"Admin\", \"Manager\"}");
+    }
+
+    #[test]
+    fn render_unknown_set_template_strips_outer_quotes() {
+        let mut vars = HashMap::new();
+        vars.insert("claims_set".to_string(), "\"Admin\"".to_string());
+        let result = render_template("claim == \"{{claims_set}}\"", &vars);
+        assert_eq!(result, "claim == \"Admin\"");
     }
 
     #[test]

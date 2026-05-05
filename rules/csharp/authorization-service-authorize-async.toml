@@ -16,7 +16,7 @@ query = """
 eq = "AuthorizeAsync"
 
 [rule.predicates.arguments]
-match = "(Policy|Requirement|Operations\\.|\"[^\"]+\")"
+match = "(Policy|Requirement|Operations\\.|\"[^\"]+\"|(?i:[A-Za-z_][A-Za-z0-9_]*?(policy|requirement)s?))"
 
 [rule.rego_template]
 template = """
@@ -40,6 +40,18 @@ expect_match = true
 [[rule.tests]]
 input = """
 var result = await authz.AuthorizeAsync(User, document, Operations.Read);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var result = await authz.AuthorizeAsync(User, document, policyName);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var result = await authz.AuthorizeAsync(User, resource, requirements);
 """
 expect_match = true
 

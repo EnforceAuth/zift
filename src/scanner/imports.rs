@@ -463,49 +463,44 @@ fn find_csharp_policy_imports(tree: &tree_sitter::Tree, source: &[u8]) -> HashSe
 
         // `using Alias = Company.Policy.Authorizer;` binds `Alias`.
         if let Some(alias_node) = node.child_by_field_name("name") {
-            let Ok(full_text) = node.utf8_text(source) else {
+            let Some(target) = csharp_using_alias_target(node, alias_node) else {
                 return;
             };
+            let Ok(full_text) = target.utf8_text(source) else {
+                return;
+            };
+
             if is_policy_path(full_text)
                 && let Ok(alias) = alias_node.utf8_text(source)
             {
                 policy_names.insert(alias.to_string());
             }
-            return;
-        }
-
-        let mut cursor = node.walk();
-        let Some(target) = node
-            .named_children(&mut cursor)
-            .find(|c| matches!(c.kind(), "qualified_name" | "identifier"))
-        else {
-            return;
-        };
-
-        let Ok(full_text) = target.utf8_text(source) else {
-            return;
-        };
-        if !is_policy_path(full_text) {
-            return;
-        }
-
-        if let Some(binding) = trailing_qualified_name_segment(target, source) {
-            policy_names.insert(binding);
         }
     });
 
     policy_names
 }
 
-fn trailing_qualified_name_segment(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
-    match node.kind() {
-        "qualified_name" => node
-            .child_by_field_name("name")
-            .and_then(|n| n.utf8_text(source).ok())
-            .map(str::to_string),
-        "identifier" => node.utf8_text(source).ok().map(str::to_string),
-        _ => None,
+fn csharp_using_alias_target<'a>(
+    node: tree_sitter::Node<'a>,
+    alias_node: tree_sitter::Node<'a>,
+) -> Option<tree_sitter::Node<'a>> {
+    for field in ["value", "target", "path", "type"] {
+        if let Some(target) = node.child_by_field_name(field) {
+            return Some(target);
+        }
     }
+
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.id() != alias_node.id() && csharp_node_can_be_policy_path(*child))
+}
+
+fn csharp_node_can_be_policy_path(node: tree_sitter::Node) -> bool {
+    matches!(
+        node.kind(),
+        "qualified_name" | "identifier" | "generic_name" | "member_access_expression"
+    )
 }
 
 /// Walk the tree once, collecting `(lhs_name, rhs_source_text)` edges from
@@ -1423,7 +1418,7 @@ import com.example.policy.Authorize;
     // ---------- C# ----------
 
     #[test]
-    fn csharp_detects_using_policy_namespace_and_alias() {
+    fn csharp_detects_using_policy_alias() {
         let source = r#"
 using Company.Authz;
 using PolicyAlias = Company.Policy.Authorizer;
@@ -1432,9 +1427,20 @@ using System.Collections.Generic;
         let tree = parse_lang(source, Language::CSharp);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
 
-        assert!(imports.contains("Authz"), "got: {imports:?}");
+        assert!(!imports.contains("Authz"), "got: {imports:?}");
         assert!(imports.contains("PolicyAlias"), "got: {imports:?}");
         assert!(!imports.contains("Collections"));
+    }
+
+    #[test]
+    fn csharp_alias_checks_target_not_alias_name() {
+        let source = r#"
+using PolicyAlias = Company.Utils.Helper;
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(!imports.contains("PolicyAlias"), "got: {imports:?}");
     }
 
     #[test]
@@ -1729,7 +1735,7 @@ public class Service {
     #[test]
     fn csharp_propagates_through_object_initializer_and_local_variable() {
         let source = r#"
-using Company.Policy;
+using Policy = Company.Policy;
 
 public class Service {
     public void Build() {

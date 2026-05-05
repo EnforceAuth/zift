@@ -200,6 +200,8 @@ allow if {
 
 ## Language support
 
+These priorities describe release milestones. C# ships in the v0.2 milestone.
+
 ### Priority 1 (v0.1)
 
 | Language | Key frameworks / patterns |
