@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::deep::error::DeepError;
+use crate::types::Language;
 
 pub type Result<T> = std::result::Result<T, ZiftError>;
 
@@ -25,6 +26,9 @@ pub enum ZiftError {
 
     #[error("deep scan: {0}")]
     Deep(#[from] DeepError),
+
+    #[error("{0} is not yet supported; see the README for the current language matrix")]
+    UnsupportedLanguage(Language),
 
     #[error("{0}")]
     General(String),

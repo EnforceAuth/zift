@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::io::{BufRead, Write};
 
 /// Standard JSON-RPC 2.0 error codes (-32700 … -32600 reserved).
+#[allow(dead_code)] // full set kept for protocol completeness
 pub mod error_code {
     pub const PARSE_ERROR: i32 = -32700;
     pub const INVALID_REQUEST: i32 = -32600;
@@ -120,6 +121,7 @@ pub fn write_response<W: Write>(writer: &mut W, resp: &Response) -> std::io::Res
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // `raw` retained for Debug-trace diagnostics
 pub enum FrameError {
     Io(std::io::Error),
     Parse { message: String, raw: String },

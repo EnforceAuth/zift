@@ -118,6 +118,7 @@ pub enum CandidateKind {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // `kind`/`seed_category` are read in tests + Debug output
 pub struct Candidate {
     pub kind: CandidateKind,
     /// Path relative to scan root.

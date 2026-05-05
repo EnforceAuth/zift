@@ -16,9 +16,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
         (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
         (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
-        _ => Err(ZiftError::General(format!(
-            "language {lang:?} not yet supported"
-        ))),
+        _ => Err(ZiftError::UnsupportedLanguage(lang)),
     }
 }
 
@@ -41,6 +39,7 @@ pub fn parse_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ZiftError;
 
     #[test]
     fn parse_typescript() {
@@ -110,7 +109,11 @@ mod tests {
         // C# has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
         // name says it does. (Was Go before v0.2 added Go support.)
-        assert!(get_language(Language::CSharp, false).is_err());
+        let err = get_language(Language::CSharp, false).unwrap_err();
+        assert!(matches!(
+            err,
+            ZiftError::UnsupportedLanguage(Language::CSharp)
+        ));
         assert!(!is_language_supported(Language::CSharp));
     }
 }

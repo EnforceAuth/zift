@@ -135,6 +135,7 @@ pub fn handle_request(ctx: &ServerContext, req: &Request, id: Value) -> Response
 /// Errors a handler can return at the JSON-RPC layer (distinct from tool
 /// errors, which are surfaced inside a `tools/call` result with `isError: true`).
 #[derive(Debug)]
+#[allow(dead_code)] // `Internal` matched in dispatch; reserved for future handlers
 pub enum HandlerError {
     InvalidParams(String),
     Internal(String),

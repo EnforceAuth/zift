@@ -217,7 +217,6 @@ pub enum OutputFormat {
     #[default]
     Text,
     Json,
-    Sarif,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
