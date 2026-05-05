@@ -182,7 +182,16 @@ fn extract_lines(scan_root: &Path, relative: &Path, start: usize, end: usize) ->
     if lines.is_empty() {
         return None;
     }
-    let s = (start - 1).min(lines.len() - 1);
+    // Bail (instead of clamping to the last line) when the requested range
+    // starts past the end of the file. Otherwise the caller's fallback chain
+    // — `extract_lines(...).or_else(slice_candidate_snippet(...))` in
+    // `build_finding_from_semantic` — never reaches the candidate snippet on
+    // a shrunken/replaced file, and we'd silently attach an unrelated
+    // last-line excerpt to the finding.
+    if start > lines.len() {
+        return None;
+    }
+    let s = start - 1;
     let e = end.min(lines.len()).max(s + 1);
     Some(lines[s..e].join("\n"))
 }

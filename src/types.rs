@@ -42,24 +42,35 @@ pub enum Surface {
 
 impl Surface {
     /// Classify a finding's surface from its file path. Heuristic-only —
-    /// looks for a small set of well-known *strong* frontend directory names
-    /// anywhere in the path (`web`, `webapp`, `client`, `frontend`, `ui`).
-    /// Generic tokens like `public/` and `static/` are intentionally **not**
-    /// in the strong list — they show up in plenty of backend trees
-    /// (`lib/public/api.go`, `services/static/registry.rs`) and treating
-    /// them as Frontend on their own would silently downgrade real findings.
-    /// They only count when a strong marker is also present in the path
-    /// (e.g. `apps/web/public/main.js`), which already classifies as Frontend
-    /// via the strong marker — so dropping them from the regex is equivalent
-    /// to "weak markers require a nearby strong marker."
+    /// requires **both** a well-known *strong* frontend directory name
+    /// (`web`, `webapp`, `client`, `frontend`, `ui`) AND a frontend file
+    /// extension on the leaf. Generic tokens like `public/` and `static/`
+    /// are intentionally **not** in the strong list — they show up in
+    /// plenty of backend trees (`lib/public/api.go`,
+    /// `services/static/registry.rs`) and treating them as Frontend on
+    /// their own would silently downgrade real findings. They only count
+    /// when a strong marker is also present in the path (e.g.
+    /// `apps/web/public/main.js`), which already classifies as Frontend
+    /// via the strong marker — so dropping them from the regex is
+    /// equivalent to "weak markers require a nearby strong marker."
     ///
-    /// Conservative on purpose: false negatives (frontend code classified as
-    /// backend) leave the existing behavior unchanged, while false positives
-    /// (backend code classified as frontend) would silently downgrade real
-    /// findings — so when in doubt, return `Backend`.
+    /// The extension gate covers the inverse trap: a Java/Rust/Go backend
+    /// project may legitimately use a `web/`, `client/`, or `ui/`
+    /// subdirectory for its server-side HTTP/UI-glue layer
+    /// (`src/main/java/com/x/web/UserService.java`,
+    /// `crates/server/src/web/handler.rs`). Without an extension check the
+    /// directory marker alone would misclassify those as Frontend and
+    /// silently suppress real backend findings for consumers that filter
+    /// frontend results.
     ///
-    /// The match is case-insensitive and segment-bounded (we want
-    /// `app/web/foo.ts` but not `apps/network/foo.ts` or `webhooks/foo.ts`).
+    /// Conservative on purpose: false negatives (frontend code classified
+    /// as backend) leave the existing behavior unchanged, while false
+    /// positives (backend code classified as frontend) would silently
+    /// downgrade real findings — so when in doubt, return `Backend`.
+    ///
+    /// The directory match is case-insensitive and segment-bounded (we
+    /// want `app/web/foo.ts` but not `apps/network/foo.ts` or
+    /// `webhooks/foo.ts`). The extension match is also case-insensitive.
     pub fn classify(path: &Path) -> Self {
         static FRONTEND_RE: OnceLock<Regex> = OnceLock::new();
         let re = FRONTEND_RE.get_or_init(|| {
@@ -69,12 +80,32 @@ impl Surface {
             Regex::new(r"(?i)(^|[\\/])(web|webapp|client|frontend|ui)[\\/]")
                 .expect("static regex compiles")
         });
-        if re.is_match(&path.to_string_lossy()) {
-            Surface::Frontend
-        } else {
-            Surface::Backend
+        if !re.is_match(&path.to_string_lossy()) {
+            return Surface::Backend;
         }
+        if !has_frontend_extension(path) {
+            return Surface::Backend;
+        }
+        Surface::Frontend
     }
+}
+
+/// Frontend-asset file extensions we recognize when gating
+/// [`Surface::classify`]. Lowercase, no leading dot. Kept narrow on
+/// purpose: a backend `web/` package full of `.java`/`.go`/`.py` files
+/// must not slip through. Extensionless files (no extension at all)
+/// stay Backend by design — the directory marker on its own isn't a
+/// strong enough signal to override the safe default.
+fn has_frontend_extension(path: &Path) -> bool {
+    const FRONTEND_EXTS: &[&str] = &[
+        "js", "jsx", "ts", "tsx", "mjs", "cjs", "html", "htm", "css", "scss", "sass", "less",
+        "vue", "svelte", "astro",
+    ];
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let lower = ext.to_ascii_lowercase();
+    FRONTEND_EXTS.iter().any(|e| *e == lower)
 }
 
 impl std::fmt::Display for Surface {
@@ -285,6 +316,48 @@ mod tests {
         assert_eq!(
             Surface::classify(Path::new("services/static/registry.rs")),
             Surface::Backend
+        );
+    }
+
+    #[test]
+    fn surface_requires_frontend_extension_even_with_strong_marker() {
+        // Strong directory marker present, but the leaf file is a backend
+        // language — must classify as Backend. Java/Rust/Go projects
+        // legitimately use `web/`, `client/`, `ui/` packages for their
+        // server-side HTTP/UI-glue layer, and treating those as Frontend
+        // would silently downgrade real findings for consumers that filter
+        // frontend results.
+        assert_eq!(
+            Surface::classify(Path::new("src/main/java/com/x/web/UserService.java")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("crates/server/src/web/handler.rs")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("internal/client/auth.go")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("services/ui/templating.py")),
+            Surface::Backend
+        );
+        // Extensionless files stay Backend — directory marker alone isn't
+        // strong enough signal to override the safe default.
+        assert_eq!(
+            Surface::classify(Path::new("apps/web/Makefile")),
+            Surface::Backend
+        );
+    }
+
+    #[test]
+    fn surface_extension_gate_is_case_insensitive() {
+        // Same as `Apps/Web/Foo.tsx` upstream, but capitalised extension —
+        // the `.TSX` should still trip the frontend gate.
+        assert_eq!(
+            Surface::classify(Path::new("apps/web/Component.TSX")),
+            Surface::Frontend
         );
     }
 
