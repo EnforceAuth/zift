@@ -86,7 +86,7 @@ Startup code contains policy assertions such as `policy.RequireAssertion(ctx => 
 
 ## Deep pass
 
-Not run for this PR. C# support landed after the initial corpus shakedown, so this page records the reproducible structural baseline first. A useful scoped deep pass would target:
+Run scoped to the Admin Console controllers — 14 C# files, ~3,400 LOC, concentrated around organization and collection management:
 
 ```bash
 zift scan ~/zift-corpus/csharp/server/src/Api/AdminConsole/Controllers/ \
@@ -94,4 +94,54 @@ zift scan ~/zift-corpus/csharp/server/src/Api/AdminConsole/Controllers/ \
   --format json -o deep.json
 ```
 
-That subset concentrates the `IAuthorizationService.AuthorizeAsync(...)`, custom generic `[Authorize<TRequirement>]`, and organization-management authorization model in one place.
+| | |
+|---|---|
+| Transport | subprocess (`claude -p --output-format json`) |
+| Wall time | 177.98s |
+| Total findings | 88 (29 structural retained + 59 semantic) |
+| Files with findings | 13 |
+| Cost reported | $0.00 |
+
+One candidate was skipped because the agent returned non-JSON for that prompt; Zift treated it as a per-candidate bad response and continued.
+
+**Findings by pass**
+
+| Pass | Count |
+|------|------:|
+| `semantic` | 59 |
+| `structural` | 29 |
+
+**Deep findings by category**
+
+| Category | Count |
+|----------|------:|
+| `custom` | 23 |
+| `middleware` | 22 |
+| `ownership` | 5 |
+| `abac` | 3 |
+| `feature_gate` | 3 |
+| `rbac` | 2 |
+| `business_rule` | 1 |
+
+**Notable deep-only findings**
+
+| File | Line | Category | Description |
+|------|-----:|----------|-------------|
+| `GroupsController.cs` | 68 | middleware | `[Authorize<ManageGroupsRequirement>]` gates the endpoint |
+| `GroupsController.cs` | 232 | ownership | `group.OrganizationId != orgId` tenant ownership check |
+| `GroupsController.cs` | 254 | ownership | Bulk delete validates every group's `OrganizationId` |
+| `OrganizationConnectionsController.cs` | 60 | custom | `HasPermissionAsync(...)` gates connection creation |
+| `OrganizationConnectionsController.cs` | 178 | rbac | `HasPermissionAsync` chooses `ManageScim` vs `OrganizationOwner` |
+| `OrganizationInviteLinksController.cs` | 15 | feature_gate | `[RequireFeature(FeatureFlagKeys.GenerateInviteLink)]` gates the controller |
+
+## Diff structural ↔ deep
+
+The subset had 36 structural findings in the whole-repo structural report. The deep run retained 29 structural findings and added 59 semantic findings.
+
+| Bucket | Count | Notes |
+|--------|------:|-------|
+| Structural retained | 29 | Mostly `AuthorizeAsync`, `[Authorize("Application")]`, and `[AllowAnonymous]` |
+| Deep-only | 59 | Generic authorization attributes, tenant ownership checks, helper gates, and feature flags |
+| Structural not retained | 7 | Mostly lower-context structural candidates that deep did not echo back, plus one skipped malformed agent response |
+
+The biggest actionable rule gap is the generic attribute family. In this subset alone, deep surfaced 19 `[Authorize<TRequirement>]` findings; across the full shallow clone, grep found 108 occurrences.
