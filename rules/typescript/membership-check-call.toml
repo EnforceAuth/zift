@@ -1,0 +1,95 @@
+[rule]
+id = "ts-membership-check-call"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Membership or role helper call (e.g. belongsTo(\"team-42\"), isTeamAdmin(\"team-42\"), userIsOwner(\"org-1\"))"
+# Sister rule to ts-permission-check-call. Surfaced by the Cal.com
+# corpus shakedown: methods like `belongsTo`, `isTeamAdmin`,
+# `isOrgOwner`, `hasMembership`, and the `userIs<Role>` family are
+# first-class authz checks, but the literal argument is typically a
+# *resource identifier* (e.g. "team-42", "org-1") rather than a
+# permission name. Mixing them into ts-permission-check-call would
+# misshape the generated rego (`input.action == "team-42"` is
+# nonsense), so they live here with a membership-shaped template.
+#
+# Per the project learning: keep role-checking and permission-checking
+# rule logic intentionally separated.
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (string) @resource_id)
+) @match
+"""
+
+[rule.predicates.method]
+match = "^(belongsTo|isTeamAdmin|isOrgOwner|hasMembership|userIs[A-Z][A-Za-z]*)$"
+
+# Stub template. {{resource_id}} substitutes the captured resource/team
+# identifier. The membership shape is encoded as a set lookup against
+# input.user.memberships — adjust to match your policy's actual claim
+# shape (e.g. nested objects with role+resource pairs).
+[rule.rego_template]
+template = """
+default allow := false
+
+# TODO: membership check — replace with your policy's actual membership
+# shape. Captured resource_id is a team/org/resource identifier, not a
+# permission name.
+allow if {
+    "{{resource_id}}" in input.user.memberships
+}
+"""
+
+[[rule.tests]]
+input = """
+if (membership.belongsTo("team-42")) {
+  showTeam();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (acl.isTeamAdmin("team-42")) {
+  manageTeam();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (session.userIsOwner("org-1")) {
+  manageOrg();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (user.hasMembership("workspace-7")) {
+  enter();
+}
+"""
+expect_match = true
+
+# Negative: covered by ts-permission-check-call (kept separate per
+# the role-vs-permission separation rule).
+[[rule.tests]]
+input = """
+if (user.can("delete")) {
+  remove();
+}
+"""
+expect_match = false
+
+# Negative: not a membership helper.
+[[rule.tests]]
+input = """
+if (cache.has("foo")) {
+  use();
+}
+"""
+expect_match = false

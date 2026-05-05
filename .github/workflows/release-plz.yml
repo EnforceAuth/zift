@@ -4,10 +4,6 @@ on:
   push:
     branches: [main]
 
-concurrency:
-  group: release-plz
-  cancel-in-progress: false
-
 permissions:
   contents: write
   pull-requests: write
@@ -15,6 +11,9 @@ permissions:
 jobs:
   release-plz-release:
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-release
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: read
@@ -53,6 +52,9 @@ jobs:
 
   release-plz-pr:
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write

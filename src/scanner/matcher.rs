@@ -8,7 +8,7 @@ use tree_sitter::{Query, QueryCursor, Tree};
 
 use crate::error::{Result, ZiftError};
 use crate::rules::{CrossPredicate, PatternRule, Predicate};
-use crate::types::{Confidence, Finding, Language, ScanPass};
+use crate::types::{Confidence, Finding, Language, ScanPass, Surface};
 
 pub struct CompiledRule<'a> {
     pub rule: &'a PatternRule,
@@ -163,6 +163,7 @@ pub fn execute_query(
                 crate::rego::render_template(tmpl, &owned)
             }),
             pass: ScanPass::Structural,
+            surface: Surface::classify(file_path),
         });
     }
 
@@ -1277,6 +1278,7 @@ match = ".*"
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         };
         let findings = vec![f.clone(), f];
         let deduped = dedup_findings(findings);

@@ -463,7 +463,7 @@ fn missing_usage_field_defaults_to_zero() {
 use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
-use zift::types::{Finding, ScanPass};
+use zift::types::{Finding, ScanPass, Surface};
 
 fn structural_finding(file: &str, line: usize) -> Finding {
     Finding {
@@ -479,6 +479,7 @@ fn structural_finding(file: &str, line: usize) -> Finding {
         pattern_rule: Some("ts-custom".into()),
         rego_stub: None,
         pass: ScanPass::Structural,
+        surface: Surface::Backend,
     }
 }
 

@@ -1,0 +1,101 @@
+[rule]
+id = "py-require-decorator"
+languages = ["python"]
+category = "middleware"
+confidence = "high"
+description = "@require_* authz decorator (Zulip-style: @require_realm_admin, @require_member_or_admin, ...)"
+# Surfaced by the corpus shakedown on Zulip, where view functions are
+# gated by `@require_realm_admin`, `@require_organization_member`,
+# `@require_member_or_admin`, etc. Sister rule to
+# `py-login-required-decorator` (which matches the exact name
+# `login_required`); this one matches the open-ended `require_<role>`
+# family.
+#
+# Accepts both decorator forms (marker and call), as bare identifier or
+# attribute reference, mirroring py-login-required-decorator's shape.
+query = """
+(decorator
+  [
+    (identifier) @decorator_name
+    (attribute attribute: (identifier) @decorator_name)
+    (call
+      function: [
+        (identifier) @decorator_name
+        (attribute attribute: (identifier) @decorator_name)
+      ])
+  ]
+) @match
+"""
+
+[rule.predicates.decorator_name]
+match = "^require_[a-z][a-z0-9_]*$"
+
+# `require_GET` / `require_POST` from django.views.decorators.http are
+# HTTP method gates, not authz. The predicate's lowercase-only suffix
+# already excludes them; explicit negative test below locks that in.
+
+[[rule.tests]]
+input = """
+@require_realm_admin
+def administer(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@require_member_or_admin
+def view_members(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@require_organization_member(realm_id=1)
+def list_streams(request):
+    pass
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+@auth.require_admin
+def manage(request):
+    pass
+"""
+expect_match = true
+
+# -- Negative: HTTP method gates and non-authz decorators --
+
+[[rule.tests]]
+input = """
+@require_GET
+def index(request):
+    pass
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+@require_POST
+def submit(request):
+    pass
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+@app.route('/')
+def index():
+    pass
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+@staticmethod
+def helper():
+    pass
+"""
+expect_match = false

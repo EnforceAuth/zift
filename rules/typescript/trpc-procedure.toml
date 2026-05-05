@@ -1,0 +1,87 @@
+[rule]
+id = "ts-trpc-procedure"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "high"
+description = "tRPC authz procedure builder used at a call site (protectedProcedure, adminProcedure, ...)"
+# tRPC's idiomatic authz pattern is a procedure builder:
+#
+#   export const fooRouter = createTRPCRouter({
+#     bar: protectedProcedure.input(z.object({...})).query(...),
+#     baz: adminProcedure.mutation(...),
+#   });
+#
+# Each `protectedProcedure.<method>(...)` chain is a distinct policy
+# decision point: the procedure builder injects the authz middleware
+# (auth check, role gate) into every endpoint built from it.
+#
+# Surfaced by the corpus shakedown on Cal.com — this rule wraps every
+# endpoint declared via an authed procedure builder. Sister rule to
+# `ts-nestjs-use-guards` (same role for NestJS controllers).
+#
+# Match shape: `(member_expression object: (identifier) @proc_name)`
+# fires exactly once per chain (the leftmost member access whose object
+# is a bare identifier), so `protectedProcedure.use(mw).input(x).query(y)`
+# yields a single finding rather than one per chained method.
+#
+# Predicate is `[a-z][A-Za-z]*Procedure` so well-known builders
+# (protectedProcedure, adminProcedure, authedProcedure, orgProcedure,
+# teamProcedure) and project-specific ones all qualify. Anchored to
+# avoid `someUnrelatedProcedure` slipping through unintentionally —
+# the suffix is distinctive enough that false positives are rare in
+# practice.
+#
+# No rego template: the policy lives in the procedure builder's
+# middleware, not at the call site, so a stub generated here would be
+# misleading. The finding is the policy-decision-point marker.
+query = """
+(member_expression
+  object: (identifier) @proc_name
+) @match
+"""
+
+[rule.predicates.proc_name]
+match = "^[a-z][A-Za-z]*Procedure$"
+
+# -- Positive: tRPC authz builders --
+
+[[rule.tests]]
+input = """
+export const list = protectedProcedure
+  .input(z.object({ teamId: z.string() }))
+  .query(({ ctx, input }) => ctx.db.team.findMany());
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+export const remove = adminProcedure.mutation(({ ctx }) => ctx.db.team.delete());
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+export const m = authedProcedure.use(rateLimit).mutation(handler);
+"""
+expect_match = true
+
+# Custom org-scoped procedure
+[[rule.tests]]
+input = """
+export const x = orgProcedure.query(handler);
+"""
+expect_match = true
+
+# -- Negative: not a procedure builder --
+
+[[rule.tests]]
+input = """
+const result = api.user.findMany();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+const x = obj.method();
+"""
+expect_match = false

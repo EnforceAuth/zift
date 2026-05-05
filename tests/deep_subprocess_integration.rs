@@ -21,7 +21,7 @@ use serde_json::json;
 use tempfile::tempdir;
 
 use zift::deep::config::{DeepMode, DeepRuntime};
-use zift::types::{AuthCategory, Confidence, Finding, Language, ScanPass};
+use zift::types::{AuthCategory, Confidence, Finding, Language, ScanPass, Surface};
 
 /// Build a minimal subprocess-mode runtime pointing at `cmd`.
 fn subprocess_runtime(cmd: &str, timeout_secs: u64) -> DeepRuntime {
@@ -59,6 +59,7 @@ fn structural_finding(file: &str, line: usize) -> Finding {
         pattern_rule: Some("ts-custom".into()),
         rego_stub: None,
         pass: ScanPass::Structural,
+        surface: Surface::Backend,
     }
 }
 

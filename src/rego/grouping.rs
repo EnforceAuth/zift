@@ -234,6 +234,7 @@ mod tests {
             pattern_rule: Some("test-rule".into()),
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }];
 
         let files = group_findings(&findings, "app", Path::new("./policies"));
@@ -260,6 +261,7 @@ mod tests {
                 pattern_rule: None,
                 rego_stub: None,
                 pass: ScanPass::Structural,
+                surface: Surface::Backend,
             },
             Finding {
                 id: "b".into(),
@@ -274,6 +276,7 @@ mod tests {
                 pattern_rule: None,
                 rego_stub: None,
                 pass: ScanPass::Structural,
+                surface: Surface::Backend,
             },
         ];
 

@@ -1,0 +1,64 @@
+[rule]
+id = "ts-jwt-sign-issue"
+languages = ["typescript", "javascript"]
+category = "custom"
+confidence = "low"
+description = "JWT token issuance (jwt.sign) — typically outbound integration tokens, not an authz decision"
+# Split out from the original `ts-jwt-token-check` rule. `jwt.sign(...)`
+# is token *issuance*, not a policy decision: a service signing a token
+# to send outbound (webhook, integration, downstream API) is doing
+# crypto, not authorization. Surfaced by the corpus shakedown on Ghost,
+# whose report was dominated by sign calls of this shape — deep mode
+# would dismiss most.
+#
+# Kept as a separate rule (rather than dropped entirely) because:
+#   1. Token issuance is still relevant during a security review —
+#      key handling, audience scoping, expiry — even if it isn't an
+#      authz decision point.
+#   2. Users who want to suppress this noise can disable a single
+#      rule by ID without losing verify/decode coverage.
+#
+# Confidence is `low` and category is `custom` so it sits below the
+# middleware/rbac/abac signal in default reports.
+query = """
+(call_expression
+  function: (member_expression
+    object: (identifier) @obj
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (_) @arg)
+) @match
+"""
+
+[rule.predicates.obj]
+match = "(?i)^(jwt|jsonwebtoken|jose|token|auth)$"
+
+[rule.predicates.method]
+eq = "sign"
+
+[[rule.tests]]
+input = """
+const token = jwt.sign({ sub: userId }, secret);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+const t = jsonwebtoken.sign(payload, secret, { expiresIn: "1h" });
+"""
+expect_match = true
+
+# Verify/decode belong to ts-jwt-verify-decode.
+[[rule.tests]]
+input = """
+const decoded = jwt.verify(token, secret);
+"""
+expect_match = false
+
+# Unrelated signer that happens to expose `.sign` — predicate on the
+# object name (jwt|jsonwebtoken|jose|token|auth) keeps these out.
+[[rule.tests]]
+input = """
+signer.sign(httpRequest);
+"""
+expect_match = false

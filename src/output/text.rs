@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::types::Finding;
+use crate::types::{Finding, Surface};
 
 pub fn print(
     findings: &[Finding],
@@ -10,8 +10,26 @@ pub fn print(
     enforcement_points: usize,
     writer: &mut dyn Write,
 ) -> Result<()> {
-    if findings.is_empty() {
+    let total = findings.len() + enforcement_points;
+
+    if total == 0 {
         writeln!(writer, "No authorization patterns found.")?;
+        return Ok(());
+    }
+
+    // Headline: the externalization percentage. This is the unit of
+    // progress the v0.1 launch asks every adopter to share back, so it
+    // leads the report and is emitted unconditionally — including the
+    // 0% case, which is the case worth shouting about.
+    let pct = super::externalized_pct(enforcement_points, findings.len());
+    writeln!(
+        writer,
+        "Externalization: {pct}% ({enforcement_points} externalized / {total} enforcement points)",
+    )?;
+    writeln!(writer)?;
+
+    if findings.is_empty() {
+        // 100% externalized — headline says it all, nothing to enumerate.
         return Ok(());
     }
 
@@ -21,13 +39,22 @@ pub fn print(
             writeln!(writer)?;
         }
 
+        // Tag frontend-surface findings inline so reviewers can scan past
+        // the UI-state noise (e.g. `web/src/foo.ts` ownership matches that
+        // are "is this me?" checks, not security gates) without diving into
+        // the JSON. Backend is the default — no tag, less visual noise.
+        let surface_tag = match finding.surface {
+            Surface::Frontend => "  [frontend]",
+            Surface::Backend => "",
+        };
         writeln!(
             writer,
-            "  {}:{}  [{}]  {}",
+            "  {}:{}  [{}]  {}{}",
             finding.file.display(),
             finding.line_start,
             finding.category,
             finding.confidence,
+            surface_tag,
         )?;
 
         writeln!(writer, "  {}", finding.description)?;
@@ -91,14 +118,75 @@ pub fn print(
     }
     writeln!(writer)?;
 
-    if enforcement_points > 0 {
-        let total = findings.len() + enforcement_points;
-        let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
-        writeln!(
-            writer,
-            "       {enforcement_points} enforcement points (already using a policy engine, not flagged) — {pct}% externalized",
-        )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass, Surface};
+    use std::path::PathBuf;
+
+    fn finding(confidence: Confidence) -> Finding {
+        Finding {
+            id: "x".into(),
+            file: PathBuf::from("src/foo.rs"),
+            line_start: 1,
+            line_end: 1,
+            code_snippet: "if user.is_admin {}".into(),
+            language: Language::Java,
+            category: AuthCategory::Rbac,
+            confidence,
+            description: "embedded role check".into(),
+            pattern_rule: None,
+            rego_stub: None,
+            pass: ScanPass::Structural,
+            surface: Surface::Backend,
+        }
     }
 
-    Ok(())
+    fn render(findings: &[Finding], enforcement_points: usize) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        print(findings, Path::new("."), enforcement_points, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn no_signal_emits_no_patterns_message() {
+        let out = render(&[], 0);
+        assert_eq!(out, "No authorization patterns found.\n");
+    }
+
+    #[test]
+    fn zero_pct_still_emits_headline() {
+        // The case worth shouting about: every authz site is embedded.
+        let out = render(&[finding(Confidence::High), finding(Confidence::Low)], 0);
+        assert!(
+            out.starts_with("Externalization: 0% (0 externalized / 2 enforcement points)\n"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn full_externalization_emits_only_headline_and_returns() {
+        // Regression: previously `findings.is_empty()` short-circuited
+        // before the externalization line, so 100% scans printed nothing.
+        let out = render(&[], 5);
+        assert_eq!(
+            out,
+            "Externalization: 100% (5 externalized / 5 enforcement points)\n\n"
+        );
+    }
+
+    #[test]
+    fn mixed_headline_uses_rounded_pct() {
+        // 1 externalized of 3 total → 33%.
+        let out = render(&[finding(Confidence::High), finding(Confidence::Medium)], 1);
+        assert!(
+            out.starts_with("Externalization: 33% (1 externalized / 3 enforcement points)\n"),
+            "got: {out}"
+        );
+        // Per-finding details still rendered.
+        assert!(out.contains("Summary: 2 findings"));
+    }
 }

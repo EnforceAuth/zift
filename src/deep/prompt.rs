@@ -305,7 +305,7 @@ fn language_fence(lang: Language) -> &'static str {
 mod tests {
     use super::*;
     use crate::deep::candidate::{Candidate, CandidateKind};
-    use crate::types::{AuthCategory, Confidence, ScanPass};
+    use crate::types::{AuthCategory, Confidence, ScanPass, Surface};
     use std::path::PathBuf;
 
     fn candidate_with_imports(language: Language, imports: Vec<String>) -> Candidate {
@@ -336,6 +336,7 @@ mod tests {
             pattern_rule: Some("ts-custom-1".into()),
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 

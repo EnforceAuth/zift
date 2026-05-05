@@ -1,0 +1,87 @@
+[rule]
+id = "py-check-helper-call"
+languages = ["python"]
+category = "abac"
+confidence = "medium"
+description = "Permission check_* helper call (e.g. check_can_invite_users(user), check_basic_stream_access(...))"
+# Surfaced by the corpus shakedown on Zulip, where the actual policy
+# decision points are spelled `check_can_*`, `check_basic_*`,
+# `check_message_*`, `check_stream_*`, `check_*_access` — bare module
+# functions invoked from views/lib code. Sister rule to
+# `py-permission-check-call` (which only matches *attribute* calls like
+# `user.can("delete")`).
+#
+# No rego template: the policy intent is encoded in the function name
+# itself, not a string argument. Confidence is medium because some
+# `check_*` helpers are validation rather than authz (e.g.
+# `check_message_format`); the anchored alternation keeps it tight by
+# requiring a permission/access keyword in the suffix.
+query = """
+(call
+  function: (identifier) @fn_name
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(check_can_[a-z_]+|check_basic_[a-z_]+|check_message_[a-z_]+access|check_stream_[a-z_]+access|check_[a-z_]+_access|check_[a-z_]+_permission|check_[a-z_]+_authz)$"
+
+# -- Positive: Zulip-shape policy helpers --
+
+[[rule.tests]]
+input = """
+def maybe_invite():
+    check_can_invite_users(user_profile, invite_as)
+    invite()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def read_stream(stream):
+    check_basic_stream_access(user_profile, stream)
+    return stream.messages.all()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def edit(message):
+    check_message_edit_access(user_profile, message)
+    do_edit()
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def view(stream_id):
+    check_stream_access(user_profile, stream_id)
+    return render()
+"""
+expect_match = true
+
+# -- Negative: validation helpers, not authz --
+
+[[rule.tests]]
+input = """
+def parse(payload):
+    check_format(payload)
+    return payload
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+def post(message):
+    check_message_format(message)
+    deliver()
+"""
+expect_match = false
+
+# -- Negative: covered by py-permission-check-call --
+
+[[rule.tests]]
+input = """
+if user.can("delete"):
+    delete_resource()
+"""
+expect_match = false

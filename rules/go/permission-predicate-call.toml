@@ -1,0 +1,143 @@
+[rule]
+id = "go-permission-predicate-call"
+languages = ["go"]
+category = "rbac"
+confidence = "medium"
+description = "Boolean permission predicate (e.g. IsAdmin(), IsOwner(), CanRead(unit), HasAnyUnitAccess())"
+# Sister rule to `go-has-role-call` and `go-permission-check-call`. Those
+# require a *string-literal* argument so the rego template can substitute
+# the role/permission name. This rule covers the very common Go shape
+# where the call is a boolean predicate with no string-literal argument:
+#
+#   user.IsAdmin()
+#   repo.IsOwner(account)
+#   perm.CanRead(unit)
+#   perm.HasAnyUnitAccess()
+#
+# Surfaced by the corpus shakedown on Gitea, where the entire permission
+# model is hand-rolled around predicates of this shape. None matched any
+# string-literal-arg rule.
+#
+# No rego template: the role/permission being checked isn't recoverable
+# from the AST, so any generated stub would be misleading. The finding
+# itself is still valuable as a policy-decision marker. Confidence is
+# `medium` because predicate-style names like `IsActive` or `HasMembers`
+# can also describe non-authz state — but the anchored alternation below
+# is conservative (admin/owner/access/membership/permission keywords).
+#
+# Predicate names are explicit alternations rather than a broad
+# `Has[A-Z][A-Za-z]+` to avoid duplicate findings with the existing
+# string-literal rules (which would also match `HasRole`/`HasPermission`).
+query = """
+(call_expression
+  function: [
+    (identifier) @fn_name
+    (selector_expression field: (field_identifier) @fn_name)
+  ]
+) @match
+"""
+
+[rule.predicates.fn_name]
+match = "^(IsAdmin|IsOwner|Is[A-Z][A-Za-z]+Admin|Is[A-Z][A-Za-z]+Owner|Can[A-Z][A-Za-z]+|HasAnyUnitAccess|HasUnitAccess|HasAccess|HasMembership|HasOwnership|Owns[A-Z][A-Za-z]+)$"
+
+# -- Positive: Gitea-shape predicates --
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(repo *Repository) {
+    if repo.IsAdmin(user) {
+        deleteRepo()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(perm *Permission) {
+    if perm.IsOwner() {
+        manage()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(perm *Permission) {
+    if perm.HasAnyUnitAccess() {
+        list()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(perm *Permission, unit Unit) {
+    if perm.CanRead(unit) {
+        read()
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(repo *Repository) {
+    if IsRepoAdmin(repo, user) {
+        approve()
+    }
+}
+"""
+expect_match = true
+
+# -- Negative: not authz-shaped --
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(s *Server) {
+    if s.IsRunning() {
+        serve()
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(c *Cache) {
+    if c.HasValue("foo") {
+        useIt()
+    }
+}
+"""
+expect_match = false
+
+# -- Negative: covered by go-has-role-call (kept narrow to avoid duplicates) --
+
+[[rule.tests]]
+input = """
+package main
+
+func handle() {
+    if HasRole("admin") {
+        deleteAll()
+    }
+}
+"""
+expect_match = false
