@@ -14,6 +14,12 @@ query = """
         (string_literal (string_literal_content) @claim_type)
         (member_access_expression) @claim_type
         (identifier) @claim_type
+      ])
+    (argument
+      [
+        (string_literal (string_literal_content) @claim_value)
+        (member_access_expression) @claim_value
+        (identifier) @claim_value
       ]))
 ) @match
 """
@@ -26,7 +32,7 @@ template = """
 default allow := false
 
 allow if {
-    input.user.claims["{{claim_type}}"]
+    input.user.claims["{{claim_type}}"] == "{{claim_value}}"
 }
 """
 

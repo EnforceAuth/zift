@@ -156,10 +156,11 @@ pub fn execute_query(
             description: compiled.rule.description.clone(),
             pattern_rule: Some(compiled.rule.id.clone()),
             rego_stub: compiled.rule.rego_template.as_ref().map(|tmpl| {
-                let owned: HashMap<String, String> = captures
+                let mut owned: HashMap<String, String> = captures
                     .iter()
                     .map(|(k, v)| (k.to_string(), v.clone()))
                     .collect();
+                add_template_derived_values(&mut owned);
                 crate::rego::render_template(tmpl, &owned)
             }),
             pass: ScanPass::Structural,
@@ -168,6 +169,28 @@ pub fn execute_query(
     }
 
     Ok(findings)
+}
+
+fn add_template_derived_values(vars: &mut HashMap<String, String>) {
+    if let Some(roles) = vars.get("roles") {
+        vars.insert(
+            "roles_set".to_string(),
+            comma_separated_rego_set_items(roles),
+        );
+    }
+}
+
+fn comma_separated_rego_set_items(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .split(',')
+        .map(str::trim)
+        .filter(|role| !role.is_empty())
+        .map(|role| format!("\"{role}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn check_predicates(predicates: &[(String, Predicate)], captures: &HashMap<&str, String>) -> bool {
@@ -342,6 +365,55 @@ mod tests {
             include_str!("../../rules/typescript/has-role-call.toml"),
         );
         assert!(!findings.is_empty());
+    }
+
+    #[test]
+    fn csharp_authorize_roles_splits_comma_separated_roles_in_rego() {
+        let findings = parse_and_match(
+            r#"[Authorize(Roles = "Admin,Manager")]
+public IActionResult Delete(int id) => Ok();"#,
+            include_str!("../../rules/csharp/aspnet-authorize-roles.toml"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        let rego = findings[0].rego_stub.as_deref().unwrap();
+        assert!(
+            rego.contains(r#"input.user.role in {"Admin", "Manager"}"#),
+            "rego should split ASP.NET comma-separated roles; got: {rego}"
+        );
+    }
+
+    #[test]
+    fn csharp_has_claim_rego_includes_claim_value() {
+        let findings = parse_and_match(
+            r#"if (User.HasClaim("scope", "users.delete")) {
+    return Ok();
+}"#,
+            include_str!("../../rules/csharp/has-claim-call.toml"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        let rego = findings[0].rego_stub.as_deref().unwrap();
+        assert!(
+            rego.contains(r#"input.user.claims["scope"] == "users.delete""#),
+            "rego should require the claim value; got: {rego}"
+        );
+    }
+
+    #[test]
+    fn csharp_authorize_policy_shorthand_matches() {
+        let findings = parse_and_match(
+            r#"[Authorize("CanReadReports")]
+public IActionResult Reports() => Ok();"#,
+            include_str!("../../rules/csharp/aspnet-authorize-policy-shorthand.toml"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        let rego = findings[0].rego_stub.as_deref().unwrap();
+        assert!(
+            rego.contains(r#"input.policy == "CanReadReports""#),
+            "rego should include the shorthand policy name; got: {rego}"
+        );
     }
 
     #[test]

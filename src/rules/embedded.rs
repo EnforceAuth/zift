@@ -261,6 +261,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/csharp/aspnet-authorize-policy.toml"),
     ),
     (
+        "csharp-aspnet-authorize-policy-shorthand",
+        include_str!("../../rules/csharp/aspnet-authorize-policy-shorthand.toml"),
+    ),
+    (
         "csharp-aspnet-allow-anonymous",
         include_str!("../../rules/csharp/aspnet-allow-anonymous.toml"),
     ),

@@ -1,9 +1,9 @@
 [rule]
-id = "csharp-aspnet-authorize-roles"
+id = "csharp-aspnet-authorize-policy-shorthand"
 languages = ["csharp"]
-category = "rbac"
+category = "abac"
 confidence = "high"
-description = "ASP.NET Core [Authorize(Roles = ...)] role restriction"
+description = "ASP.NET Core [Authorize(...)] policy restriction"
 query = """
 (attribute
   name: [
@@ -12,24 +12,23 @@ query = """
   ]
   (attribute_argument_list
     (attribute_argument
-      name: (identifier) @argument_name
       (string_literal
-        (string_literal_content) @roles)))
+        (string_literal_content) @policy)))
 ) @match
 """
 
 [rule.predicates.attribute_name]
 match = "(^|\\.)Authorize(Attribute)?$"
 
-[rule.predicates.argument_name]
-eq = "Roles"
+[rule.predicates.match]
+not_match = "\\b(Roles|Policy)\\s*="
 
 [rule.rego_template]
 template = """
 default allow := false
 
 allow if {
-    input.user.role in {{{roles_set}}}
+    input.policy == "{{policy}}"
 }
 """
 
@@ -37,21 +36,21 @@ allow if {
 input = """
 using Microsoft.AspNetCore.Authorization;
 
-[Authorize(Roles = "Admin")]
-public IActionResult Delete(int id) => Ok();
-"""
-expect_match = true
-
-[[rule.tests]]
-input = """
-[Authorize(Roles = "Admin,Manager")]
-public IActionResult Delete(int id) => Ok();
+[Authorize("CanReadReports")]
+public IActionResult Reports() => Ok();
 """
 expect_match = true
 
 [[rule.tests]]
 input = """
 [Authorize(Policy = "CanDeleteUsers")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+[Authorize(Roles = "Admin")]
 public IActionResult Delete(int id) => Ok();
 """
 expect_match = false
