@@ -16,6 +16,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::Java, _) => Ok(tree_sitter_java::LANGUAGE.into()),
         (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
         (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
+        (Language::CSharp, _) => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
         _ => Err(ZiftError::UnsupportedLanguage(lang)),
     }
 }
@@ -105,15 +106,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_csharp() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = br#"
+using Microsoft.AspNetCore.Authorization;
+
+[Authorize(Roles = "Admin")]
+public class AdminController : ControllerBase {
+    public IActionResult Delete() => Ok();
+}
+"#;
+        let tree = parse_source(&mut parser, source, Language::CSharp, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn csharp_is_supported() {
+        assert!(is_language_supported(Language::CSharp));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
-        // C# has no structural grammar wired up yet — kept as the canary
+        // Kotlin has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
-        // name says it does. (Was Go before v0.2 added Go support.)
-        let err = get_language(Language::CSharp, false).unwrap_err();
+        // name says it does. (Was C# before C# structural support.)
+        let err = get_language(Language::Kotlin, false).unwrap_err();
         assert!(matches!(
             err,
-            ZiftError::UnsupportedLanguage(Language::CSharp)
+            ZiftError::UnsupportedLanguage(Language::Kotlin)
         ));
-        assert!(!is_language_supported(Language::CSharp));
+        assert!(!is_language_supported(Language::Kotlin));
     }
 }

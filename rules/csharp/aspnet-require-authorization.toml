@@ -1,0 +1,46 @@
+[rule]
+id = "csharp-aspnet-require-authorization"
+languages = ["csharp"]
+category = "middleware"
+confidence = "high"
+description = "ASP.NET Core endpoint RequireAuthorization() call"
+query = """
+(invocation_expression
+  function: (member_access_expression
+    name: (identifier) @method_name)
+  arguments: (argument_list) @arguments
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "RequireAuthorization"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+[[rule.tests]]
+input = """
+var app = builder.Build();
+app.MapGet("/admin", () => "ok").RequireAuthorization();
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var app = builder.Build();
+app.MapGet("/admin", () => "ok").RequireAuthorization("AdminsOnly");
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var app = builder.Build();
+app.MapGet("/health", () => "ok");
+"""
+expect_match = false

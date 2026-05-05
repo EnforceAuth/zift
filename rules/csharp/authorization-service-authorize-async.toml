@@ -1,0 +1,62 @@
+[rule]
+id = "csharp-authorization-service-authorize-async"
+languages = ["csharp"]
+category = "abac"
+confidence = "high"
+description = "ASP.NET Core IAuthorizationService.AuthorizeAsync(...) policy check"
+query = """
+(invocation_expression
+  function: (member_access_expression
+    name: (identifier) @method_name)
+  arguments: (argument_list) @arguments
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "AuthorizeAsync"
+
+[rule.predicates.arguments]
+match = "(Policy|Requirement|Operations\\.|\"[^\"]+\"|(?i:[A-Za-z_][A-Za-z0-9_]*?(policy|requirement)s?))"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    # TODO: translate ASP.NET authorization service call: {{arguments}}
+    input.user.authenticated == true
+}
+"""
+
+[[rule.tests]]
+input = """
+var result = await _authorizationService.AuthorizeAsync(User, resource, "CanDeleteUsers");
+if (!result.Succeeded) {
+    return Forbid();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var result = await authz.AuthorizeAsync(User, document, Operations.Read);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var result = await authz.AuthorizeAsync(User, document, policyName);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var result = await authz.AuthorizeAsync(User, resource, requirements);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var value = await client.SendAsync(request);
+"""
+expect_match = false

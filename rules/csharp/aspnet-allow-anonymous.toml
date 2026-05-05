@@ -1,0 +1,33 @@
+[rule]
+id = "csharp-aspnet-allow-anonymous"
+languages = ["csharp"]
+category = "middleware"
+confidence = "high"
+description = "ASP.NET Core [AllowAnonymous] attribute"
+query = """
+(attribute
+  name: [
+    (identifier) @attribute_name
+    (qualified_name) @attribute_name
+  ]
+) @match
+"""
+
+[rule.predicates.attribute_name]
+match = "(^|\\.)AllowAnonymous(Attribute)?$"
+
+[[rule.tests]]
+input = """
+using Microsoft.AspNetCore.Authorization;
+
+[AllowAnonymous]
+public IActionResult Health() => Ok();
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+[Authorize]
+public IActionResult Index() => Ok();
+"""
+expect_match = false

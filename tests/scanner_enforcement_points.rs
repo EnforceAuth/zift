@@ -285,3 +285,53 @@ public class OrderService {
             .collect::<Vec<_>>(),
     );
 }
+
+#[test]
+fn enforcement_points_increments_for_csharp_policy_di() {
+    // The C# import tracker seeds `Authz` from the policy alias, then propagates
+    // through constructor DI (`authz`) and the backing field (`_authz`). The
+    // resulting `_authz.AuthorizeAsync(...)` call is externalized, so it should
+    // count as an enforcement point rather than an embedded finding.
+    let result = scan_fixture(
+        "OrderController.cs",
+        r#"using Authz = Company.Policy.Authorizer;
+
+public class OrderController {
+    private readonly Authz _authz;
+
+    public OrderController(Authz authz) {
+        _authz = authz;
+    }
+
+    public async Task<IActionResult> List(User user, Document document) {
+        var result = await _authz.AuthorizeAsync(user, document, "CanReadOrders");
+        if (!result.Succeeded) {
+            return Forbid();
+        }
+        return Ok();
+    }
+}
+"#,
+    );
+
+    assert!(
+        result.enforcement_points >= 1,
+        "expected the C# policy DI AuthorizeAsync call to count as an enforcement point; \
+         got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        !result
+            .findings
+            .iter()
+            .any(|f| f.pattern_rule.as_deref()
+                == Some("csharp-authorization-service-authorize-async")),
+        "policy-routed C# call leaked into findings: {:?}",
+        result.findings,
+    );
+}

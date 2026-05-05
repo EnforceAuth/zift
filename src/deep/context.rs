@@ -5,7 +5,7 @@
 //! - **Fast path**: line-window `[start-5, end+15]` plus the first 20 lines
 //!   of the file as imports. Works for all languages. **Implemented here.**
 //! - **Smart path**: tree-sitter walk to enclosing function. Only available
-//!   for languages with an integrated grammar (TS/JS/Java today). **TODO**:
+//!   for languages with an integrated grammar. **TODO**:
 //!   land in a follow-up commit; primary path is fast-path which is
 //!   sufficient for v1. Most local 7B-14B models can figure out function
 //!   boundaries from a generous line window with imports included.

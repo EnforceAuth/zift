@@ -200,6 +200,8 @@ allow if {
 
 ## Language support
 
+These priorities describe release milestones. C# ships in the v0.2 milestone.
+
 ### Priority 1 (v0.1)
 
 | Language | Key frameworks / patterns |
@@ -214,12 +216,12 @@ allow if {
 |----------|--------------------------|
 | Python | Django (`@permission_required`, `has_perm()`), Flask-Login, FastAPI `Depends()` |
 | Go | Custom middleware, Casbin, chi/gorilla middleware chains, `if claims.Role` |
+| C# | ASP.NET Core `[Authorize]`, policy-based authorization, `ClaimsPrincipal` checks |
 
 ### Priority 3 (v0.3)
 
 | Language | Key frameworks / patterns |
 |----------|--------------------------|
-| C# | ASP.NET `[Authorize]`, policy-based authorization, `ClaimsPrincipal` checks |
 | Kotlin | Spring Security (same patterns as Java), Ktor auth plugins |
 | Ruby | Pundit, CanCanCan, Devise, `before_action` guards |
 | PHP | Laravel Gates/Policies, Symfony Voters |

@@ -1,0 +1,55 @@
+[rule]
+id = "csharp-is-in-role-call"
+languages = ["csharp"]
+category = "rbac"
+confidence = "high"
+description = "C# IsInRole(...) role check"
+query = """
+(invocation_expression
+  function: (member_access_expression
+    name: (identifier) @method_name)
+  arguments: (argument_list
+    (argument
+      [
+        (string_literal (string_literal_content) @role_value)
+        (member_access_expression) @role_value
+        (identifier) @role_value
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "IsInRole"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+if (User.IsInRole("Admin")) {
+    return Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (principal.IsInRole(Roles.Admin)) {
+    return Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (User.Identity.IsAuthenticated) {
+    return Ok();
+}
+"""
+expect_match = false

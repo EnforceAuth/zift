@@ -25,9 +25,9 @@ definitions.
 ```bash
 cargo build
 cargo build --release
-cargo test
+cargo test --all-features
 cargo fmt          # required before committing
-cargo clippy -- -D warnings
+cargo clippy --all-features -- -D warnings
 ```
 
 ## Architecture
@@ -46,8 +46,8 @@ cargo clippy -- -D warnings
 
 ### Language support
 
-- v0.1: TypeScript, JavaScript, Java, Python, Go
-- v0.2 (planned): C#, Kotlin, Ruby, PHP
+- v0.1: TypeScript, JavaScript, Java, Python, Go, C#
+- v0.2 (planned): Kotlin, Ruby, PHP
 
 ## Conventional Commits & Versioning
 

@@ -130,6 +130,7 @@ pub fn find_policy_imports(
         Language::Go => find_go_policy_imports(tree, source),
         Language::Python => find_py_policy_imports(tree, source),
         Language::Java => find_java_policy_imports(tree, source),
+        Language::CSharp => find_csharp_policy_imports(tree, source),
         // Other languages: no import detection yet.
         _ => HashSet::new(),
     };
@@ -452,6 +453,56 @@ fn find_java_policy_imports(tree: &tree_sitter::Tree, source: &[u8]) -> HashSet<
     policy_names
 }
 
+fn find_csharp_policy_imports(tree: &tree_sitter::Tree, source: &[u8]) -> HashSet<String> {
+    let mut policy_names = HashSet::new();
+
+    iter_named_descendants(tree.root_node(), |node| {
+        if node.kind() != "using_directive" {
+            return;
+        }
+
+        // `using Alias = Company.Policy.Authorizer;` binds `Alias`.
+        if let Some(alias_node) = node.child_by_field_name("name") {
+            let Some(target) = csharp_using_alias_target(node, alias_node) else {
+                return;
+            };
+            let Ok(full_text) = target.utf8_text(source) else {
+                return;
+            };
+
+            if is_policy_path(full_text)
+                && let Ok(alias) = alias_node.utf8_text(source)
+            {
+                policy_names.insert(alias.to_string());
+            }
+        }
+    });
+
+    policy_names
+}
+
+fn csharp_using_alias_target<'a>(
+    node: tree_sitter::Node<'a>,
+    alias_node: tree_sitter::Node<'a>,
+) -> Option<tree_sitter::Node<'a>> {
+    for field in ["value", "target", "path", "type"] {
+        if let Some(target) = node.child_by_field_name(field) {
+            return Some(target);
+        }
+    }
+
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.id() != alias_node.id() && csharp_node_can_be_policy_path(*child))
+}
+
+fn csharp_node_can_be_policy_path(node: tree_sitter::Node) -> bool {
+    matches!(
+        node.kind(),
+        "qualified_name" | "identifier" | "generic_name" | "member_access_expression"
+    )
+}
+
 /// Walk the tree once, collecting `(lhs_name, rhs_source_text)` edges from
 /// assignment-shaped nodes. The propagation step then checks each RHS for
 /// any current binding and adds the LHS if it matches.
@@ -473,6 +524,7 @@ fn extract_propagation_edges(
         Language::Go => visit_go_edge(node, source, &mut edges),
         Language::Python => visit_py_edge(node, source, &mut edges),
         Language::Java => visit_java_edge(node, source, &mut edges),
+        Language::CSharp => visit_csharp_edge(node, source, &mut edges),
         _ => {}
     });
 
@@ -766,6 +818,83 @@ fn visit_java_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(Stri
             };
             if let Some(l) = lhs_text {
                 push_edge(&l, rhs, edges);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn csharp_lhs_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" => node.utf8_text(source).ok().map(str::to_string),
+        // `this.factory = Policy.X` — propagate `factory`.
+        "member_access_expression" => node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(source).ok())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn csharp_variable_declarator_value<'a>(
+    node: tree_sitter::Node<'a>,
+    name: tree_sitter::Node<'a>,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.id() != name.id())
+}
+
+fn csharp_parent_type_text(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    node.parent()
+        .filter(|parent| parent.kind() == "variable_declaration")
+        .and_then(|parent| parent.child_by_field_name("type"))
+        .and_then(|ty| ty.utf8_text(source).ok())
+        .map(str::to_string)
+}
+
+fn visit_csharp_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String, String)>) {
+    match node.kind() {
+        // Covers local declarations and field declarations. C# grammar leaves
+        // the initializer as the first non-name child of `variable_declarator`.
+        "variable_declarator" => {
+            let Some(name) = node.child_by_field_name("name") else {
+                return;
+            };
+            if name.kind() != "identifier" {
+                return;
+            }
+            let lhs = name.utf8_text(source).unwrap_or("");
+            if let Some(value) = csharp_variable_declarator_value(node, name) {
+                push_edge(lhs, value.utf8_text(source).unwrap_or(""), edges);
+            } else if let Some(type_text) = csharp_parent_type_text(node, source) {
+                push_edge(lhs, &type_text, edges);
+            }
+        }
+        // Constructor/method DI: `Controller(Authz.IAuthorizer authz)`.
+        "parameter" => {
+            let (Some(name), Some(ty)) = (
+                node.child_by_field_name("name"),
+                node.child_by_field_name("type"),
+            ) else {
+                return;
+            };
+            if name.kind() != "identifier" {
+                return;
+            }
+            let lhs = name.utf8_text(source).unwrap_or("");
+            let rhs = ty.utf8_text(source).unwrap_or("");
+            push_edge(lhs, rhs, edges);
+        }
+        "assignment_expression" => {
+            let (Some(left), Some(right)) = (
+                node.child_by_field_name("left"),
+                node.child_by_field_name("right"),
+            ) else {
+                return;
+            };
+            if let Some(lhs) = csharp_lhs_name(left, source) {
+                push_edge(&lhs, right.utf8_text(source).unwrap_or(""), edges);
             }
         }
         _ => {}
@@ -1286,6 +1415,49 @@ import com.example.policy.Authorize;
         ));
     }
 
+    // ---------- C# ----------
+
+    #[test]
+    fn csharp_detects_using_policy_alias() {
+        let source = r#"
+using Company.Authz;
+using PolicyAlias = Company.Policy.Authorizer;
+using System.Collections.Generic;
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(!imports.contains("Authz"), "got: {imports:?}");
+        assert!(imports.contains("PolicyAlias"), "got: {imports:?}");
+        assert!(!imports.contains("Collections"));
+    }
+
+    #[test]
+    fn csharp_alias_checks_target_not_alias_name() {
+        let source = r#"
+using PolicyAlias = Company.Utils.Helper;
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(!imports.contains("PolicyAlias"), "got: {imports:?}");
+    }
+
+    #[test]
+    fn csharp_enforcement_point_check() {
+        let source = r#"
+using PolicyAlias = Company.Policy.Authorizer;
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(is_enforcement_point(
+            "PolicyAlias.AuthorizeAsync(User, doc, \"Read\")",
+            &imports,
+        ));
+        assert!(!is_enforcement_point("User.IsInRole(\"Admin\")", &imports));
+    }
+
     // ---------- Local data-flow propagation (option #2) ----------
 
     #[test]
@@ -1523,6 +1695,69 @@ const direct = authorize;
         assert!(imports.contains("guard"), "class field: {imports:?}");
         assert!(imports.contains("check"), "object pair: {imports:?}");
         assert!(imports.contains("direct"), "var decl: {imports:?}");
+    }
+
+    #[test]
+    fn csharp_propagates_through_constructor_di_parameter_and_field() {
+        let source = r#"
+using Authz = Company.Policy.Authorizer;
+
+public class Service {
+    private readonly Authz _authz;
+
+    public Service(Authz authz) {
+        _authz = authz;
+    }
+
+    public Task Check(User user, Document doc) {
+        return _authz.AuthorizeAsync(user, doc, "Read");
+    }
+}
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(imports.contains("Authz"), "got: {imports:?}");
+        assert!(
+            imports.contains("authz"),
+            "parameter type should seed constructor DI parameter; got: {imports:?}"
+        );
+        assert!(
+            imports.contains("_authz"),
+            "field assignment should propagate from constructor parameter; got: {imports:?}"
+        );
+        assert!(is_enforcement_point(
+            r#"_authz.AuthorizeAsync(user, doc, "Read")"#,
+            &imports,
+        ));
+    }
+
+    #[test]
+    fn csharp_propagates_through_object_initializer_and_local_variable() {
+        let source = r#"
+using Policy = Company.Policy;
+
+public class Service {
+    public void Build() {
+        var direct = Policy.Authorizer;
+        var bag = new AccessBag { Checker = direct };
+        bag.Checker.AuthorizeAsync(User, doc, "Read");
+    }
+}
+"#;
+        let tree = parse_lang(source, Language::CSharp);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::CSharp);
+
+        assert!(imports.contains("Policy"), "got: {imports:?}");
+        assert!(imports.contains("direct"), "local var: {imports:?}");
+        assert!(
+            imports.contains("Checker"),
+            "object initializer: {imports:?}"
+        );
+        assert!(is_enforcement_point(
+            r#"bag.Checker.AuthorizeAsync(User, doc, "Read")"#,
+            &imports,
+        ));
     }
 
     #[test]

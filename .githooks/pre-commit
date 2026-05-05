@@ -5,9 +5,9 @@ echo "Running cargo fmt check..."
 cargo fmt -- --check
 
 echo "Running cargo clippy..."
-cargo clippy -- -D warnings
+cargo clippy --all-features -- -D warnings
 
 echo "Running cargo test..."
-cargo test
+cargo test --all-features
 
 echo "Pre-commit checks passed."

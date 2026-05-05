@@ -1,0 +1,63 @@
+[rule]
+id = "csharp-aspnet-authorize-policy-shorthand"
+languages = ["csharp"]
+category = "abac"
+confidence = "high"
+description = "ASP.NET Core [Authorize(...)] policy restriction"
+query = """
+(attribute
+  name: [
+    (identifier) @attribute_name
+    (qualified_name) @attribute_name
+  ]
+  (attribute_argument_list
+    (attribute_argument
+      (string_literal
+        (string_literal_content) @policy)))
+) @match
+"""
+
+[rule.predicates.attribute_name]
+match = "(^|\\.)Authorize(Attribute)?$"
+
+[rule.predicates.match]
+not_match = "(\\(|,)\\s*[A-Za-z_][A-Za-z0-9_]*\\s*="
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.policy == "{{policy}}"
+}
+"""
+
+[[rule.tests]]
+input = """
+using Microsoft.AspNetCore.Authorization;
+
+[Authorize("CanReadReports")]
+public IActionResult Reports() => Ok();
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+[Authorize(Policy = "CanDeleteUsers")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+[Authorize(Roles = "Admin")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+[Authorize(AuthenticationSchemes = "Bearer")]
+public IActionResult Api() => Ok();
+"""
+expect_match = false

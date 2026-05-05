@@ -22,8 +22,8 @@ Thanks for opening a PR! A few quick notes:
 <!-- How did you verify this works? Commands, fixtures, manual steps. -->
 
 - [ ] `cargo fmt`
-- [ ] `cargo clippy -- -D warnings`
-- [ ] `cargo test`
+- [ ] `cargo clippy --all-features -- -D warnings`
+- [ ] `cargo test --all-features`
 
 ## Checklist
 
