@@ -26,7 +26,7 @@ pub fn print(
         // are "is this me?" checks, not security gates) without diving into
         // the JSON. Backend is the default — no tag, less visual noise.
         let surface_tag = match finding.surface {
-            Surface::Frontend => "  (frontend)",
+            Surface::Frontend => "  [frontend]",
             Surface::Backend => "",
         };
         writeln!(

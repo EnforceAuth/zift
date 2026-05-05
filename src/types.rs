@@ -42,12 +42,21 @@ pub enum Surface {
 
 impl Surface {
     /// Classify a finding's surface from its file path. Heuristic-only —
-    /// looks for a small set of well-known frontend directory names anywhere
-    /// in the path (`web`, `webapp`, `client`, `frontend`, `ui`, `public`,
-    /// `static`). Conservative on purpose: false negatives (frontend code
-    /// classified as backend) leave the existing behavior unchanged, while
-    /// false positives (backend code classified as frontend) would silently
-    /// downgrade real findings — so when in doubt, return `Backend`.
+    /// looks for a small set of well-known *strong* frontend directory names
+    /// anywhere in the path (`web`, `webapp`, `client`, `frontend`, `ui`).
+    /// Generic tokens like `public/` and `static/` are intentionally **not**
+    /// in the strong list — they show up in plenty of backend trees
+    /// (`lib/public/api.go`, `services/static/registry.rs`) and treating
+    /// them as Frontend on their own would silently downgrade real findings.
+    /// They only count when a strong marker is also present in the path
+    /// (e.g. `apps/web/public/main.js`), which already classifies as Frontend
+    /// via the strong marker — so dropping them from the regex is equivalent
+    /// to "weak markers require a nearby strong marker."
+    ///
+    /// Conservative on purpose: false negatives (frontend code classified as
+    /// backend) leave the existing behavior unchanged, while false positives
+    /// (backend code classified as frontend) would silently downgrade real
+    /// findings — so when in doubt, return `Backend`.
     ///
     /// The match is case-insensitive and segment-bounded (we want
     /// `app/web/foo.ts` but not `apps/network/foo.ts` or `webhooks/foo.ts`).
@@ -57,7 +66,7 @@ impl Surface {
             // Anchored at a path separator (or string start) and followed by
             // a separator so we don't accidentally match `webhooks/`,
             // `clientservice/`, etc. `(?i)` makes it case-insensitive.
-            Regex::new(r"(?i)(^|[\\/])(web|webapp|client|frontend|ui|public|static)[\\/]")
+            Regex::new(r"(?i)(^|[\\/])(web|webapp|client|frontend|ui)[\\/]")
                 .expect("static regex compiles")
         });
         if re.is_match(&path.to_string_lossy()) {
@@ -228,8 +237,10 @@ mod tests {
             Surface::classify(Path::new("apps/ui/Settings.tsx")),
             Surface::Frontend
         );
+        // `public/` co-occurring with a strong marker (`web`) is still
+        // Frontend — the strong marker carries the classification.
         assert_eq!(
-            Surface::classify(Path::new("public/assets/main.js")),
+            Surface::classify(Path::new("apps/web/public/main.js")),
             Surface::Frontend
         );
         // Case-insensitive — matches `Web/` as well as `web/`.
@@ -261,6 +272,18 @@ mod tests {
         );
         assert_eq!(
             Surface::classify(Path::new("models/perm/access/role.go")),
+            Surface::Backend
+        );
+        // Generic tokens without a strong marker stay Backend, by design —
+        // false-positive avoidance for trees like `lib/public/api.go` or
+        // `services/static/registry.rs`. Accepts a false negative on
+        // bare `public/assets/main.js`-style trees in exchange.
+        assert_eq!(
+            Surface::classify(Path::new("lib/public/api.go")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("services/static/registry.rs")),
             Surface::Backend
         );
     }
