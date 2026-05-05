@@ -28,6 +28,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
           # Use the App token so release-plz's git push (tags, etc.)
           # is authored by the App rather than the default GITHUB_TOKEN.
           token: ${{ steps.app-token.outputs.token }}
@@ -69,6 +70,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
@@ -76,6 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Release PR
+        id: release-pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
@@ -84,3 +87,19 @@ jobs:
           # release-plz PR (PRs opened with the default GITHUB_TOKEN
           # do not trigger workflow runs).
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Rebase release PR branch
+        if: steps.release-pr.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.release-pr.outputs.pr }}
+        run: |
+          set -euo pipefail
+
+          pr_number=$(jq -r '.number // empty' <<<"$PR")
+          if [[ -z "$pr_number" ]]; then
+            echo "release-plz reported a PR but did not return a PR number" >&2
+            exit 1
+          fi
+
+          gh pr update-branch "$pr_number" --rebase
