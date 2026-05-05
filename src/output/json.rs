@@ -111,7 +111,7 @@ impl From<serde_json::Error> for crate::error::ZiftError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthCategory, Confidence, Language, ScanPass};
+    use crate::types::{AuthCategory, Confidence, Language, ScanPass, Surface};
     use std::path::PathBuf;
 
     fn finding() -> Finding {
@@ -128,6 +128,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 
