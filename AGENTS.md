@@ -12,6 +12,14 @@ After cloning, configure the pre-commit hook:
 git config core.hooksPath .githooks
 ```
 
+## Shared Agent Commands
+
+When the user enters a slash command such as `/pr`, `/review`, `/commit`,
+`/handoff`, or `/address-pr-feedback`, first check
+`.agents/commands/<command>.md` and follow those instructions if present.
+Claude's `.claude/commands` directory is a symlink to these shared command
+definitions.
+
 ## Build & Development
 
 ```bash
