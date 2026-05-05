@@ -46,6 +46,26 @@ libc = "0.2"
 tempfile = "3"
 mockito = "1"
 
+# Integration tests in `tests/` reach into modules gated behind `unstable`
+# (deep, mcp, scanner, config). Mark them as requiring the feature so
+# default `cargo test` skips them cleanly; CI runs `cargo test --features
+# unstable` to exercise them.
+[[test]]
+name = "deep_http_integration"
+required-features = ["unstable"]
+
+[[test]]
+name = "deep_subprocess_integration"
+required-features = ["unstable"]
+
+[[test]]
+name = "mcp_stdio_integration"
+required-features = ["unstable"]
+
+[[test]]
+name = "scanner_enforcement_points"
+required-features = ["unstable"]
+
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/zift-{ target }{ archive-suffix }"
 bin-dir = "{ bin }{ binary-ext }"
