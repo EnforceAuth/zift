@@ -27,7 +27,7 @@ pub enum ZiftError {
     #[error("deep scan: {0}")]
     Deep(#[from] DeepError),
 
-    #[error("{0} is not yet supported in v0.1; support is planned for v0.2")]
+    #[error("{0} is not yet supported; see the README for the current language matrix")]
     UnsupportedLanguage(Language),
 
     #[error("{0}")]

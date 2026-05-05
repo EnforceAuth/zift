@@ -39,6 +39,7 @@ pub fn parse_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ZiftError;
 
     #[test]
     fn parse_typescript() {
@@ -108,7 +109,8 @@ mod tests {
         // C# has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
         // name says it does. (Was Go before v0.2 added Go support.)
-        assert!(get_language(Language::CSharp, false).is_err());
+        let err = get_language(Language::CSharp, false).unwrap_err();
+        assert!(matches!(err, ZiftError::UnsupportedLanguage(Language::CSharp)));
         assert!(!is_language_supported(Language::CSharp));
     }
 }
