@@ -110,7 +110,10 @@ mod tests {
         // that `unsupported_language_returns_error` keeps testing what its
         // name says it does. (Was Go before v0.2 added Go support.)
         let err = get_language(Language::CSharp, false).unwrap_err();
-        assert!(matches!(err, ZiftError::UnsupportedLanguage(Language::CSharp)));
+        assert!(matches!(
+            err,
+            ZiftError::UnsupportedLanguage(Language::CSharp)
+        ));
         assert!(!is_language_supported(Language::CSharp));
     }
 }
