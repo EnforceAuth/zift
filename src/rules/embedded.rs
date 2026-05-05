@@ -247,6 +247,43 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "go-access-descriptor-builder",
         include_str!("../../rules/go/access-descriptor-builder.toml"),
     ),
+    // -- C# / ASP.NET Core --
+    (
+        "csharp-aspnet-authorize-attribute",
+        include_str!("../../rules/csharp/aspnet-authorize-attribute.toml"),
+    ),
+    (
+        "csharp-aspnet-authorize-roles",
+        include_str!("../../rules/csharp/aspnet-authorize-roles.toml"),
+    ),
+    (
+        "csharp-aspnet-authorize-policy",
+        include_str!("../../rules/csharp/aspnet-authorize-policy.toml"),
+    ),
+    (
+        "csharp-aspnet-allow-anonymous",
+        include_str!("../../rules/csharp/aspnet-allow-anonymous.toml"),
+    ),
+    (
+        "csharp-aspnet-require-authorization",
+        include_str!("../../rules/csharp/aspnet-require-authorization.toml"),
+    ),
+    (
+        "csharp-aspnet-endpoint-allow-anonymous",
+        include_str!("../../rules/csharp/aspnet-endpoint-allow-anonymous.toml"),
+    ),
+    (
+        "csharp-is-in-role-call",
+        include_str!("../../rules/csharp/is-in-role-call.toml"),
+    ),
+    (
+        "csharp-has-claim-call",
+        include_str!("../../rules/csharp/has-claim-call.toml"),
+    ),
+    (
+        "csharp-authorization-service-authorize-async",
+        include_str!("../../rules/csharp/authorization-service-authorize-async.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {

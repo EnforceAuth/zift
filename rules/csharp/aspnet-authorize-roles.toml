@@ -1,0 +1,57 @@
+[rule]
+id = "csharp-aspnet-authorize-roles"
+languages = ["csharp"]
+category = "rbac"
+confidence = "high"
+description = "ASP.NET Core [Authorize(Roles = ...)] role restriction"
+query = """
+(attribute
+  name: [
+    (identifier) @attribute_name
+    (qualified_name) @attribute_name
+  ]
+  (attribute_argument_list
+    (attribute_argument
+      name: (identifier) @argument_name
+      (string_literal
+        (string_literal_content) @roles)))
+) @match
+"""
+
+[rule.predicates.attribute_name]
+match = "(^|\\.)Authorize(Attribute)?$"
+
+[rule.predicates.argument_name]
+eq = "Roles"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{roles}}"}
+}
+"""
+
+[[rule.tests]]
+input = """
+using Microsoft.AspNetCore.Authorization;
+
+[Authorize(Roles = "Admin")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+[Authorize(Roles = "Admin,Manager")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+[Authorize(Policy = "CanDeleteUsers")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false

@@ -15,7 +15,7 @@ cd zift
 git config core.hooksPath .githooks   # enables the pre-commit hook
 
 cargo build
-cargo test
+cargo test --all-features
 ```
 
 CI runs `rustfmt`, `clippy`, and the test suite. Please run all three locally
@@ -23,8 +23,8 @@ before pushing:
 
 ```bash
 cargo fmt
-cargo clippy -- -D warnings
-cargo test
+cargo clippy --all-features -- -D warnings
+cargo test --all-features
 ```
 
 ## Reporting bugs and asking questions
@@ -37,7 +37,7 @@ cargo test
 
 1. Fork the repo and create a topic branch from `main`.
 2. Make your changes. Add tests where it makes sense.
-3. Run `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test`.
+3. Run `cargo fmt`, `cargo clippy --all-features -- -D warnings`, and `cargo test --all-features`.
 4. Sign off your commits — see [DCO](#developer-certificate-of-origin) below.
 5. Use a [Conventional Commits](https://www.conventionalcommits.org/) prefix in the PR title.
 6. Open the PR. Be ready to iterate on review feedback.

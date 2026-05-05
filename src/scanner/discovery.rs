@@ -24,6 +24,7 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "java" => Some((Language::Java, false)),
         "py" | "pyi" => Some((Language::Python, false)),
         "go" => Some((Language::Go, false)),
+        "cs" => Some((Language::CSharp, false)),
         _ => None,
     }
 }
@@ -184,6 +185,14 @@ mod tests {
     }
 
     #[test]
+    fn detect_csharp_extension() {
+        assert_eq!(
+            detect_language(Path::new("Foo.cs")),
+            Some((Language::CSharp, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
         assert_eq!(detect_language(Path::new("foo.txt")), None);
@@ -257,9 +266,8 @@ mod tests {
         // Sanity: the structural detector must NOT include languages without
         // a wired-up tree-sitter grammar — otherwise the structural pass
         // would try to parse files it can't handle. The deep detector picks
-        // them up; the structural one doesn't. (Go was here before v0.2
-        // added Go structural support.)
-        assert_eq!(detect_language(Path::new("Foo.cs")), None);
+        // them up; the structural one doesn't. (C# was here before C#
+        // structural support.)
         assert_eq!(detect_language(Path::new("Foo.kt")), None);
         assert_eq!(detect_language(Path::new("foo.rb")), None);
         assert_eq!(detect_language(Path::new("foo.php")), None);
@@ -279,8 +287,13 @@ mod tests {
         let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
         assert_eq!(
             structural_langs,
-            HashSet::from([Language::TypeScript, Language::Python, Language::Go]),
-            "structural should include TS + Python + Go (Go gained structural support in v0.2)",
+            HashSet::from([
+                Language::TypeScript,
+                Language::Python,
+                Language::Go,
+                Language::CSharp
+            ]),
+            "structural should include TS + Python + Go + C#",
         );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);

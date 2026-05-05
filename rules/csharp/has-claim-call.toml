@@ -1,0 +1,55 @@
+[rule]
+id = "csharp-has-claim-call"
+languages = ["csharp"]
+category = "abac"
+confidence = "high"
+description = "C# HasClaim(...) authorization check"
+query = """
+(invocation_expression
+  function: (member_access_expression
+    name: (identifier) @method_name)
+  arguments: (argument_list
+    (argument
+      [
+        (string_literal (string_literal_content) @claim_type)
+        (member_access_expression) @claim_type
+        (identifier) @claim_type
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "HasClaim"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.claims["{{claim_type}}"]
+}
+"""
+
+[[rule.tests]]
+input = """
+if (User.HasClaim("scope", "users.delete")) {
+    return Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (principal.HasClaim(ClaimTypes.Role, "Admin")) {
+    return Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (User.IsInRole("Admin")) {
+    return Ok();
+}
+"""
+expect_match = false

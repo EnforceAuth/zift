@@ -1,0 +1,65 @@
+[rule]
+id = "csharp-aspnet-authorize-attribute"
+languages = ["csharp"]
+category = "middleware"
+confidence = "high"
+description = "ASP.NET Core [Authorize] attribute"
+query = """
+(attribute
+  name: [
+    (identifier) @attribute_name
+    (qualified_name) @attribute_name
+  ]
+) @match
+"""
+
+[rule.predicates.attribute_name]
+match = "(^|\\.)Authorize(Attribute)?$"
+
+[rule.predicates.match]
+not_match = "\\("
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+[[rule.tests]]
+input = """
+using Microsoft.AspNetCore.Authorization;
+
+[Authorize]
+public class AdminController : ControllerBase {
+    public IActionResult Index() => Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+using Microsoft.AspNetCore.Authorization;
+
+[Microsoft.AspNetCore.Authorization.Authorize]
+public class AdminController : ControllerBase {
+    public IActionResult Index() => Ok();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+[HttpGet]
+public IActionResult Index() => Ok();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+[Authorize(Roles = "Admin")]
+public IActionResult Delete(int id) => Ok();
+"""
+expect_match = false

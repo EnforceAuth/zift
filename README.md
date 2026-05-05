@@ -6,7 +6,7 @@
 
 Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/) today, with other engines (e.g. Cedar) on the roadmap.
 
-> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, Java, Python, and Go. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
+> **Status:** v0.1 — structural scanning ready for TypeScript, JavaScript, Java, Python, Go, and C#. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
 
 ## What is zift?
 
@@ -27,7 +27,7 @@ zift report .                   # detailed findings report
 
 1. **Structural scan** (tree-sitter) — fast, deterministic, zero-cost. Finds known authorization patterns: role checks, permission guards, auth middleware, security annotations.
 
-2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (C#, Kotlin, etc.).
+2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (Kotlin, Ruby, PHP, etc.).
 
 ## Supported languages
 
@@ -37,7 +37,7 @@ zift report .                   # detailed findings report
 | Java | yes (v0.1) | yes (v0.1) | Spring Security, Jakarta Security |
 | Python | yes (v0.1) | yes (v0.1) | Django, Flask, FastAPI |
 | Go | yes (v0.1) | yes (v0.1) | Gin, Echo |
-| C# | planned (v0.2) | yes (v0.1) | ASP.NET Core |
+| C# | yes (v0.1) | yes (v0.1) | ASP.NET Core |
 | Kotlin | planned (v0.2) | yes (v0.1) | Spring (Kotlin) |
 | Ruby | planned (v0.2) | yes (v0.1) | Rails |
 | PHP | planned (v0.2) | yes (v0.1) | Laravel |
