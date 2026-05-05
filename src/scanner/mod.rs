@@ -73,6 +73,18 @@ pub fn scan(
 
     let mut ts_parser = tree_sitter::Parser::new();
     let mut all_findings = Vec::new();
+    // `enforcement_points` counts call sites that *would* have matched a
+    // structural rule, but resolve to a name imported from a path containing
+    // a policy-engine indicator (`authz`, `opa`, `policy`, `rego`,
+    // `enforce`, `open-policy-agent` — see `scanner::imports`). Those calls
+    // are already routed through a policy engine, so we suppress the inline
+    // finding and count them here instead — that's what feeds
+    // `summary.externalized_pct` in the JSON output. Note: import-statement
+    // detection is TS/JS-only today (see `find_policy_imports`), so the
+    // counter is currently a no-op for Go/Java/Python codebases. Most
+    // open-source corpora we've tried also ship zero externalized policy,
+    // so a 0 here is usually correct rather than buggy. Pinned by
+    // `tests/scanner_enforcement_points.rs`.
     let mut enforcement_points: usize = 0;
     let mut seen_enforcement: std::collections::HashSet<(std::path::PathBuf, usize)> =
         std::collections::HashSet::new();
