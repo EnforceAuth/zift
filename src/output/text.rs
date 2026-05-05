@@ -21,10 +21,10 @@ pub fn print(
     // progress the v0.1 launch asks every adopter to share back, so it
     // leads the report and is emitted unconditionally — including the
     // 0% case, which is the case worth shouting about.
-    let pct = (enforcement_points as f64 / total as f64 * 100.0).round() as usize;
+    let pct = super::externalized_pct(enforcement_points, findings.len());
     writeln!(
         writer,
-        "Externalization: {pct}%  ({enforcement_points} externalized / {total} enforcement points)",
+        "Externalization: {pct}% ({enforcement_points} externalized / {total} enforcement points)",
     )?;
     writeln!(writer)?;
 
@@ -110,4 +110,73 @@ pub fn print(
     writeln!(writer)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass};
+    use std::path::PathBuf;
+
+    fn finding(confidence: Confidence) -> Finding {
+        Finding {
+            id: "x".into(),
+            file: PathBuf::from("src/foo.rs"),
+            line_start: 1,
+            line_end: 1,
+            code_snippet: "if user.is_admin {}".into(),
+            language: Language::Java,
+            category: AuthCategory::Rbac,
+            confidence,
+            description: "embedded role check".into(),
+            pattern_rule: None,
+            rego_stub: None,
+            pass: ScanPass::Structural,
+        }
+    }
+
+    fn render(findings: &[Finding], enforcement_points: usize) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        print(findings, Path::new("."), enforcement_points, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn no_signal_emits_no_patterns_message() {
+        let out = render(&[], 0);
+        assert_eq!(out, "No authorization patterns found.\n");
+    }
+
+    #[test]
+    fn zero_pct_still_emits_headline() {
+        // The case worth shouting about: every authz site is embedded.
+        let out = render(&[finding(Confidence::High), finding(Confidence::Low)], 0);
+        assert!(
+            out.starts_with("Externalization: 0% (0 externalized / 2 enforcement points)\n"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn full_externalization_emits_only_headline_and_returns() {
+        // Regression: previously `findings.is_empty()` short-circuited
+        // before the externalization line, so 100% scans printed nothing.
+        let out = render(&[], 5);
+        assert_eq!(
+            out,
+            "Externalization: 100% (5 externalized / 5 enforcement points)\n\n"
+        );
+    }
+
+    #[test]
+    fn mixed_headline_uses_rounded_pct() {
+        // 1 externalized of 3 total → 33%.
+        let out = render(&[finding(Confidence::High), finding(Confidence::Medium)], 1);
+        assert!(
+            out.starts_with("Externalization: 33% (1 externalized / 3 enforcement points)\n"),
+            "got: {out}"
+        );
+        // Per-finding details still rendered.
+        assert!(out.contains("Summary: 2 findings"));
+    }
 }
