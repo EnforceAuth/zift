@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/EnforceAuth/zift/compare/v0.1.9...v0.2.0) - 2026-05-05
+
+### Added
+
+- [**breaking**] add C# structural support ([#69](https://github.com/EnforceAuth/zift/pull/69))
+
 ## [0.1.9](https://github.com/EnforceAuth/zift/compare/v0.1.8...v0.1.9) - 2026-05-05
 
 ### Added
