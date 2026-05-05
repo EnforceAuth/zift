@@ -32,8 +32,14 @@ pub struct SemanticFinding {
 ///
 /// `scan_root` is required to read the file at `candidate.file` (relative)
 /// to populate `code_snippet` from the lines the model identified. If the
-/// file is unreadable (e.g. moved between scan and analyze), `code_snippet`
-/// falls back to the empty string — best-effort, do not fail the finding.
+/// file is unreadable (e.g. moved between scan and analyze), the snippet
+/// falls back to slicing [`Candidate::source_snippet`] for the same line
+/// range — that buffer was loaded by the structural pass so it's already
+/// in memory and represents the same source the model just analyzed.
+/// Empty `code_snippet` remains the last resort; downstream tools that
+/// surface "what was flagged" need *something* on every finding (corpus
+/// shakedown turned up 28 semantic findings with `code_snippet: ""`,
+/// which made deep-only buckets unreviewable).
 pub fn into_finding(
     sem: SemanticFinding,
     candidate: &Candidate,
@@ -85,8 +91,14 @@ pub fn into_finding(
         _ => format!("semantic-{}", sem.category.slug()),
     };
 
-    let code_snippet =
-        extract_lines(scan_root, &candidate.file, sem.line_start, sem.line_end).unwrap_or_default();
+    // Try the filesystem first — that's the source of truth and produces the
+    // same byte range a structural finding would. Fall back to slicing the
+    // candidate's expanded snippet (already in memory) when the file moved,
+    // permissions changed, or extract_lines bailed for any other reason.
+    // Last resort: empty string. We never *fail* a finding on snippet read.
+    let code_snippet = extract_lines(scan_root, &candidate.file, sem.line_start, sem.line_end)
+        .or_else(|| slice_candidate_snippet(candidate, sem.line_start, sem.line_end))
+        .unwrap_or_default();
 
     let id = compute_finding_id(
         &rule_id,
@@ -117,6 +129,46 @@ pub fn into_finding(
         // finding is tagged Frontend just like its structural twin would be.
         surface: Surface::classify(&candidate.file),
     }
+}
+
+/// Slice [`candidate.source_snippet`] to the model-reported line range,
+/// translating absolute (1-based, file-relative) line numbers into offsets
+/// within the snippet. Returns `None` if the snippet is empty, the model's
+/// range falls outside the candidate window, or the requested offsets land
+/// past the end of the snippet (which can happen when the snippet was
+/// truncated to fit `max_prompt_chars`).
+///
+/// `clamp_to_candidate` (in `deep::mod`) already keeps `sem` inside the
+/// candidate window before this gets called, but we re-check defensively
+/// rather than panic if a future caller skips the clamp.
+fn slice_candidate_snippet(
+    candidate: &crate::deep::candidate::Candidate,
+    sem_start: usize,
+    sem_end: usize,
+) -> Option<String> {
+    if candidate.source_snippet.is_empty() {
+        return None;
+    }
+    if sem_start == 0
+        || sem_end < sem_start
+        || sem_start < candidate.line_start
+        || sem_end > candidate.line_end
+    {
+        return None;
+    }
+    let lines: Vec<&str> = candidate.source_snippet.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+    // Translate file-relative 1-based line numbers into snippet-relative
+    // 0-based offsets. Snippet line 0 corresponds to `candidate.line_start`.
+    let start_idx = sem_start - candidate.line_start;
+    let end_idx = sem_end - candidate.line_start;
+    if start_idx >= lines.len() {
+        return None;
+    }
+    let end_inclusive = end_idx.min(lines.len() - 1);
+    Some(lines[start_idx..=end_inclusive].join("\n"))
 }
 
 /// Read the file at `scan_root.join(relative)` and return lines `[start, end]`
@@ -322,7 +374,8 @@ mod tests {
     #[test]
     fn into_finding_falls_back_to_empty_snippet_on_read_error() {
         let dir = tempdir().unwrap();
-        // File doesn't exist.
+        // File doesn't exist AND the candidate has no source_snippet to
+        // fall back to → last-resort empty string.
         let cand = make_candidate("nonexistent.ts", Language::TypeScript);
         let f = into_finding(make_semantic(1, 5), &cand, None, dir.path());
         assert_eq!(f.code_snippet, "");
@@ -330,6 +383,79 @@ mod tests {
         assert_eq!(f.pass, ScanPass::Semantic);
         assert_eq!(f.line_start, 1);
         assert_eq!(f.line_end, 5);
+    }
+
+    #[test]
+    fn into_finding_falls_back_to_candidate_snippet_when_file_unreadable() {
+        // Regression for corpus shakedown: 28 semantic findings shipped with
+        // `code_snippet: ""` because filesystem read failed and we had no
+        // fallback. The candidate's `source_snippet` is the same source the
+        // model just analyzed — slice it instead of dropping the snippet.
+        let dir = tempdir().unwrap();
+        // Note: file is *not* created — extract_lines must fail.
+        let mut cand = make_candidate("missing.ts", Language::TypeScript);
+        cand.line_start = 10;
+        cand.line_end = 14;
+        cand.source_snippet = "line 10\nline 11\nline 12\nline 13\nline 14".to_string();
+
+        // Model reports lines 11-12 within the candidate window.
+        let sem = make_semantic(11, 12);
+        let f = into_finding(sem, &cand, None, dir.path());
+
+        assert!(f.code_snippet.contains("line 11"));
+        assert!(f.code_snippet.contains("line 12"));
+        assert!(!f.code_snippet.contains("line 10"));
+        assert!(!f.code_snippet.contains("line 13"));
+    }
+
+    #[test]
+    fn slice_candidate_snippet_rejects_ranges_outside_window() {
+        let cand = Candidate {
+            kind: CandidateKind::ColdRegion,
+            file: PathBuf::from("a.ts"),
+            language: Language::TypeScript,
+            line_start: 10,
+            line_end: 14,
+            source_snippet: "line 10\nline 11\nline 12\nline 13\nline 14".to_string(),
+            imports: Vec::new(),
+            original_finding_id: None,
+            seed_category: None,
+        };
+        // Below window.
+        assert!(slice_candidate_snippet(&cand, 5, 8).is_none());
+        // Above window.
+        assert!(slice_candidate_snippet(&cand, 20, 22).is_none());
+        // Reversed.
+        assert!(slice_candidate_snippet(&cand, 12, 11).is_none());
+        // Zero start (defensive — clamp_to_candidate normally drops these).
+        assert!(slice_candidate_snippet(&cand, 0, 12).is_none());
+        // Empty snippet.
+        let mut empty = cand.clone();
+        empty.source_snippet.clear();
+        assert!(slice_candidate_snippet(&empty, 11, 12).is_none());
+    }
+
+    #[test]
+    fn slice_candidate_snippet_clamps_when_snippet_was_truncated() {
+        // Truncation at `max_prompt_chars` can leave the snippet shorter
+        // than `[candidate.line_start, candidate.line_end]` would imply.
+        // Tail offsets must clamp instead of panicking on out-of-bounds.
+        let cand = Candidate {
+            kind: CandidateKind::ColdRegion,
+            file: PathBuf::from("a.ts"),
+            language: Language::TypeScript,
+            line_start: 10,
+            line_end: 20, // candidate window claims 11 lines …
+            source_snippet: "line 10\nline 11\nline 12".to_string(), // … but snippet has 3
+            imports: Vec::new(),
+            original_finding_id: None,
+            seed_category: None,
+        };
+        // Model points at lines 11-15 — only 11 and 12 are in the truncated
+        // snippet, so we should get those two and not panic.
+        let got = slice_candidate_snippet(&cand, 11, 15).unwrap();
+        assert!(got.contains("line 11"));
+        assert!(got.contains("line 12"));
     }
 
     #[test]
