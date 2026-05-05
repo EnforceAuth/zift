@@ -124,7 +124,7 @@ pub fn print(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass};
+    use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass, Surface};
     use std::path::PathBuf;
 
     fn finding(confidence: Confidence) -> Finding {
@@ -141,6 +141,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 
