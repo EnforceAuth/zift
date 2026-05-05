@@ -195,7 +195,7 @@ fn expand_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthCategory, Confidence, ScanPass};
+    use crate::types::{AuthCategory, Confidence, ScanPass, Surface};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -214,6 +214,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 

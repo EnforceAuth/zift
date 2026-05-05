@@ -2,7 +2,7 @@
 
 use crate::deep::candidate::Candidate;
 use crate::scanner::matcher::compute_finding_id;
-use crate::types::{AuthCategory, Confidence, Finding, ScanPass};
+use crate::types::{AuthCategory, Confidence, Finding, ScanPass, Surface};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -112,6 +112,10 @@ pub fn into_finding(
         pattern_rule: Some(rule_id),
         rego_stub: None, // structural-only; semantic findings have no rego template
         pass: ScanPass::Semantic,
+        // Surface follows the source file, not the pass — same path
+        // heuristic as structural findings so a deep-pass `web/src/foo.ts`
+        // finding is tagged Frontend just like its structural twin would be.
+        surface: Surface::classify(&candidate.file),
     }
 }
 
@@ -180,6 +184,7 @@ mod tests {
             pattern_rule: pattern_rule.map(String::from),
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 

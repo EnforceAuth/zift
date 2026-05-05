@@ -1,5 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +18,63 @@ pub struct Finding {
     pub pattern_rule: Option<String>,
     pub rego_stub: Option<String>,
     pub pass: ScanPass,
+    /// Where in a typical app this finding lives — frontend (UI/client) or
+    /// backend (server/API). Inferred from the file path via simple
+    /// directory-name heuristics in [`Surface::classify`]. Surfaced so
+    /// downstream consumers can filter out frontend `ownership`-style noise
+    /// (e.g. Zulip's `web/src/...` `user.user_id === current_user.user_id`
+    /// matches, which are UI state checks rather than security gates) without
+    /// us having to bake that filter into rule predicates. Defaults to
+    /// `Backend` when the path doesn't match any frontend-shaped directory,
+    /// which is the right default for the scanner's primary target (backend
+    /// authz code).
+    #[serde(default)]
+    pub surface: Surface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Surface {
+    #[default]
+    Backend,
+    Frontend,
+}
+
+impl Surface {
+    /// Classify a finding's surface from its file path. Heuristic-only —
+    /// looks for a small set of well-known frontend directory names anywhere
+    /// in the path (`web`, `webapp`, `client`, `frontend`, `ui`, `public`,
+    /// `static`). Conservative on purpose: false negatives (frontend code
+    /// classified as backend) leave the existing behavior unchanged, while
+    /// false positives (backend code classified as frontend) would silently
+    /// downgrade real findings — so when in doubt, return `Backend`.
+    ///
+    /// The match is case-insensitive and segment-bounded (we want
+    /// `app/web/foo.ts` but not `apps/network/foo.ts` or `webhooks/foo.ts`).
+    pub fn classify(path: &Path) -> Self {
+        static FRONTEND_RE: OnceLock<Regex> = OnceLock::new();
+        let re = FRONTEND_RE.get_or_init(|| {
+            // Anchored at a path separator (or string start) and followed by
+            // a separator so we don't accidentally match `webhooks/`,
+            // `clientservice/`, etc. `(?i)` makes it case-insensitive.
+            Regex::new(r"(?i)(^|[\\/])(web|webapp|client|frontend|ui|public|static)[\\/]")
+                .expect("static regex compiles")
+        });
+        if re.is_match(&path.to_string_lossy()) {
+            Surface::Frontend
+        } else {
+            Surface::Backend
+        }
+    }
+}
+
+impl std::fmt::Display for Surface {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Surface::Backend => write!(f, "backend"),
+            Surface::Frontend => write!(f, "frontend"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -140,5 +199,91 @@ impl std::fmt::Display for Confidence {
             Confidence::Medium => write!(f, "medium"),
             Confidence::High => write!(f, "high"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_classifies_frontend_directories() {
+        assert_eq!(
+            Surface::classify(Path::new("web/src/foo.ts")),
+            Surface::Frontend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("apps/web/src/page.tsx")),
+            Surface::Frontend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("packages/client/index.ts")),
+            Surface::Frontend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("frontend/components/Foo.tsx")),
+            Surface::Frontend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("apps/ui/Settings.tsx")),
+            Surface::Frontend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("public/assets/main.js")),
+            Surface::Frontend
+        );
+        // Case-insensitive — matches `Web/` as well as `web/`.
+        assert_eq!(
+            Surface::classify(Path::new("Apps/Web/Foo.tsx")),
+            Surface::Frontend
+        );
+    }
+
+    #[test]
+    fn surface_does_not_misclassify_backend_paths() {
+        // Adjacent-name traps: `webhooks/` is not `web/`, `clientservice/`
+        // is not `client/` — segment boundaries matter.
+        assert_eq!(
+            Surface::classify(Path::new("internal/webhooks/handler.go")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("services/clientservice/main.go")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("server/api/users.py")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("zerver/views/auth.py")),
+            Surface::Backend
+        );
+        assert_eq!(
+            Surface::classify(Path::new("models/perm/access/role.go")),
+            Surface::Backend
+        );
+    }
+
+    #[test]
+    fn surface_default_round_trips_through_serde() {
+        // Old JSON output predates the `surface` field — deserialization
+        // must default to Backend rather than failing.
+        let no_surface = r#"{
+            "id": "x",
+            "file": "a.ts",
+            "line_start": 1,
+            "line_end": 1,
+            "code_snippet": "",
+            "language": "typescript",
+            "category": "rbac",
+            "confidence": "low",
+            "description": "",
+            "pattern_rule": null,
+            "rego_stub": null,
+            "pass": "structural"
+        }"#;
+        let f: Finding = serde_json::from_str(no_surface).unwrap();
+        assert_eq!(f.surface, Surface::Backend);
     }
 }

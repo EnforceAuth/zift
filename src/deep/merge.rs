@@ -56,7 +56,7 @@ fn range_overlap_fraction(a_start: usize, a_end: usize, b_start: usize, b_end: u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthCategory, Confidence, Language, ScanPass};
+    use crate::types::{AuthCategory, Confidence, Language, ScanPass, Surface};
     use std::path::PathBuf;
 
     fn finding(
@@ -79,6 +79,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass,
+            surface: Surface::Backend,
         }
     }
 

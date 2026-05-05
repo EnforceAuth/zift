@@ -25,7 +25,7 @@ use crate::rego::templates::{apply_confidence_wrapping, generate_default_stub, r
 use crate::rego::validator::validate_rego;
 use crate::rules::PatternRule;
 use crate::scanner;
-use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass};
+use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass, Surface};
 
 const DEFAULT_MAX_PROMPT_CHARS: usize = 16_000;
 
@@ -607,6 +607,7 @@ fn analyze_snippet(_ctx: &ServerContext, args: &Value) -> Result<Value, String> 
         pattern_rule: s.pattern_rule.clone(),
         rego_stub: None,
         pass: ScanPass::Structural,
+        surface: Surface::classify(&PathBuf::from(&parsed.file)),
     });
 
     let rendered = render(&PromptInputs {

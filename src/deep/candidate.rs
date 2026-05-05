@@ -378,7 +378,7 @@ fn overlaps_any(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthCategory, Confidence, Language, ScanPass};
+    use crate::types::{AuthCategory, Confidence, Language, ScanPass, Surface};
     use std::fs;
     use tempfile::tempdir;
 
@@ -396,6 +396,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         }
     }
 
@@ -769,7 +770,7 @@ mod tests {
         // Regression: a structural finding pointing at a deleted file used to
         // propagate `DeepError::Io` through `?`, killing the entire deep pass
         // even though deep mode is otherwise best-effort.
-        use crate::types::{AuthCategory, Confidence, Finding, ScanPass};
+        use crate::types::{AuthCategory, Confidence, Finding, ScanPass, Surface};
         let dir = tempdir().unwrap();
         // One escalation finding pointing at a file that doesn't exist.
         let bad = Finding {
@@ -785,6 +786,7 @@ mod tests {
             pattern_rule: None,
             rego_stub: None,
             pass: ScanPass::Structural,
+            surface: Surface::Backend,
         };
         // Should NOT propagate Io; should return Ok with the bad escalation
         // skipped. (No cold-region files either, so result is empty.)
