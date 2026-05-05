@@ -97,9 +97,8 @@ jobs:
           set -euo pipefail
 
           pr_number=$(jq -r '.number // empty' <<<"$PR")
-          head_branch=$(jq -r '.head_branch // empty' <<<"$PR")
-          if [[ -z "$pr_number" || -z "$head_branch" ]]; then
-            echo "release-plz reported a PR but did not return a PR number and head branch" >&2
+          if [[ -z "$pr_number" ]]; then
+            echo "release-plz reported a PR but did not return a PR number" >&2
             exit 1
           fi
 
