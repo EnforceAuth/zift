@@ -22,13 +22,12 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
-          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          client-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
 
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.sha }}
           # Use the App token so release-plz's git push (tags, etc.)
           # is authored by the App rather than the default GITHUB_TOKEN.
           token: ${{ steps.app-token.outputs.token }}
@@ -64,13 +63,12 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
-          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          client-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
 
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.sha }}
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
