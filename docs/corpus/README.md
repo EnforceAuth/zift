@@ -28,8 +28,10 @@ We are **not** shipping policies for these projects. The runs exist to stress-te
 | Java | [openmrs/openmrs-core](https://github.com/openmrs/openmrs-core) | 76 | 20 (context subset) | Deep surfaces a daemon-thread privilege bypass — a real authz decision invisible to any pattern rule. See [java.md](java.md). |
 | Python | [zulip/zulip](https://github.com/zulip/zulip) | 39 | 28 (decorator + lib/users subset) | 14 of 25 deep findings in `decorator.py` are the `@require_*` family — adding one rule converts them all to structural. See [python.md](python.md). |
 | Go | [go-gitea/gitea](https://github.com/go-gitea/gitea) | 18 | 23 (perm subset) | Deep surfaces the entire `IsAdmin`/`IsOwner`/`Has*` family the structural pass missed; one predicate widening on `go-has-role-call` closes most of the gap. See [go.md](go.md). |
+| C# | [bitwarden/server](https://github.com/bitwarden/server) | 318 | Pending | ASP.NET Core resource authorization dominates: `IAuthorizationService.AuthorizeAsync(...)`, `[Authorize("...")]`, and `[AllowAnonymous]`. See [csharp.md](csharp.md). |
 
 > The "deep" column is intentionally a **scoped subset** rather than the whole repo — running deep against 5,000+ files per language is neither cheap nor necessary to surface gaps. Each per-language doc explains the subset and why.
+> C# was added after the initial corpus shakedown; this PR records the structural baseline first, with a scoped deep pass to follow.
 >
 > The numbers move as we tighten rules. Each per-language doc records the commit SHA scanned and the Zift version, so what you see here is reproducible.
 
