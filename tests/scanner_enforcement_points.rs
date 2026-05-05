@@ -126,3 +126,162 @@ export function listOrders(user: User) {
             .collect::<Vec<_>>(),
     );
 }
+
+/// Helper: run a scan against a single-file fixture and return the result.
+fn scan_fixture(filename: &str, contents: &str) -> zift::scanner::ScanResult {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join(filename), contents).unwrap();
+
+    let config = ZiftConfig::default();
+    let loaded_rules = rules::load_rules(None, &config).expect("embedded rules load");
+    let args = ScanArgs {
+        path: dir.path().to_path_buf(),
+        ..ScanArgs::default()
+    };
+    zift::scanner::scan(dir.path(), &loaded_rules, &args, &config).unwrap()
+}
+
+#[test]
+fn enforcement_points_increments_for_go_opa_import() {
+    // Mirrors what we saw in the OCP corpus repo: an unaliased OPA import
+    // where the binding (`rego`) is the path basename, used at a call site
+    // (`rego.New(...)`) that the `go-opa-rego-eval` rule structurally matches.
+    let result = scan_fixture(
+        "decide.go",
+        r#"package main
+
+import (
+    "fmt"
+    "github.com/open-policy-agent/opa/rego"
+)
+
+func decide() {
+    _ = rego.New(rego.Query("data.authz.allow"))
+    fmt.Println("decided")
+}
+"#,
+    );
+
+    assert_eq!(
+        result.enforcement_points,
+        1,
+        "expected the OPA rego.New() call to count as an enforcement point; \
+         got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        !result
+            .findings
+            .iter()
+            .any(|f| f.pattern_rule.as_deref() == Some("go-opa-rego-eval")),
+        "policy-routed call leaked into findings: {:?}",
+        result.findings,
+    );
+}
+
+#[test]
+fn go_policy_propagation_does_not_suppress_unrelated_paired_assignment() {
+    let result = scan_fixture(
+        "mixed.go",
+        r#"package main
+
+import "github.com/example/authz"
+
+func check() {
+    factory, RequirePermission := authz.NewAccess, func(string) bool { return true }
+    _ = factory
+    if RequirePermission("orders:read") {
+        return
+    }
+}
+"#,
+    );
+
+    assert_eq!(
+        result.enforcement_points,
+        0,
+        "unrelated second assignment target should not be counted as externalized; findings: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        result
+            .findings
+            .iter()
+            .any(|f| f.pattern_rule.as_deref() == Some("go-permission-check-call")),
+        "local RequirePermission call should remain an embedded finding; got: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn enforcement_points_increments_for_python_authz_import() {
+    // Use a `check_*_permission` shape so it actually trips a structural rule
+    // (`py-check-helper-call`) — without a matching rule there's no candidate
+    // finding for the import shortcut to reroute, so the counter stays at 0.
+    let result = scan_fixture(
+        "views.py",
+        r#"from authz import check_orders_permission
+
+def list_orders(user):
+    check_orders_permission(user)
+    return db.orders.find()
+"#,
+    );
+
+    assert!(
+        result.enforcement_points >= 1,
+        "expected the Python check_permission() call to count as an enforcement point; \
+         got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn enforcement_points_increments_for_java_authz_import() {
+    // `Authorize.hasRole("admin")` trips `java-has-role-call` structurally; the
+    // policy-import shortcut should reroute it because the receiver `Authorize`
+    // is bound to the policy module.
+    let result = scan_fixture(
+        "OrderService.java",
+        r#"package com.example;
+
+import com.example.policy.Authorize;
+
+public class OrderService {
+    public boolean list(User user) {
+        return Authorize.hasRole("admin");
+    }
+}
+"#,
+    );
+
+    assert!(
+        result.enforcement_points >= 1,
+        "expected the Java Authorize.check() call to count as an enforcement point; \
+         got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+}

@@ -79,9 +79,9 @@ pub fn scan(
     // `enforce`, `open-policy-agent` — see `scanner::imports`). Those calls
     // are already routed through a policy engine, so we suppress the inline
     // finding and count them here instead — that's what feeds
-    // `summary.externalized_pct` in the JSON output. Note: import-statement
-    // detection is TS/JS-only today (see `find_policy_imports`), so the
-    // counter is currently a no-op for Go/Java/Python codebases. Most
+    // `summary.externalized_pct` in the JSON output. Import-statement
+    // detection is wired for TS/JS, Go, Python, and Java today; other
+    // languages (C#, Kotlin, Ruby, PHP) currently no-op the counter. Most
     // open-source corpora we've tried also ship zero externalized policy,
     // so a 0 here is usually correct rather than buggy. Pinned by
     // `tests/scanner_enforcement_points.rs`.
