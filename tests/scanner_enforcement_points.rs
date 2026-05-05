@@ -185,6 +185,48 @@ func decide() {
 }
 
 #[test]
+fn go_policy_propagation_does_not_suppress_unrelated_paired_assignment() {
+    let result = scan_fixture(
+        "mixed.go",
+        r#"package main
+
+import "github.com/example/authz"
+
+func check() {
+    factory, RequirePermission := authz.NewAccess, func(string) bool { return true }
+    _ = factory
+    if RequirePermission("orders:read") {
+        return
+    }
+}
+"#,
+    );
+
+    assert_eq!(
+        result.enforcement_points,
+        0,
+        "unrelated second assignment target should not be counted as externalized; findings: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        result
+            .findings
+            .iter()
+            .any(|f| f.pattern_rule.as_deref() == Some("go-permission-check-call")),
+        "local RequirePermission call should remain an embedded finding; got: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
 fn enforcement_points_increments_for_python_authz_import() {
     // Use a `check_*_permission` shape so it actually trips a structural rule
     // (`py-check-helper-call`) — without a matching rule there's no candidate

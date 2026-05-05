@@ -488,33 +488,51 @@ fn push_edge(lhs: &str, rhs: &str, edges: &mut Vec<(String, String)>) {
     }
 }
 
-/// Pull every immediate `identifier`-like child out of a Go `expression_list`
-/// (or a single expression) as a candidate LHS. Skips non-identifier targets
-/// like indexed assignments — those don't introduce a new name we can track.
-fn collect_go_lhs_idents(
-    expr_list: tree_sitter::Node,
+fn go_lhs_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" => node.utf8_text(source).ok().map(str::to_string),
+        // `d.accessFactory = authz.X` — propagate the field name, since
+        // any later `<anything>.accessFactory` will textually contain it.
+        "selector_expression" => node
+            .child_by_field_name("field")
+            .and_then(|n| n.utf8_text(source).ok())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn collect_go_assignment_edges(
+    left: tree_sitter::Node,
+    right: tree_sitter::Node,
     source: &[u8],
-    rhs: &str,
     edges: &mut Vec<(String, String)>,
 ) {
-    let mut cursor = expr_list.walk();
-    let children: Vec<tree_sitter::Node> = if expr_list.kind() == "expression_list" {
-        expr_list.named_children(&mut cursor).collect()
+    let mut left_cursor = left.walk();
+    let lhs_nodes: Vec<tree_sitter::Node> = if left.kind() == "expression_list" {
+        left.named_children(&mut left_cursor).collect()
     } else {
-        vec![expr_list]
+        vec![left]
     };
-    for child in children {
-        let name = match child.kind() {
-            "identifier" => child.utf8_text(source).ok(),
-            // `d.accessFactory = authz.X` — propagate the field name, since
-            // any later `<anything>.accessFactory` will textually contain it.
-            "selector_expression" => child
-                .child_by_field_name("field")
-                .and_then(|n| n.utf8_text(source).ok()),
-            _ => None,
-        };
-        if let Some(n) = name {
-            push_edge(n, rhs, edges);
+
+    let mut right_cursor = right.walk();
+    let rhs_nodes: Vec<tree_sitter::Node> = if right.kind() == "expression_list" {
+        right.named_children(&mut right_cursor).collect()
+    } else {
+        vec![right]
+    };
+
+    if rhs_nodes.len() == lhs_nodes.len() {
+        for (lhs, rhs) in lhs_nodes.into_iter().zip(rhs_nodes) {
+            if let Some(name) = go_lhs_name(lhs, source) {
+                push_edge(&name, rhs.utf8_text(source).unwrap_or(""), edges);
+            }
+        }
+    } else {
+        let rhs = right.utf8_text(source).unwrap_or("");
+        for lhs in lhs_nodes {
+            if let Some(name) = go_lhs_name(lhs, source) {
+                push_edge(&name, rhs, edges);
+            }
         }
     }
 }
@@ -529,19 +547,36 @@ fn visit_go_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String
             ) else {
                 return;
             };
-            let rhs = right.utf8_text(source).unwrap_or("");
-            collect_go_lhs_idents(left, source, rhs, edges);
+            collect_go_assignment_edges(left, right, source, edges);
         }
         // `var x = <expr>`, `var x T = <expr>`, including grouped `var ( ... )`.
         "var_spec" => {
             let Some(value) = node.child_by_field_name("value") else {
                 return;
             };
-            let rhs = value.utf8_text(source).unwrap_or("");
             let mut cursor = node.walk();
-            for n in node.children_by_field_name("name", &mut cursor) {
-                if let Ok(text) = n.utf8_text(source) {
-                    push_edge(text, rhs, edges);
+            let names: Vec<tree_sitter::Node> =
+                node.children_by_field_name("name", &mut cursor).collect();
+
+            let mut value_cursor = value.walk();
+            let values: Vec<tree_sitter::Node> = if value.kind() == "expression_list" {
+                value.named_children(&mut value_cursor).collect()
+            } else {
+                vec![value]
+            };
+
+            if names.len() == values.len() {
+                for (name, value) in names.into_iter().zip(values) {
+                    if let Ok(text) = name.utf8_text(source) {
+                        push_edge(text, value.utf8_text(source).unwrap_or(""), edges);
+                    }
+                }
+            } else {
+                let rhs = value.utf8_text(source).unwrap_or("");
+                for name in names {
+                    if let Ok(text) = name.utf8_text(source) {
+                        push_edge(text, rhs, edges);
+                    }
                 }
             }
         }
@@ -560,8 +595,7 @@ fn visit_go_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String
             ) else {
                 return;
             };
-            let rhs = right.utf8_text(source).unwrap_or("");
-            collect_go_lhs_idents(left, source, rhs, edges);
+            collect_go_assignment_edges(left, right, source, edges);
         }
         // `&S{accessFactory: authz.NewAccess}` — the OCP-shaped DI case.
         // Treat the field name as a binding when its value mentions one.
@@ -623,6 +657,51 @@ fn collect_py_lhs_idents(
     }
 }
 
+fn py_lhs_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" => node.utf8_text(source).ok().map(str::to_string),
+        "attribute" => node
+            .child_by_field_name("attribute")
+            .and_then(|attr| attr.utf8_text(source).ok())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn py_sequence_children(node: tree_sitter::Node) -> Option<Vec<tree_sitter::Node>> {
+    if !matches!(
+        node.kind(),
+        "pattern_list" | "tuple_pattern" | "list_pattern" | "expression_list" | "tuple" | "list"
+    ) {
+        return None;
+    }
+
+    let mut cursor = node.walk();
+    Some(node.named_children(&mut cursor).collect())
+}
+
+fn collect_py_assignment_edges(
+    left: tree_sitter::Node,
+    right: tree_sitter::Node,
+    source: &[u8],
+    edges: &mut Vec<(String, String)>,
+) {
+    if let (Some(lhs_nodes), Some(rhs_nodes)) =
+        (py_sequence_children(left), py_sequence_children(right))
+        && lhs_nodes.len() == rhs_nodes.len()
+    {
+        for (lhs, rhs) in lhs_nodes.into_iter().zip(rhs_nodes) {
+            if let Some(name) = py_lhs_name(lhs, source) {
+                push_edge(&name, rhs.utf8_text(source).unwrap_or(""), edges);
+            }
+        }
+        return;
+    }
+
+    let rhs = right.utf8_text(source).unwrap_or("");
+    collect_py_lhs_idents(left, source, rhs, edges);
+}
+
 fn visit_py_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String, String)>) {
     match node.kind() {
         "assignment" => {
@@ -632,8 +711,7 @@ fn visit_py_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String
             ) else {
                 return;
             };
-            let rhs = right.utf8_text(source).unwrap_or("");
-            collect_py_lhs_idents(left, source, rhs, edges);
+            collect_py_assignment_edges(left, right, source, edges);
         }
         // Walrus: `(x := f())`. Its `name` field is always a bare identifier.
         "named_expression" => {
@@ -1287,6 +1365,46 @@ func init() {
     }
 
     #[test]
+    fn go_does_not_cross_contaminate_paired_short_var_decl() {
+        let source = r#"
+package main
+
+import "github.com/example/authz"
+
+func init() {
+    factory, localCheck := authz.New, func() bool { return true }
+    _ = factory
+    _ = localCheck
+}
+"#;
+        let tree = parse_lang(source, Language::Go);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Go);
+        assert!(imports.contains("factory"));
+        assert!(
+            !imports.contains("localCheck"),
+            "localCheck came from the second RHS and must not inherit authz; got: {imports:?}"
+        );
+    }
+
+    #[test]
+    fn go_does_not_cross_contaminate_paired_var_spec() {
+        let source = r#"
+package main
+
+import "github.com/example/authz"
+
+var factory, localCheck = authz.New, func() bool { return true }
+"#;
+        let tree = parse_lang(source, Language::Go);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Go);
+        assert!(imports.contains("factory"));
+        assert!(
+            !imports.contains("localCheck"),
+            "localCheck came from the second RHS and must not inherit authz; got: {imports:?}"
+        );
+    }
+
+    #[test]
     fn go_no_propagation_without_policy_import() {
         let source = r#"
 package main
@@ -1323,6 +1441,22 @@ helper = check_orders_permission
         assert!(imports.contains("guard"), "got: {imports:?}");
         assert!(imports.contains("helper"), "got: {imports:?}");
         assert!(is_enforcement_point("self.guard(user)", &imports));
+    }
+
+    #[test]
+    fn py_does_not_cross_contaminate_paired_assignment() {
+        let source = r#"
+from authz import check_orders_permission
+
+guard, local_check = check_orders_permission, lambda user: True
+"#;
+        let tree = parse_lang(source, Language::Python);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Python);
+        assert!(imports.contains("guard"));
+        assert!(
+            !imports.contains("local_check"),
+            "local_check came from the second RHS and must not inherit authz; got: {imports:?}"
+        );
     }
 
     #[test]
