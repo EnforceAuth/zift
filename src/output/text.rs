@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::types::Finding;
+use crate::types::{Finding, Surface};
 
 pub fn print(
     findings: &[Finding],
@@ -21,13 +21,22 @@ pub fn print(
             writeln!(writer)?;
         }
 
+        // Tag frontend-surface findings inline so reviewers can scan past
+        // the UI-state noise (e.g. `web/src/foo.ts` ownership matches that
+        // are "is this me?" checks, not security gates) without diving into
+        // the JSON. Backend is the default — no tag, less visual noise.
+        let surface_tag = match finding.surface {
+            Surface::Frontend => "  [frontend]",
+            Surface::Backend => "",
+        };
         writeln!(
             writer,
-            "  {}:{}  [{}]  {}",
+            "  {}:{}  [{}]  {}{}",
             finding.file.display(),
             finding.line_start,
             finding.category,
             finding.confidence,
+            surface_tag,
         )?;
 
         writeln!(writer, "  {}", finding.description)?;
