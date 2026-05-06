@@ -191,10 +191,11 @@ fn add_template_derived_values(vars: &mut HashMap<String, String>) {
 /// derivation paths can diverge without dragging each other along (e.g. if
 /// Cedar grows entity-type prefixes like `Role::"admin"` for its set items).
 fn add_cedar_template_derived_values(vars: &mut HashMap<String, String>) {
-    if let Some(roles) = vars.get("roles") {
+    let source = vars.get("roles").or_else(|| vars.get("role_value"));
+    if let Some(value) = source {
         vars.insert(
             "cedar_roles_set".to_string(),
-            comma_separated_quoted_items(roles),
+            comma_separated_quoted_items(value),
         );
     }
 }

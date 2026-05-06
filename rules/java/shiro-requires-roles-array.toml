@@ -34,7 +34,7 @@ permit (
     resource
 )
 when {
-    principal.role == "{{role_value}}"
+    principal.role in [{{cedar_roles_set}}]
 };
 """
 [[rule.tests]]

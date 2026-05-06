@@ -17,7 +17,7 @@ fn placeholder_re() -> &'static Regex {
 
 fn string_literal_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"["']([^"']+)["']"#).unwrap())
+    RE.get_or_init(|| Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap())
 }
 
 /// Render a Cedar template by replacing `{{key}}` placeholders with values.
@@ -53,7 +53,11 @@ fn strip_quotes(s: &str) -> &str {
 pub fn extract_string_literals(code: &str) -> Vec<String> {
     string_literal_re()
         .captures_iter(code)
-        .map(|c| c[1].to_string())
+        .filter_map(|c| {
+            c.get(1)
+                .or_else(|| c.get(2))
+                .map(|m| m.as_str().to_string())
+        })
         .collect()
 }
 
@@ -270,6 +274,20 @@ mod tests {
     fn extract_literals() {
         let lits = extract_string_literals(r#"hasRole("admin", "manager")"#);
         assert_eq!(lits, vec!["admin", "manager"]);
+    }
+
+    #[test]
+    fn extract_literals_mixed_quote_styles() {
+        let lits = extract_string_literals(r#"check("admin"); check('manager');"#);
+        assert_eq!(lits, vec!["admin", "manager"]);
+    }
+
+    #[test]
+    fn extract_literals_skips_mismatched_quotes() {
+        // The old `["']([^"']+)["']` pattern would pair the opening `"` with
+        // the closing `'`; alternation enforces matching delimiters.
+        let lits = extract_string_literals(r#"check("foo')"#);
+        assert!(lits.is_empty());
     }
 
     #[test]

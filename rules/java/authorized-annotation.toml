@@ -48,7 +48,7 @@ permit (
     resource
 )
 when {
-    principal.role == "TODO"
+    principal.role == "{{role_value}}"
 };
 """
 [[rule.tests]]

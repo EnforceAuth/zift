@@ -41,7 +41,7 @@ permit (
     resource
 )
 when {
-    principal.role == "TODO"
+    "{{perm_name}}" in principal.permissions
 };
 """
 [[rule.tests]]
