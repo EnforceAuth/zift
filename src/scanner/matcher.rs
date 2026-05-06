@@ -483,6 +483,36 @@ public IActionResult Reports() => Ok();"#,
         assert!(!findings.is_empty());
     }
 
+    #[test]
+    fn identifier_includes_check_is_role_shaped_only() {
+        let findings = parse_and_match(
+            r#"if (userGroups.includes("manager")) { allow(); }"#,
+            include_str!("../../rules/typescript/identifier-includes-check.toml"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+        let rego = findings[0].rego_stub.as_deref().unwrap();
+        assert!(
+            rego.contains(r#""manager" in input.user.roles"#),
+            "rego should use a role membership check; got: {rego}"
+        );
+        let cedar = findings[0].cedar_stub.as_deref().unwrap();
+        assert!(
+            cedar.contains(r#"principal.roles.contains("manager")"#),
+            "cedar should use a role membership check; got: {cedar}"
+        );
+
+        let permission_findings = parse_and_match(
+            r#"if (permissions.includes("write")) { allow(); }"#,
+            include_str!("../../rules/typescript/identifier-includes-check.toml"),
+        );
+        assert!(
+            permission_findings.is_empty(),
+            "bare permission collections need a permission-shaped rule"
+        );
+    }
+
     // -- Java rule tests --
 
     fn parse_and_match_java(source: &str, rule_toml: &str) -> Vec<Finding> {

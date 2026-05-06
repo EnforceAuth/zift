@@ -13,6 +13,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         include_str!("../../rules/typescript/role-includes-check.toml"),
     ),
     (
+        "identifier-includes-check",
+        include_str!("../../rules/typescript/identifier-includes-check.toml"),
+    ),
+    (
         "has-role-call",
         include_str!("../../rules/typescript/has-role-call.toml"),
     ),

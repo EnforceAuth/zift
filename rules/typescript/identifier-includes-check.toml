@@ -1,0 +1,110 @@
+[rule]
+id = "ts-identifier-includes-check"
+languages = ["typescript", "javascript"]
+category = "rbac"
+confidence = "high"
+description = "Role or group collection inclusion check on a bare identifier (e.g., userGroups.includes(\"admin\"))"
+query = """
+(call_expression
+  function: (member_expression
+    object: (identifier) @collection
+    property: (property_identifier) @method)
+  arguments: (arguments
+    (string) @role_value)
+) @match
+"""
+
+[rule.predicates.collection]
+match = "^(roles?|groups?|userRoles|userGroups)$"
+
+[rule.predicates.method]
+match = "^(includes|indexOf|contains|some|has)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{role_value}}" in input.user.roles
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role_value}}")
+};
+"""
+
+[[rule.tests]]
+input = """
+if (userGroups.includes("manager")) {
+  allow();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (groups.indexOf("admin") > -1) {
+  allow();
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+if (permissions.includes("write")) {
+  allow();
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if (claims.has("customer")) {
+  allow();
+}
+"""
+expect_match = false
+language = "javascript"
+
+[[rule.tests]]
+input = """
+if (scope.includes("read:billing")) {
+  allow();
+}
+"""
+expect_match = false
+language = "javascript"
+
+[[rule.tests]]
+input = """
+if (scopes.has("write:billing")) {
+  allow();
+}
+"""
+expect_match = false
+language = "javascript"
+
+[[rule.tests]]
+input = """
+if (cache.has("key")) {
+  hit();
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+if (tags.includes("foo")) {
+  filter();
+}
+"""
+expect_match = false
