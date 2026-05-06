@@ -343,7 +343,7 @@ fn externalized_rules_count_without_policy_import_shortcut() {
             "handler.js",
             r#"
 async function decide(client, params) {
-  return client.isAuthorizedWithToken(params);
+  return avp.isAuthorizedWithToken(params);
 }
 "#,
             "ts-aws-verified-permissions",
@@ -352,7 +352,7 @@ async function decide(client, params) {
             "views.py",
             r#"
 def decide(client, params):
-    return client.is_authorized(**params)
+    return avp.is_authorized(**params)
 "#,
             "py-aws-verified-permissions",
         ),
@@ -370,8 +370,8 @@ func decide(ps *PolicySet, req Request) {
         (
             "Handler.cs",
             r#"
-public async Task<bool> Decide(Client client, Request request) {
-    var response = await client.IsAuthorizedAsync(request);
+public async Task<bool> Decide(Client avp, Request request) {
+    var response = await avp.IsAuthorizedAsync(request);
     return response.Decision == Decision.Allow;
 }
 "#,

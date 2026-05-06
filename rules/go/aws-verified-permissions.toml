@@ -17,7 +17,7 @@ query = """
 match = "^(IsAuthorized|IsAuthorizedWithToken)$"
 
 [rule.predicates.receiver]
-match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+match = "(?i)(verifiedpermissions|verified_permissions|avp|\\bvp\\b)"
 
 [[rule.tests]]
 input = """
@@ -25,8 +25,8 @@ package main
 
 import "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
 
-func decide(client *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedInput) {
-    out, err := client.IsAuthorized(ctx, input)
+func decide(avp *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedInput) {
+    out, err := avp.IsAuthorized(ctx, input)
     _ = out
     _ = err
 }
@@ -37,8 +37,8 @@ expect_match = true
 input = """
 package main
 
-func decide(client *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedWithTokenInput) {
-    out, err := client.IsAuthorizedWithToken(ctx, input)
+func decide(verifiedpermissions *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedWithTokenInput) {
+    out, err := verifiedpermissions.IsAuthorizedWithToken(ctx, input)
     _ = out
     _ = err
 }
@@ -51,6 +51,18 @@ package main
 
 func handle(client *http.Client, req *http.Request) {
     client.Do(req)
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(client *Authorizer, ctx context.Context, input Input) {
+    out, err := client.IsAuthorized(ctx, input)
+    _ = out
+    _ = err
 }
 """
 expect_match = false

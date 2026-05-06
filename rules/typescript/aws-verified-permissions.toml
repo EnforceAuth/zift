@@ -17,7 +17,7 @@ query = """
 match = "^(isAuthorized|isAuthorizedWithToken)$"
 
 [rule.predicates.receiver]
-match = "(?i)(verifiedpermissions|verified_permissions|verifiedPermissionsClient|avp|vp|client)"
+match = "(?i)(verifiedpermissions|verified_permissions|verifiedPermissionsClient|avp|\\bvp\\b)"
 
 [[rule.tests]]
 input = """
@@ -30,13 +30,19 @@ expect_match = true
 
 [[rule.tests]]
 input = """
-const client = new VerifiedPermissionsClient({});
-await client.isAuthorized(params);
+const verifiedPermissionsClient = new VerifiedPermissionsClient({});
+await verifiedPermissionsClient.isAuthorized(params);
 """
 expect_match = true
 
 [[rule.tests]]
 input = """
 await user.isAuthorized();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+await client.isAuthorized(params);
 """
 expect_match = false

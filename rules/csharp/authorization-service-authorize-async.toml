@@ -16,7 +16,7 @@ query = """
 eq = "AuthorizeAsync"
 
 [rule.predicates.arguments]
-match = "(Policy|Requirement|Operations\\.|\"[^\"]+\"|(?i:[A-Za-z_][A-Za-z0-9_]*?(policy|requirement)s?))"
+match = "(Policy|Requirement|Operations\\.|\"[^\"]+\"|(?i:\\b[A-Za-z_]*(policy|requirement)[A-Za-z0-9_]*\\b))"
 
 [rule.rego_template]
 template = """

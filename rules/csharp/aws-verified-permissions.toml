@@ -17,22 +17,28 @@ query = """
 match = "^(IsAuthorizedAsync|IsAuthorizedWithTokenAsync)$"
 
 [rule.predicates.receiver]
-match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+match = "(?i)(verifiedpermissions|verified_permissions|avp|\\bvp\\b)"
 
 [[rule.tests]]
 input = """
-var response = await client.IsAuthorizedAsync(request);
+var response = await avp.IsAuthorizedAsync(request);
 """
 expect_match = true
 
 [[rule.tests]]
 input = """
-var response = await client.IsAuthorizedWithTokenAsync(request);
+var response = await verifiedPermissions.IsAuthorizedWithTokenAsync(request);
 """
 expect_match = true
 
 [[rule.tests]]
 input = """
 var response = await client.SendAsync(request);
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+var response = await client.IsAuthorizedAsync(request);
 """
 expect_match = false

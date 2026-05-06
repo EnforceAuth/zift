@@ -14,7 +14,7 @@ query = """
 """
 
 [rule.predicates.method_name]
-match = "^(NewPolicySetFromBytes|IsAuthorized)$"
+eq = "IsAuthorized"
 
 [rule.predicates.receiver]
 match = "(?i)(cedar|policyset|policy_set|ps|authorizer|authz)"
@@ -31,7 +31,7 @@ func loadPolicySet(src []byte) {
     _ = err
 }
 """
-expect_match = true
+expect_match = false
 
 [[rule.tests]]
 input = """

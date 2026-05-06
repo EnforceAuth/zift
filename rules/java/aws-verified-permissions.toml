@@ -16,15 +16,15 @@ query = """
 match = "^(isAuthorized|isAuthorizedWithToken)$"
 
 [rule.predicates.receiver]
-match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+match = "(?i)(verifiedpermissions|verified_permissions|avp|\\bvp\\b)"
 
 [[rule.tests]]
 input = """
 import software.amazon.awssdk.services.verifiedpermissions.VerifiedPermissionsClient;
 
 class Handler {
-    void decide(VerifiedPermissionsClient client, IsAuthorizedRequest request) {
-        client.isAuthorized(request);
+    void decide(VerifiedPermissionsClient avp, IsAuthorizedRequest request) {
+        avp.isAuthorized(request);
     }
 }
 """
@@ -33,8 +33,8 @@ expect_match = true
 [[rule.tests]]
 input = """
 class Handler {
-    void decide(VerifiedPermissionsClient client, IsAuthorizedWithTokenRequest request) {
-        client.isAuthorizedWithToken(request);
+    void decide(VerifiedPermissionsClient verifiedPermissions, IsAuthorizedWithTokenRequest request) {
+        verifiedPermissions.isAuthorizedWithToken(request);
     }
 }
 """
@@ -45,6 +45,16 @@ input = """
 class Handler {
     void run(Service svc) {
         svc.process(input);
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+class Handler {
+    void decide(Authorizer client, Request request) {
+        client.isAuthorized(request);
     }
 }
 """
