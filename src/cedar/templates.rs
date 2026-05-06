@@ -4,24 +4,35 @@
 //! comments and the `permit (...) when { ... };` policy form.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use regex::Regex;
 
 use crate::types::{AuthCategory, Confidence};
 
+fn placeholder_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\{\{(\w+)\}\}").unwrap())
+}
+
+fn string_literal_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r#"["']([^"']+)["']"#).unwrap())
+}
+
 /// Render a Cedar template by replacing `{{key}}` placeholders with values.
 /// String values captured from tree-sitter are stripped of surrounding quotes.
 pub fn render_template(template: &str, vars: &HashMap<String, String>) -> String {
-    let re = Regex::new(r"\{\{(\w+)\}\}").unwrap();
-    re.replace_all(template, |caps: &regex::Captures| {
-        let key = &caps[1];
-        match vars.get(key) {
-            Some(val) if key.ends_with("_set") => val.to_string(),
-            Some(val) => strip_quotes(val).to_string(),
-            None => caps[0].to_string(),
-        }
-    })
-    .to_string()
+    placeholder_re()
+        .replace_all(template, |caps: &regex::Captures| {
+            let key = &caps[1];
+            match vars.get(key) {
+                Some(val) if key.ends_with("_set") => val.to_string(),
+                Some(val) => strip_quotes(val).to_string(),
+                None => caps[0].to_string(),
+            }
+        })
+        .to_string()
 }
 
 fn strip_quotes(s: &str) -> &str {
@@ -40,8 +51,10 @@ fn strip_quotes(s: &str) -> &str {
 /// engine-specific extraction (e.g. principal/action splits) without
 /// destabilising the Rego path.
 pub fn extract_string_literals(code: &str) -> Vec<String> {
-    let re = Regex::new(r#"["']([^"']+)["']"#).unwrap();
-    re.captures_iter(code).map(|c| c[1].to_string()).collect()
+    string_literal_re()
+        .captures_iter(code)
+        .map(|c| c[1].to_string())
+        .collect()
 }
 
 /// Return a default Cedar policy template for a given category.

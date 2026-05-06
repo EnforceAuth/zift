@@ -42,7 +42,7 @@ permit (
     resource
 )
 when {
-    principal.role == "TODO"
+    principal.role in [{{cedar_roles_set}}]
 };
 """
 [[rule.tests]]

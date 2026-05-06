@@ -66,13 +66,29 @@ fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path
 
     let rego_files = rego::group_findings(findings, policy_prefix, output_dir);
 
+    // Canonicalize once before writing any files. Each generated file shares
+    // the same `output_dir`, so canonicalizing per-file inside the loop was
+    // redundant work and a stray `output_dir` rename mid-loop would break
+    // anyway.
+    std::fs::create_dir_all(output_dir)?;
+    let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
+        ZiftError::General(format!(
+            "failed to resolve output dir '{}': {e}",
+            output_dir.display()
+        ))
+    })?;
+
     let mut total_files = 0;
     let mut validation_warnings = 0;
     for rego_file in &rego_files {
         let validation = rego::validator::validate_rego(&rego_file.content);
         let status = if validation.valid { "OK" } else { "WARN" };
 
-        write_policy_file(&rego_file.output_path, &rego_file.content, output_dir)?;
+        write_policy_file(
+            &rego_file.output_path,
+            &rego_file.content,
+            &canonical_output_dir,
+        )?;
         total_files += 1;
         eprintln!(
             "  [{status}] {} ({} findings) → {}",
@@ -116,13 +132,25 @@ fn extract_cedar(findings: &mut [Finding], policy_prefix: &str, output_dir: &Pat
 
     let cedar_files = cedar::group_findings(findings, policy_prefix, output_dir);
 
+    std::fs::create_dir_all(output_dir)?;
+    let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
+        ZiftError::General(format!(
+            "failed to resolve output dir '{}': {e}",
+            output_dir.display()
+        ))
+    })?;
+
     let mut total_files = 0;
     let mut validation_warnings = 0;
     for cedar_file in &cedar_files {
         let validation = cedar::validator::validate_cedar(&cedar_file.content);
         let status = if validation.valid { "OK" } else { "WARN" };
 
-        write_policy_file(&cedar_file.output_path, &cedar_file.content, output_dir)?;
+        write_policy_file(
+            &cedar_file.output_path,
+            &cedar_file.content,
+            &canonical_output_dir,
+        )?;
         total_files += 1;
         eprintln!(
             "  [{status}] {} ({} findings) → {}",
@@ -150,34 +178,28 @@ fn extract_cedar(findings: &mut [Finding], policy_prefix: &str, output_dir: &Pat
 
 /// Write a policy file with TOCTOU-safe path-traversal containment.
 /// Canonicalise the parent (which we just created) and verify it stays
-/// inside `output_dir` before writing.
-fn write_policy_file(output_path: &Path, content: &str, output_dir: &Path) -> Result<()> {
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
-        ZiftError::General(format!(
-            "failed to resolve output dir '{}': {e}",
-            output_dir.display()
-        ))
-    })?;
+/// inside the already-canonicalized `output_dir` before writing. Callers
+/// canonicalize `output_dir` once before the per-file loop and pass it in
+/// here.
+fn write_policy_file(output_path: &Path, content: &str, canonical_output_dir: &Path) -> Result<()> {
     let parent = output_path.parent().ok_or_else(|| {
         ZiftError::General(format!(
             "output path '{}' has no parent",
             output_path.display()
         ))
     })?;
+    std::fs::create_dir_all(parent)?;
     let canonical_parent = parent.canonicalize().map_err(|e| {
         ZiftError::General(format!(
             "failed to resolve parent dir '{}': {e}",
             parent.display()
         ))
     })?;
-    if !canonical_parent.starts_with(&canonical_output_dir) {
+    if !canonical_parent.starts_with(canonical_output_dir) {
         return Err(ZiftError::General(format!(
             "output path '{}' escapes output directory '{}'",
             output_path.display(),
-            output_dir.display()
+            canonical_output_dir.display()
         )));
     }
     std::fs::write(output_path, content)?;

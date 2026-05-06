@@ -41,8 +41,7 @@ permit (
     resource
 )
 when {
-    // TODO: verify attribute check
-    principal.attr == "TODO"
+    context.policy == "{{policy}}"
 };
 """
 [[rule.tests]]

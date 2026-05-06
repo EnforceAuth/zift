@@ -45,8 +45,7 @@ permit (
     resource
 )
 when {
-    // TODO: verify attribute check
-    principal.attr == "TODO"
+    principal.claims["{{claim_type}}"] == "{{claim_value}}"
 };
 """
 [[rule.tests]]

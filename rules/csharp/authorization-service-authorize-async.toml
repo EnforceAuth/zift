@@ -37,8 +37,8 @@ permit (
     resource
 )
 when {
-    // TODO: verify attribute check
-    principal.attr == "TODO"
+    // TODO: translate ASP.NET authorization service call: {{arguments}}
+    principal.authenticated == true
 };
 """
 [[rule.tests]]
