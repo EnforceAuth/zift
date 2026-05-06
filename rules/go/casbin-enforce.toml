@@ -35,6 +35,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
 [[rule.tests]]
 input = """
 package main

@@ -40,6 +40,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.plan == "TODO"
+};
+"""
 [[rule.tests]]
 input = """
 package main

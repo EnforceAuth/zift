@@ -163,6 +163,13 @@ pub fn execute_query(
                 add_template_derived_values(&mut owned);
                 crate::rego::render_template(tmpl, &owned)
             }),
+            cedar_stub: compiled.rule.cedar_template.as_ref().map(|tmpl| {
+                let owned: HashMap<String, String> = captures
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+                crate::cedar::render_template(tmpl, &owned)
+            }),
             pass: ScanPass::Structural,
             surface: Surface::classify(file_path),
         });
@@ -1349,6 +1356,7 @@ match = ".*"
             description: "test".into(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         };

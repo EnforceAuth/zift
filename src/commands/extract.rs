@@ -1,11 +1,11 @@
 use std::io::Read;
+use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::cli::ExtractArgs;
+use crate::cli::{ExtractArgs, PolicyEngine};
 use crate::config::ZiftConfig;
 use crate::error::{Result, ZiftError};
-use crate::rego::{self, templates};
 use crate::types::Finding;
 
 /// Minimal struct for deserializing scan output — we only need the findings.
@@ -15,13 +15,15 @@ struct ScanInput {
 }
 
 pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
-    // Resolve config fallbacks
-    let package_prefix = config
+    // Resolve config fallbacks. The CLI default for `policy_prefix` is
+    // "app"; if the user didn't override that on the command line, defer to
+    // `[extract] package_prefix` from the config.
+    let policy_prefix = config
         .extract
         .package_prefix
         .as_deref()
-        .filter(|_| args.package_prefix == "app") // only use config if CLI is default
-        .unwrap_or(&args.package_prefix);
+        .filter(|_| args.policy_prefix == "app")
+        .unwrap_or(&args.policy_prefix);
 
     let output_dir = config
         .extract
@@ -31,11 +33,9 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| args.output_dir.clone());
 
-    // Read findings
     let mut findings = read_findings(&args)?;
     tracing::info!("loaded {} findings", findings.len());
 
-    // Filter by confidence
     if let Some(min) = args.min_confidence {
         findings.retain(|f| f.confidence >= min);
         tracing::info!("{} findings after confidence filter", findings.len());
@@ -46,8 +46,16 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         return Ok(());
     }
 
-    // Ensure every finding has a rego_stub
-    for finding in &mut findings {
+    match args.engine {
+        PolicyEngine::Rego => extract_rego(&mut findings, policy_prefix, &output_dir),
+        PolicyEngine::Cedar => extract_cedar(&mut findings, policy_prefix, &output_dir),
+    }
+}
+
+fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path) -> Result<()> {
+    use crate::rego::{self, templates};
+
+    for finding in findings.iter_mut() {
         if finding.rego_stub.is_none() {
             finding.rego_stub = Some(templates::generate_default_stub(
                 finding.category,
@@ -56,49 +64,15 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         }
     }
 
-    // Group and generate files
-    let rego_files = rego::group_findings(&findings, package_prefix, &output_dir);
+    let rego_files = rego::group_findings(findings, policy_prefix, output_dir);
 
-    // Write files and validate
     let mut total_files = 0;
     let mut validation_warnings = 0;
     for rego_file in &rego_files {
-        // Validate generated Rego syntax
         let validation = rego::validator::validate_rego(&rego_file.content);
         let status = if validation.valid { "OK" } else { "WARN" };
 
-        if let Some(parent) = rego_file.output_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        // Verify the resolved output path stays within the output directory
-        // by canonicalizing the parent (which now exists) and checking containment
-        // BEFORE writing, to prevent TOCTOU issues with symlinked directories.
-        let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
-            ZiftError::General(format!(
-                "failed to resolve output dir '{}': {e}",
-                output_dir.display()
-            ))
-        })?;
-        let parent = rego_file.output_path.parent().ok_or_else(|| {
-            ZiftError::General(format!(
-                "output path '{}' has no parent",
-                rego_file.output_path.display()
-            ))
-        })?;
-        let canonical_parent = parent.canonicalize().map_err(|e| {
-            ZiftError::General(format!(
-                "failed to resolve parent dir '{}': {e}",
-                parent.display()
-            ))
-        })?;
-        if !canonical_parent.starts_with(&canonical_output_dir) {
-            return Err(ZiftError::General(format!(
-                "output path '{}' escapes output directory '{}'",
-                rego_file.output_path.display(),
-                output_dir.display()
-            )));
-        }
-        std::fs::write(&rego_file.output_path, &rego_file.content)?;
+        write_policy_file(&rego_file.output_path, &rego_file.content, output_dir)?;
         total_files += 1;
         eprintln!(
             "  [{status}] {} ({} findings) → {}",
@@ -121,7 +95,92 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
             "{validation_warnings} file(s) have Rego syntax warnings — review before deploying.",
         );
     }
+    Ok(())
+}
 
+fn extract_cedar(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path) -> Result<()> {
+    use crate::cedar::{self, templates};
+
+    // Mirror of the Rego pre-fill: if a finding doesn't carry a
+    // cedar_stub yet (e.g. it came from an older scan, or its rule has no
+    // `cedar_template` block), synthesize one from the category default.
+    // This keeps Cedar coverage at 100% — no rule produces zero output.
+    for finding in findings.iter_mut() {
+        if finding.cedar_stub.is_none() {
+            finding.cedar_stub = Some(templates::generate_default_stub(
+                finding.category,
+                &finding.code_snippet,
+            ));
+        }
+    }
+
+    let cedar_files = cedar::group_findings(findings, policy_prefix, output_dir);
+
+    let mut total_files = 0;
+    let mut validation_warnings = 0;
+    for cedar_file in &cedar_files {
+        let validation = cedar::validator::validate_cedar(&cedar_file.content);
+        let status = if validation.valid { "OK" } else { "WARN" };
+
+        write_policy_file(&cedar_file.output_path, &cedar_file.content, output_dir)?;
+        total_files += 1;
+        eprintln!(
+            "  [{status}] {} ({} findings) → {}",
+            cedar_file.label,
+            cedar_file.finding_count,
+            cedar_file.output_path.display(),
+        );
+        if let Some(err) = validation.error {
+            eprintln!("       ⚠ Cedar parse warning: {err}");
+            validation_warnings += 1;
+        }
+    }
+
+    eprintln!(
+        "\nGenerated {total_files} Cedar files from {} findings.",
+        findings.len(),
+    );
+    if validation_warnings > 0 {
+        eprintln!(
+            "{validation_warnings} file(s) have Cedar syntax warnings — review before deploying.",
+        );
+    }
+    Ok(())
+}
+
+/// Write a policy file with TOCTOU-safe path-traversal containment.
+/// Canonicalise the parent (which we just created) and verify it stays
+/// inside `output_dir` before writing.
+fn write_policy_file(output_path: &Path, content: &str, output_dir: &Path) -> Result<()> {
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
+        ZiftError::General(format!(
+            "failed to resolve output dir '{}': {e}",
+            output_dir.display()
+        ))
+    })?;
+    let parent = output_path.parent().ok_or_else(|| {
+        ZiftError::General(format!(
+            "output path '{}' has no parent",
+            output_path.display()
+        ))
+    })?;
+    let canonical_parent = parent.canonicalize().map_err(|e| {
+        ZiftError::General(format!(
+            "failed to resolve parent dir '{}': {e}",
+            parent.display()
+        ))
+    })?;
+    if !canonical_parent.starts_with(&canonical_output_dir) {
+        return Err(ZiftError::General(format!(
+            "output path '{}' escapes output directory '{}'",
+            output_path.display(),
+            output_dir.display()
+        )));
+    }
+    std::fs::write(output_path, content)?;
     Ok(())
 }
 
@@ -136,7 +195,6 @@ fn read_findings(args: &ExtractArgs) -> Result<Vec<Finding>> {
         buf
     };
 
-    // Try parsing as ScanReport (with findings wrapper) first, then as bare Vec<Finding>
     if let Ok(report) = serde_json::from_str::<ScanInput>(&json_str) {
         Ok(report.findings)
     } else {

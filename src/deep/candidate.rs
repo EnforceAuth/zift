@@ -396,6 +396,7 @@ mod tests {
             description: String::new(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }
@@ -786,6 +787,7 @@ mod tests {
             description: "x".into(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         };

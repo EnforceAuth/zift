@@ -78,6 +78,7 @@ mod tests {
             description: String::new(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass,
             surface: Surface::Backend,
         }

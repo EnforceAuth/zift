@@ -33,6 +33,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    context.authenticated == true
+};
+"""
 [[rule.tests]]
 input = """
 @permission_required('app.delete_user')

@@ -140,6 +140,7 @@ mod tests {
             description: "embedded role check".into(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }

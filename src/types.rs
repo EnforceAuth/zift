@@ -17,6 +17,13 @@ pub struct Finding {
     pub description: String,
     pub pattern_rule: Option<String>,
     pub rego_stub: Option<String>,
+    /// Cedar policy stub. Populated when `--engine cedar` is used during
+    /// extract, or when a deep-mode response carries one. Kept parallel to
+    /// `rego_stub` (rather than collapsed into a `policy_outputs` collection)
+    /// so persisted findings JSON stays backward-compatible — older consumers
+    /// see an extra optional field they can ignore.
+    #[serde(default)]
+    pub cedar_stub: Option<String>,
     pub pass: ScanPass,
     /// Where in a typical app this finding lives — frontend (UI/client) or
     /// backend (server/API). Inferred from the file path via simple

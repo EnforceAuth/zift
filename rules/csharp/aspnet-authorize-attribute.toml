@@ -28,6 +28,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    context.authenticated == true
+};
+"""
 [[rule.tests]]
 input = """
 using Microsoft.AspNetCore.Authorization;

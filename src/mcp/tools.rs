@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::cedar;
 use crate::cli::ScanArgs;
 use crate::deep::candidate::{Candidate, CandidateKind};
 use crate::deep::context::expand_region;
@@ -39,6 +40,8 @@ pub fn list_tools() -> ToolsListResult {
             get_rule_descriptor(),
             suggest_rego_descriptor(),
             validate_rego_descriptor(),
+            suggest_policy_descriptor(),
+            validate_policy_descriptor(),
             analyze_snippet_descriptor(),
         ],
     }
@@ -55,6 +58,8 @@ pub fn dispatch(ctx: &ServerContext, name: &str, args: &Value) -> ToolsCallResul
         "get_rule" => run_or_error(get_rule(ctx, args)),
         "suggest_rego" => run_or_error(suggest_rego(ctx, args)),
         "validate_rego" => run_or_error(validate_rego_tool(args)),
+        "suggest_policy" => run_or_error(suggest_policy(ctx, args)),
+        "validate_policy" => run_or_error(validate_policy_tool(args)),
         "analyze_snippet" => run_or_error(analyze_snippet(ctx, args)),
         other => ToolsCallResult::error(format!("unknown tool: {other}")),
     }
@@ -274,6 +279,7 @@ fn rule_summary(r: &PatternRule) -> Value {
         "confidence": r.confidence,
         "description": r.description,
         "has_rego_template": r.rego_template.is_some(),
+        "has_cedar_template": r.cedar_template.is_some(),
     })
 }
 
@@ -356,6 +362,7 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         "predicates": predicates,
         "cross_predicates": cross_predicates,
         "rego_template": rule.rego_template,
+        "cedar_template": rule.cedar_template,
         "tests": tests,
     }))
 }
@@ -497,6 +504,167 @@ fn validate_rego_tool(args: &Value) -> Result<Value, String> {
     }))
 }
 
+// -- suggest_policy / validate_policy -----------------------------------
+//
+// Engine-agnostic peers of `suggest_rego` / `validate_rego`. Selecting an
+// engine is a first-class argument so agent hosts can drive Cedar without
+// learning per-engine tool names. The original Rego tools stay live as
+// pinned aliases so existing prompts and integrations keep working.
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum PolicyEngineArg {
+    Rego,
+    Cedar,
+}
+
+fn suggest_policy_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: "suggest_policy",
+        description: "Suggest a policy stub for a finding in the requested engine \
+                      (rego or cedar). If a rule_id is supplied and the rule has a \
+                      template for that engine, the template wins; otherwise a \
+                      category-default stub is generated. The stub is wrapped in \
+                      confidence-appropriate guidance. `suggest_rego` remains \
+                      available as a Rego-pinned alias.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "type": "string",
+                    "enum": ["rego", "cedar"],
+                    "description": "Policy engine to render for. Default: rego."
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["rbac", "abac", "middleware", "business_rule",
+                             "ownership", "feature_gate", "custom"]
+                },
+                "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                "code_snippet": {"type": "string"},
+                "rule_id": {
+                    "type": "string",
+                    "description": "Optional. If supplied and the rule has a \
+                                    matching template for the selected engine, \
+                                    that template wins over the default."
+                }
+            },
+            "required": ["category", "confidence", "code_snippet"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SuggestPolicyArgs {
+    #[serde(default)]
+    engine: Option<PolicyEngineArg>,
+    category: AuthCategory,
+    confidence: Confidence,
+    code_snippet: String,
+    #[serde(default)]
+    rule_id: Option<String>,
+}
+
+fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
+    let parsed: SuggestPolicyArgs = parse_args(args, "suggest_policy")?;
+    let engine = parsed.engine.unwrap_or(PolicyEngineArg::Rego);
+
+    let rule = parsed
+        .rule_id
+        .as_deref()
+        .and_then(|rid| ctx.rules.iter().find(|r| r.id == rid));
+
+    let rendered = match engine {
+        PolicyEngineArg::Rego => match rule.and_then(|r| r.rego_template.as_deref()) {
+            Some(tmpl) => {
+                let vars = build_template_vars(&parsed.code_snippet);
+                render_template(tmpl, &vars)
+            }
+            None => generate_default_stub(parsed.category, &parsed.code_snippet),
+        },
+        PolicyEngineArg::Cedar => match rule.and_then(|r| r.cedar_template.as_deref()) {
+            Some(tmpl) => {
+                let vars = build_template_vars(&parsed.code_snippet);
+                cedar::render_template(tmpl, &vars)
+            }
+            None => cedar::templates::generate_default_stub(parsed.category, &parsed.code_snippet),
+        },
+    };
+
+    let wrapped = match engine {
+        PolicyEngineArg::Rego => apply_confidence_wrapping(&rendered, parsed.confidence),
+        PolicyEngineArg::Cedar => {
+            cedar::templates::apply_confidence_wrapping(&rendered, parsed.confidence)
+        }
+    };
+
+    let key = match engine {
+        PolicyEngineArg::Rego => "rego",
+        PolicyEngineArg::Cedar => "cedar",
+    };
+    Ok(json!({
+        "engine": key,
+        "policy": wrapped,
+        // Echo the engine-specific key for ergonomic agent prompts.
+        key: wrapped,
+    }))
+}
+
+fn validate_policy_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: "validate_policy",
+        description: "Validate a policy string in the requested engine (rego or \
+                      cedar). Returns valid=true on success or valid=false plus \
+                      the parse error. `validate_rego` remains available as a \
+                      Rego-pinned alias.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "type": "string",
+                    "enum": ["rego", "cedar"],
+                    "description": "Policy engine. Default: rego."
+                },
+                "policy": {"type": "string", "description": "Full policy to validate."}
+            },
+            "required": ["policy"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ValidatePolicyArgs {
+    #[serde(default)]
+    engine: Option<PolicyEngineArg>,
+    policy: String,
+}
+
+fn validate_policy_tool(args: &Value) -> Result<Value, String> {
+    let parsed: ValidatePolicyArgs = parse_args(args, "validate_policy")?;
+    let engine = parsed.engine.unwrap_or(PolicyEngineArg::Rego);
+    let (valid, error) = match engine {
+        PolicyEngineArg::Rego => {
+            let r = validate_rego(&parsed.policy);
+            (r.valid, r.error)
+        }
+        PolicyEngineArg::Cedar => {
+            let r = cedar::validator::validate_cedar(&parsed.policy);
+            (r.valid, r.error)
+        }
+    };
+    let key = match engine {
+        PolicyEngineArg::Rego => "rego",
+        PolicyEngineArg::Cedar => "cedar",
+    };
+    Ok(json!({
+        "engine": key,
+        "valid": valid,
+        "error": error,
+    }))
+}
+
 // -- analyze_snippet -----------------------------------------------------
 
 fn analyze_snippet_descriptor() -> ToolDescriptor {
@@ -606,6 +774,7 @@ fn analyze_snippet(_ctx: &ServerContext, args: &Value) -> Result<Value, String> 
         description: s.description.clone(),
         pattern_rule: s.pattern_rule.clone(),
         rego_stub: None,
+        cedar_stub: None,
         pass: ScanPass::Structural,
         surface: Surface::classify(&PathBuf::from(&parsed.file)),
     });
@@ -689,9 +858,9 @@ mod tests {
     }
 
     #[test]
-    fn list_tools_returns_seven_tools_with_schemas() {
+    fn list_tools_returns_nine_tools_with_schemas() {
         let result = list_tools();
-        assert_eq!(result.tools.len(), 7);
+        assert_eq!(result.tools.len(), 9);
         for t in &result.tools {
             // Every tool must have an object input schema.
             assert_eq!(t.input_schema["type"], "object");
@@ -936,6 +1105,101 @@ function check(user: { role: string }) {
         };
         let rego = payload["rego"].as_str().unwrap();
         assert!(rego.starts_with("# SUGGESTION"));
+    }
+
+    #[test]
+    fn suggest_policy_cedar_returns_permit_form() {
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+        let res = dispatch(
+            &ctx,
+            "suggest_policy",
+            &json!({
+                "engine": "cedar",
+                "category": "rbac",
+                "confidence": "high",
+                "code_snippet": "if (user.role === \"admin\") {}"
+            }),
+        );
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        assert_eq!(payload["engine"], "cedar");
+        let cedar = payload["cedar"].as_str().unwrap();
+        assert!(cedar.contains("permit"));
+        assert!(cedar.contains("admin"));
+    }
+
+    #[test]
+    fn suggest_policy_defaults_to_rego() {
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+        let res = dispatch(
+            &ctx,
+            "suggest_policy",
+            &json!({
+                "category": "rbac",
+                "confidence": "high",
+                "code_snippet": "if (user.role === \"admin\") {}"
+            }),
+        );
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        assert_eq!(payload["engine"], "rego");
+        assert!(
+            payload["rego"]
+                .as_str()
+                .unwrap()
+                .contains("input.user.role")
+        );
+    }
+
+    #[test]
+    fn validate_policy_cedar_accepts_valid_policy() {
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+        let res = dispatch(
+            &ctx,
+            "validate_policy",
+            &json!({
+                "engine": "cedar",
+                "policy": "permit (principal, action, resource);"
+            }),
+        );
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        assert_eq!(payload["valid"], true);
+        assert_eq!(payload["engine"], "cedar");
+    }
+
+    #[test]
+    fn validate_policy_cedar_reports_invalid_policy() {
+        let dir = tempdir().unwrap();
+        let ctx = ctx_with_root(dir.path().canonicalize().unwrap());
+        let res = dispatch(
+            &ctx,
+            "validate_policy",
+            &json!({"engine": "cedar", "policy": "this is not cedar"}),
+        );
+        assert!(!res.is_error);
+        let payload: Value = match &res.content[0] {
+            crate::mcp::protocol::ContentBlock::Text { text } => {
+                serde_json::from_str(text).unwrap()
+            }
+        };
+        assert_eq!(payload["valid"], false);
+        assert!(payload["error"].is_string());
     }
 
     #[test]

@@ -36,6 +36,19 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    // TODO: verify attribute check
+    principal.attr == "TODO"
+};
+"""
 [[rule.tests]]
 input = """
 if (User.HasClaim("scope", "users.delete")) {

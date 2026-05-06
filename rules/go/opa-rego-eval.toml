@@ -49,6 +49,19 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+// TODO: custom authorization pattern — review and implement manually
+// permit (
+//     principal,
+//     action,
+//     resource
+// )
+// when {
+//     ...
+// };
+"""
 [[rule.tests]]
 input = """
 package main

@@ -19,6 +19,7 @@ pub struct PatternRule {
     pub predicates: Vec<(String, Predicate)>,
     pub cross_predicates: Vec<CrossPredicate>,
     pub rego_template: Option<String>,
+    pub cedar_template: Option<String>,
     pub tests: Vec<RuleTest>,
 }
 
@@ -105,6 +106,7 @@ struct RuleToml {
     #[serde(default)]
     cross_predicates: Vec<CrossPredicateToml>,
     rego_template: Option<RegoTemplateToml>,
+    cedar_template: Option<CedarTemplateToml>,
     #[serde(default)]
     tests: Vec<RuleTestToml>,
 }
@@ -135,6 +137,11 @@ enum CrossPredicateToml {
 
 #[derive(Debug, Deserialize)]
 struct RegoTemplateToml {
+    template: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CedarTemplateToml {
     template: String,
 }
 
@@ -260,6 +267,7 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         predicates,
         cross_predicates,
         rego_template: r.rego_template.map(|t| t.template),
+        cedar_template: r.cedar_template.map(|t| t.template),
         tests: r
             .tests
             .into_iter()
@@ -469,6 +477,7 @@ match = ".*"
             predicates: vec![],
             cross_predicates: vec![],
             rego_template: None,
+            cedar_template: None,
             tests: vec![],
         };
         let r2 = PatternRule {
@@ -481,6 +490,7 @@ match = ".*"
             predicates: vec![],
             cross_predicates: vec![],
             rego_template: None,
+            cedar_template: None,
             tests: vec![],
         };
 

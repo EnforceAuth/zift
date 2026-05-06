@@ -36,6 +36,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    action == Action::"{{permission}}"
+};
+"""
 [[rule.tests]]
 input = """
 if (user.can("delete", resource)) {
