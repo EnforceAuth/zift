@@ -6,7 +6,8 @@ use serde::Deserialize;
 use crate::cli::ExtractArgs;
 use crate::config::ZiftConfig;
 use crate::error::{Result, ZiftError};
-use crate::types::{Finding, PolicyEngine};
+use crate::policy::{PolicyGenerator, generator_for};
+use crate::types::Finding;
 
 /// Minimal struct for deserializing scan output — we only need the findings.
 #[derive(Deserialize)]
@@ -46,28 +47,40 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         return Ok(());
     }
 
-    match args.engine {
-        PolicyEngine::Rego => extract_rego(&mut findings, policy_prefix, &output_dir),
-        PolicyEngine::Cedar => extract_cedar(&mut findings, policy_prefix, &output_dir),
-    }
+    let generator = generator_for(args.engine);
+    run_extract(
+        generator.as_ref(),
+        &mut findings,
+        policy_prefix,
+        &output_dir,
+    )
 }
 
-fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path) -> Result<()> {
-    use crate::rego::{self, templates};
-
+/// Engine-agnostic extract pipeline. Pre-fills any missing per-engine
+/// policy output on each finding (so Cedar/Rego coverage stays at 100%
+/// even when a rule has no template), groups findings into output files,
+/// validates each file with the engine's parser, and writes them under a
+/// canonicalised `output_dir`.
+fn run_extract(
+    generator: &dyn PolicyGenerator,
+    findings: &mut [Finding],
+    policy_prefix: &str,
+    output_dir: &Path,
+) -> Result<()> {
+    let engine = generator.engine();
     for finding in findings.iter_mut() {
-        if finding.policy_output(PolicyEngine::Rego).is_none() {
-            let stub = templates::generate_default_stub(finding.category, &finding.code_snippet);
-            finding.set_policy_output(PolicyEngine::Rego, stub);
+        if finding.policy_output(engine).is_none() {
+            let stub = generator.default_stub(finding.category, &finding.code_snippet);
+            finding.set_policy_output(engine, stub);
         }
     }
 
-    let rego_files = rego::group_findings(findings, policy_prefix, output_dir);
+    let policy_files = generator.group_and_generate(findings, policy_prefix, output_dir);
 
-    // Canonicalize once before writing any files. Each generated file shares
-    // the same `output_dir`, so canonicalizing per-file inside the loop was
-    // redundant work and a stray `output_dir` rename mid-loop would break
-    // anyway.
+    // Canonicalize once before writing any files. Each generated file
+    // shares the same `output_dir`, so canonicalizing per-file inside
+    // the loop was redundant work and a stray `output_dir` rename
+    // mid-loop would break anyway.
     std::fs::create_dir_all(output_dir)?;
     let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
         ZiftError::General(format!(
@@ -78,95 +91,35 @@ fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path
 
     let mut total_files = 0;
     let mut validation_warnings = 0;
-    for rego_file in &rego_files {
-        let validation = rego::validator::validate_rego(&rego_file.content);
+    for policy_file in &policy_files {
+        let validation = generator.validate(&policy_file.content);
         let status = if validation.valid { "OK" } else { "WARN" };
 
         write_policy_file(
-            &rego_file.output_path,
-            &rego_file.content,
+            &policy_file.output_path,
+            &policy_file.content,
             &canonical_output_dir,
         )?;
         total_files += 1;
         eprintln!(
             "  [{status}] {} ({} findings) → {}",
-            rego_file.package_name,
-            rego_file.finding_count,
-            rego_file.output_path.display(),
+            policy_file.label,
+            policy_file.finding_count,
+            policy_file.output_path.display(),
         );
         if let Some(err) = validation.error {
-            eprintln!("       ⚠ Rego parse warning: {err}");
+            eprintln!("       ⚠ {engine} parse warning: {err}");
             validation_warnings += 1;
         }
     }
 
     eprintln!(
-        "\nGenerated {total_files} Rego files from {} findings.",
+        "\nGenerated {total_files} {engine} files from {} findings.",
         findings.len(),
     );
     if validation_warnings > 0 {
         eprintln!(
-            "{validation_warnings} file(s) have Rego syntax warnings — review before deploying.",
-        );
-    }
-    Ok(())
-}
-
-fn extract_cedar(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path) -> Result<()> {
-    use crate::cedar::{self, templates};
-
-    // Mirror of the Rego pre-fill: if a finding has no Cedar policy_output
-    // yet (e.g. it came from an older scan, or its rule has no Cedar
-    // template), synthesize one from the category default. This keeps Cedar
-    // coverage at 100% — no rule produces zero output.
-    for finding in findings.iter_mut() {
-        if finding.policy_output(PolicyEngine::Cedar).is_none() {
-            let stub = templates::generate_default_stub(finding.category, &finding.code_snippet);
-            finding.set_policy_output(PolicyEngine::Cedar, stub);
-        }
-    }
-
-    let cedar_files = cedar::group_findings(findings, policy_prefix, output_dir);
-
-    std::fs::create_dir_all(output_dir)?;
-    let canonical_output_dir = output_dir.canonicalize().map_err(|e| {
-        ZiftError::General(format!(
-            "failed to resolve output dir '{}': {e}",
-            output_dir.display()
-        ))
-    })?;
-
-    let mut total_files = 0;
-    let mut validation_warnings = 0;
-    for cedar_file in &cedar_files {
-        let validation = cedar::validator::validate_cedar(&cedar_file.content);
-        let status = if validation.valid { "OK" } else { "WARN" };
-
-        write_policy_file(
-            &cedar_file.output_path,
-            &cedar_file.content,
-            &canonical_output_dir,
-        )?;
-        total_files += 1;
-        eprintln!(
-            "  [{status}] {} ({} findings) → {}",
-            cedar_file.label,
-            cedar_file.finding_count,
-            cedar_file.output_path.display(),
-        );
-        if let Some(err) = validation.error {
-            eprintln!("       ⚠ Cedar parse warning: {err}");
-            validation_warnings += 1;
-        }
-    }
-
-    eprintln!(
-        "\nGenerated {total_files} Cedar files from {} findings.",
-        findings.len(),
-    );
-    if validation_warnings > 0 {
-        eprintln!(
-            "{validation_warnings} file(s) have Cedar syntax warnings — review before deploying.",
+            "{validation_warnings} file(s) have {engine} syntax warnings — review before deploying.",
         );
     }
     Ok(())

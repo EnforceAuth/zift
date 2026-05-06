@@ -15,13 +15,13 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::cedar;
 use crate::cli::ScanArgs;
 use crate::deep::candidate::{Candidate, CandidateKind};
 use crate::deep::context::expand_region;
 use crate::deep::prompt::{PromptInputs, render};
 use crate::mcp::protocol::{ToolDescriptor, ToolsCallResult, ToolsListResult};
 use crate::mcp::server::ServerContext;
+use crate::policy::generator_for;
 use crate::rego::templates::{apply_confidence_wrapping, generate_default_stub, render_template};
 use crate::rego::validator::validate_rego;
 use crate::rules::PatternRule;
@@ -569,35 +569,22 @@ struct SuggestPolicyArgs {
 fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
     let parsed: SuggestPolicyArgs = parse_args(args, "suggest_policy")?;
     let engine = parsed.engine.unwrap_or(PolicyEngine::Rego);
+    let generator = generator_for(engine);
 
     let rule = parsed
         .rule_id
         .as_deref()
         .and_then(|rid| ctx.rules.iter().find(|r| r.id == rid));
 
-    let rendered = match engine {
-        PolicyEngine::Rego => match rule.and_then(|r| r.template_for(PolicyEngine::Rego)) {
-            Some(tmpl) => {
-                let vars = build_template_vars(&parsed.code_snippet);
-                render_template(tmpl, &vars)
-            }
-            None => generate_default_stub(parsed.category, &parsed.code_snippet),
-        },
-        PolicyEngine::Cedar => match rule.and_then(|r| r.template_for(PolicyEngine::Cedar)) {
-            Some(tmpl) => {
-                let vars = build_template_vars(&parsed.code_snippet);
-                cedar::render_template(tmpl, &vars)
-            }
-            None => cedar::templates::generate_default_stub(parsed.category, &parsed.code_snippet),
-        },
+    let rendered = match rule.and_then(|r| r.template_for(engine)) {
+        Some(tmpl) => {
+            let vars = build_template_vars(&parsed.code_snippet);
+            generator.render_template(tmpl, &vars)
+        }
+        None => generator.default_stub(parsed.category, &parsed.code_snippet),
     };
 
-    let wrapped = match engine {
-        PolicyEngine::Rego => apply_confidence_wrapping(&rendered, parsed.confidence),
-        PolicyEngine::Cedar => {
-            cedar::templates::apply_confidence_wrapping(&rendered, parsed.confidence)
-        }
-    };
+    let wrapped = generator.wrap_by_confidence(&rendered, parsed.confidence);
 
     let key = match engine {
         PolicyEngine::Rego => "rego",
@@ -644,16 +631,8 @@ struct ValidatePolicyArgs {
 fn validate_policy_tool(args: &Value) -> Result<Value, String> {
     let parsed: ValidatePolicyArgs = parse_args(args, "validate_policy")?;
     let engine = parsed.engine.unwrap_or(PolicyEngine::Rego);
-    let (valid, error) = match engine {
-        PolicyEngine::Rego => {
-            let r = validate_rego(&parsed.policy);
-            (r.valid, r.error)
-        }
-        PolicyEngine::Cedar => {
-            let r = cedar::validator::validate_cedar(&parsed.policy);
-            (r.valid, r.error)
-        }
-    };
+    let result = generator_for(engine).validate(&parsed.policy);
+    let (valid, error) = (result.valid, result.error);
     let key = match engine {
         PolicyEngine::Rego => "rego",
         PolicyEngine::Cedar => "cedar",

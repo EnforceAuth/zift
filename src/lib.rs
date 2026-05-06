@@ -19,6 +19,7 @@
 pub mod cedar;
 pub mod cli;
 pub mod error;
+pub mod policy;
 pub mod rego;
 pub mod rules;
 pub mod types;

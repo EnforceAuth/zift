@@ -51,22 +51,24 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                     }
                 }
                 // Validate each generated policy template against its
-                // engine's parser. Engine-specific dispatch is one place
-                // because PolicyEngine is a closed enum.
+                // engine's parser. The template-level validators wrap each
+                // body in a minimal module before parsing, which is engine
+                // shape — keep the dispatch local rather than pushing a
+                // template-flavored variant onto the PolicyGenerator trait.
                 for tmpl in &rule.policy_templates {
-                    let (label, valid, error) = match tmpl.engine {
+                    let (valid, error) = match tmpl.engine {
                         crate::types::PolicyEngine::Rego => {
                             let r = crate::rego::validator::validate_template(&tmpl.template);
-                            ("rego_template", r.valid, r.error)
+                            (r.valid, r.error)
                         }
                         crate::types::PolicyEngine::Cedar => {
                             let r = crate::cedar::validator::validate_template(&tmpl.template);
-                            ("cedar_template", r.valid, r.error)
+                            (r.valid, r.error)
                         }
                     };
                     if !valid {
                         let err = error.unwrap_or_default();
-                        eprintln!("FAIL  {}  {label}: {err}", rule.id);
+                        eprintln!("FAIL  {}  {} template: {err}", rule.id, tmpl.engine);
                         errors += 1;
                     }
                 }
