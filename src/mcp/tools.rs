@@ -26,7 +26,7 @@ use crate::rego::templates::{apply_confidence_wrapping, generate_default_stub, r
 use crate::rego::validator::validate_rego;
 use crate::rules::PatternRule;
 use crate::scanner;
-use crate::types::{AuthCategory, Confidence, Finding, Language, ScanPass, Surface};
+use crate::types::{AuthCategory, Confidence, Finding, Language, PolicyEngine, ScanPass, Surface};
 
 const DEFAULT_MAX_PROMPT_CHARS: usize = 16_000;
 
@@ -272,14 +272,15 @@ fn list_rules(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
 }
 
 fn rule_summary(r: &PatternRule) -> Value {
+    let template_engines: Vec<&PolicyEngine> =
+        r.policy_templates.iter().map(|t| &t.engine).collect();
     json!({
         "id": r.id,
         "languages": r.languages,
         "category": r.category,
         "confidence": r.confidence,
         "description": r.description,
-        "has_rego_template": r.rego_template.is_some(),
-        "has_cedar_template": r.cedar_template.is_some(),
+        "template_engines": template_engines,
     })
 }
 
@@ -352,6 +353,12 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         })
         .collect();
 
+    let policy_templates: Vec<Value> = rule
+        .policy_templates
+        .iter()
+        .map(|t| json!({"engine": t.engine, "template": t.template}))
+        .collect();
+
     Ok(json!({
         "id": rule.id,
         "languages": rule.languages,
@@ -362,8 +369,7 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         "query": rule.query_source,
         "predicates": predicates,
         "cross_predicates": cross_predicates,
-        "rego_template": rule.rego_template,
-        "cedar_template": rule.cedar_template,
+        "policy_templates": policy_templates,
         "tests": tests,
     }))
 }
@@ -374,7 +380,7 @@ fn suggest_rego_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "suggest_rego",
         description: "Suggest a Rego policy stub for a finding. If a rule_id with \
-                      a rego_template is supplied, the template is rendered against \
+                      a Rego template is supplied, the template is rendered against \
                       string literals extracted from the snippet. Otherwise a \
                       category-default stub is generated. The stub is wrapped in \
                       confidence-appropriate guidance (commented for low, TODO \
@@ -392,7 +398,7 @@ fn suggest_rego_descriptor() -> ToolDescriptor {
                 "rule_id": {
                     "type": "string",
                     "description": "Optional. If supplied and the rule has a \
-                                    rego_template, that template wins over the default."
+                                    Rego template, that template wins over the default."
                 }
             },
             "required": ["category", "confidence", "code_snippet"],
@@ -415,7 +421,7 @@ fn suggest_rego(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
 
     let rendered = if let Some(rid) = parsed.rule_id.as_deref() {
         let rule = ctx.rules.iter().find(|r| r.id == rid);
-        match rule.and_then(|r| r.rego_template.as_deref()) {
+        match rule.and_then(|r| r.template_for(PolicyEngine::Rego)) {
             Some(tmpl) => {
                 // Render the rule's template with literals extracted from the
                 // snippet. We use an empty vars map keyed by capture name —
@@ -512,13 +518,6 @@ fn validate_rego_tool(args: &Value) -> Result<Value, String> {
 // learning per-engine tool names. The original Rego tools stay live as
 // pinned aliases so existing prompts and integrations keep working.
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum PolicyEngineArg {
-    Rego,
-    Cedar,
-}
-
 fn suggest_policy_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "suggest_policy",
@@ -559,7 +558,7 @@ fn suggest_policy_descriptor() -> ToolDescriptor {
 #[derive(Debug, Deserialize)]
 struct SuggestPolicyArgs {
     #[serde(default)]
-    engine: Option<PolicyEngineArg>,
+    engine: Option<PolicyEngine>,
     category: AuthCategory,
     confidence: Confidence,
     code_snippet: String,
@@ -569,7 +568,7 @@ struct SuggestPolicyArgs {
 
 fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
     let parsed: SuggestPolicyArgs = parse_args(args, "suggest_policy")?;
-    let engine = parsed.engine.unwrap_or(PolicyEngineArg::Rego);
+    let engine = parsed.engine.unwrap_or(PolicyEngine::Rego);
 
     let rule = parsed
         .rule_id
@@ -577,14 +576,14 @@ fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         .and_then(|rid| ctx.rules.iter().find(|r| r.id == rid));
 
     let rendered = match engine {
-        PolicyEngineArg::Rego => match rule.and_then(|r| r.rego_template.as_deref()) {
+        PolicyEngine::Rego => match rule.and_then(|r| r.template_for(PolicyEngine::Rego)) {
             Some(tmpl) => {
                 let vars = build_template_vars(&parsed.code_snippet);
                 render_template(tmpl, &vars)
             }
             None => generate_default_stub(parsed.category, &parsed.code_snippet),
         },
-        PolicyEngineArg::Cedar => match rule.and_then(|r| r.cedar_template.as_deref()) {
+        PolicyEngine::Cedar => match rule.and_then(|r| r.template_for(PolicyEngine::Cedar)) {
             Some(tmpl) => {
                 let vars = build_template_vars(&parsed.code_snippet);
                 cedar::render_template(tmpl, &vars)
@@ -594,15 +593,15 @@ fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
     };
 
     let wrapped = match engine {
-        PolicyEngineArg::Rego => apply_confidence_wrapping(&rendered, parsed.confidence),
-        PolicyEngineArg::Cedar => {
+        PolicyEngine::Rego => apply_confidence_wrapping(&rendered, parsed.confidence),
+        PolicyEngine::Cedar => {
             cedar::templates::apply_confidence_wrapping(&rendered, parsed.confidence)
         }
     };
 
     let key = match engine {
-        PolicyEngineArg::Rego => "rego",
-        PolicyEngineArg::Cedar => "cedar",
+        PolicyEngine::Rego => "rego",
+        PolicyEngine::Cedar => "cedar",
     };
     Ok(json!({
         "engine": key,
@@ -638,26 +637,26 @@ fn validate_policy_descriptor() -> ToolDescriptor {
 #[derive(Debug, Deserialize)]
 struct ValidatePolicyArgs {
     #[serde(default)]
-    engine: Option<PolicyEngineArg>,
+    engine: Option<PolicyEngine>,
     policy: String,
 }
 
 fn validate_policy_tool(args: &Value) -> Result<Value, String> {
     let parsed: ValidatePolicyArgs = parse_args(args, "validate_policy")?;
-    let engine = parsed.engine.unwrap_or(PolicyEngineArg::Rego);
+    let engine = parsed.engine.unwrap_or(PolicyEngine::Rego);
     let (valid, error) = match engine {
-        PolicyEngineArg::Rego => {
+        PolicyEngine::Rego => {
             let r = validate_rego(&parsed.policy);
             (r.valid, r.error)
         }
-        PolicyEngineArg::Cedar => {
+        PolicyEngine::Cedar => {
             let r = cedar::validator::validate_cedar(&parsed.policy);
             (r.valid, r.error)
         }
     };
     let key = match engine {
-        PolicyEngineArg::Rego => "rego",
-        PolicyEngineArg::Cedar => "cedar",
+        PolicyEngine::Rego => "rego",
+        PolicyEngine::Cedar => "cedar",
     };
     Ok(json!({
         "engine": key,
@@ -950,7 +949,12 @@ function check(user: { role: string }) {
         };
         assert_eq!(payload["id"], "ts-role-check-conditional");
         assert!(payload["query"].as_str().unwrap().contains("if_statement"));
-        assert!(payload["rego_template"].is_string());
+        // post-#71: templates surface via the `policy_templates` array.
+        let templates = payload["policy_templates"].as_array().unwrap();
+        assert!(
+            templates.iter().any(|t| t["engine"] == "rego"),
+            "expected a rego policy template; got: {templates:?}"
+        );
         // cross_predicates is always present (empty array if the rule has none).
         assert!(payload["cross_predicates"].is_array());
     }

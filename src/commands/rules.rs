@@ -50,21 +50,23 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                         }
                     }
                 }
-                // Validate Rego template if present
-                if let Some(ref tmpl) = rule.rego_template {
-                    let result = crate::rego::validator::validate_template(tmpl);
-                    if !result.valid {
-                        let err = result.error.unwrap_or_default();
-                        eprintln!("FAIL  {}  rego_template: {err}", rule.id);
-                        errors += 1;
-                    }
-                }
-                // Validate Cedar template if present
-                if let Some(ref tmpl) = rule.cedar_template {
-                    let result = crate::cedar::validator::validate_template(tmpl);
-                    if !result.valid {
-                        let err = result.error.unwrap_or_default();
-                        eprintln!("FAIL  {}  cedar_template: {err}", rule.id);
+                // Validate each generated policy template against its
+                // engine's parser. Engine-specific dispatch is one place
+                // because PolicyEngine is a closed enum.
+                for tmpl in &rule.policy_templates {
+                    let (label, valid, error) = match tmpl.engine {
+                        crate::types::PolicyEngine::Rego => {
+                            let r = crate::rego::validator::validate_template(&tmpl.template);
+                            ("rego_template", r.valid, r.error)
+                        }
+                        crate::types::PolicyEngine::Cedar => {
+                            let r = crate::cedar::validator::validate_template(&tmpl.template);
+                            ("cedar_template", r.valid, r.error)
+                        }
+                    };
+                    if !valid {
+                        let err = error.unwrap_or_default();
+                        eprintln!("FAIL  {}  {label}: {err}", rule.id);
                         errors += 1;
                     }
                 }

@@ -105,6 +105,11 @@ pub fn read_resource(ctx: &ServerContext, uri: &str) -> Option<ResourceContent> 
 }
 
 fn rule_to_json(rule: &PatternRule) -> serde_json::Value {
+    let policy_templates: Vec<serde_json::Value> = rule
+        .policy_templates
+        .iter()
+        .map(|t| json!({"engine": t.engine, "template": t.template}))
+        .collect();
     json!({
         "id": rule.id,
         "languages": rule.languages,
@@ -112,7 +117,7 @@ fn rule_to_json(rule: &PatternRule) -> serde_json::Value {
         "confidence": rule.confidence,
         "description": rule.description,
         "query": rule.query_source,
-        "rego_template": rule.rego_template,
+        "policy_templates": policy_templates,
     })
 }
 

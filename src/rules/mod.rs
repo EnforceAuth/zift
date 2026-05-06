@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::config::ZiftConfig;
 use crate::error::{Result, ZiftError};
-use crate::types::{AuthCategory, Confidence, Language};
+use crate::types::{AuthCategory, Confidence, Language, PolicyEngine};
 
 use serde::Deserialize;
 
@@ -19,9 +19,29 @@ pub struct PatternRule {
     pub query_source: String,
     pub predicates: Vec<(String, Predicate)>,
     pub cross_predicates: Vec<CrossPredicate>,
-    pub rego_template: Option<String>,
-    pub cedar_template: Option<String>,
+    /// Generated policy templates, one entry per engine. Replaces the
+    /// parallel `rego_template` / `cedar_template` fields that existed
+    /// pre-Phase-B (#71). The TOML parser accepts both the new
+    /// `[[rule.policy_templates]]` array form and the legacy
+    /// `[rule.rego_template]` / `[rule.cedar_template]` blocks.
+    pub policy_templates: Vec<PolicyTemplate>,
     pub tests: Vec<RuleTest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PolicyTemplate {
+    pub engine: PolicyEngine,
+    pub template: String,
+}
+
+impl PatternRule {
+    /// Look up the rendered template for a policy engine, if any.
+    pub fn template_for(&self, engine: PolicyEngine) -> Option<&str> {
+        self.policy_templates
+            .iter()
+            .find(|t| t.engine == engine)
+            .map(|t| t.template.as_str())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,10 +128,21 @@ struct RuleToml {
     predicates: std::collections::HashMap<String, PredicateToml>,
     #[serde(default)]
     cross_predicates: Vec<CrossPredicateToml>,
+    /// Legacy single-engine template blocks. Read-tolerant: parsing folds
+    /// these into `policy_templates` at the [`PatternRule`] level. New rules
+    /// should use `[[rule.policy_templates]]` instead.
     rego_template: Option<RegoTemplateToml>,
     cedar_template: Option<CedarTemplateToml>,
     #[serde(default)]
+    policy_templates: Vec<PolicyTemplateToml>,
+    #[serde(default)]
     tests: Vec<RuleTestToml>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PolicyTemplateToml {
+    engine: PolicyEngine,
+    template: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,6 +291,38 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         cross_predicates.push(parsed);
     }
 
+    let mut policy_templates: Vec<PolicyTemplate> = r
+        .policy_templates
+        .into_iter()
+        .map(|t| PolicyTemplate {
+            engine: t.engine,
+            template: t.template,
+        })
+        .collect();
+    // Fold legacy single-engine template blocks into the new collection.
+    // Explicit `[[rule.policy_templates]]` entries win on conflict — same
+    // contract as the Finding shim.
+    if let Some(t) = r.rego_template
+        && !policy_templates
+            .iter()
+            .any(|p| p.engine == PolicyEngine::Rego)
+    {
+        policy_templates.push(PolicyTemplate {
+            engine: PolicyEngine::Rego,
+            template: t.template,
+        });
+    }
+    if let Some(t) = r.cedar_template
+        && !policy_templates
+            .iter()
+            .any(|p| p.engine == PolicyEngine::Cedar)
+    {
+        policy_templates.push(PolicyTemplate {
+            engine: PolicyEngine::Cedar,
+            template: t.template,
+        });
+    }
+
     Ok(PatternRule {
         id: r.id,
         languages: r.languages,
@@ -270,8 +333,7 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         query_source: r.query,
         predicates,
         cross_predicates,
-        rego_template: r.rego_template.map(|t| t.template),
-        cedar_template: r.cedar_template.map(|t| t.template),
+        policy_templates,
         tests: r
             .tests
             .into_iter()
@@ -470,6 +532,70 @@ match = ".*"
     }
 
     #[test]
+    fn legacy_template_blocks_fold_into_policy_templates() {
+        // Pre-#71 rules used `[rule.rego_template]` / `[rule.cedar_template]`
+        // single-engine blocks. The Phase B parser must accept these and
+        // surface them through `policy_templates` so external rule trees
+        // keep loading without forced migration.
+        let legacy = r#"
+[rule]
+id = "test-legacy-templates"
+languages = ["typescript"]
+category = "rbac"
+confidence = "high"
+description = "uses legacy template blocks"
+query = """
+(if_statement) @match
+"""
+
+[rule.rego_template]
+template = "package x\nallow := true"
+
+[rule.cedar_template]
+template = "permit(principal, action, resource);"
+"#;
+        let rule = parse_rule(legacy, "test").unwrap();
+        assert_eq!(
+            rule.template_for(PolicyEngine::Rego),
+            Some("package x\nallow := true")
+        );
+        assert_eq!(
+            rule.template_for(PolicyEngine::Cedar),
+            Some("permit(principal, action, resource);")
+        );
+    }
+
+    #[test]
+    fn policy_templates_array_form_parses() {
+        let new_form = r#"
+[rule]
+id = "test-new-templates"
+languages = ["typescript"]
+category = "rbac"
+confidence = "high"
+description = "uses new policy_templates array"
+query = """
+(if_statement) @match
+"""
+
+[[rule.policy_templates]]
+engine = "rego"
+template = "package x"
+
+[[rule.policy_templates]]
+engine = "cedar"
+template = "permit(principal, action, resource);"
+"#;
+        let rule = parse_rule(new_form, "test").unwrap();
+        assert_eq!(rule.policy_templates.len(), 2);
+        assert_eq!(rule.template_for(PolicyEngine::Rego), Some("package x"));
+        assert_eq!(
+            rule.template_for(PolicyEngine::Cedar),
+            Some("permit(principal, action, resource);")
+        );
+    }
+
+    #[test]
     fn merge_overrides_by_id() {
         let r1 = PatternRule {
             id: "rule-a".into(),
@@ -481,8 +607,7 @@ match = ".*"
             query_source: "".into(),
             predicates: vec![],
             cross_predicates: vec![],
-            rego_template: None,
-            cedar_template: None,
+            policy_templates: vec![],
             tests: vec![],
         };
         let r2 = PatternRule {
@@ -495,8 +620,7 @@ match = ".*"
             query_source: "".into(),
             predicates: vec![],
             cross_predicates: vec![],
-            rego_template: None,
-            cedar_template: None,
+            policy_templates: vec![],
             tests: vec![],
         };
 

@@ -145,7 +145,7 @@ pub fn execute_query(
         );
 
         let mut policy_outputs = Vec::new();
-        if let Some(tmpl) = compiled.rule.rego_template.as_ref() {
+        if let Some(tmpl) = compiled.rule.template_for(PolicyEngine::Rego) {
             let mut owned: HashMap<String, String> = captures
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
@@ -156,7 +156,7 @@ pub fn execute_query(
                 content: crate::rego::render_template(tmpl, &owned),
             });
         }
-        if let Some(tmpl) = compiled.rule.cedar_template.as_ref() {
+        if let Some(tmpl) = compiled.rule.template_for(PolicyEngine::Cedar) {
             let mut owned: HashMap<String, String> = captures
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
