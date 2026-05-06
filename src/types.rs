@@ -4,7 +4,30 @@ use std::sync::OnceLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum PolicyEngine {
+    Rego,
+    Cedar,
+}
+
+impl std::fmt::Display for PolicyEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PolicyEngine::Rego => write!(f, "rego"),
+            PolicyEngine::Cedar => write!(f, "cedar"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyOutput {
+    pub engine: PolicyEngine,
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "FindingShim")]
 pub struct Finding {
     pub id: String,
     pub file: PathBuf,
@@ -16,14 +39,14 @@ pub struct Finding {
     pub confidence: Confidence,
     pub description: String,
     pub pattern_rule: Option<String>,
-    pub rego_stub: Option<String>,
-    /// Cedar policy stub. Populated when `--engine cedar` is used during
-    /// extract, or when a deep-mode response carries one. Kept parallel to
-    /// `rego_stub` (rather than collapsed into a `policy_outputs` collection)
-    /// so persisted findings JSON stays backward-compatible — older consumers
-    /// see an extra optional field they can ignore.
+    /// Generated policy stubs, one per engine. Replaces the parallel
+    /// `rego_stub`/`cedar_stub` fields that existed pre-Phase-B (#71).
+    /// Deserialization is tolerant of legacy findings: a `FindingShim`
+    /// reads `rego_stub` / `cedar_stub` if present and folds them into
+    /// `policy_outputs` so persisted findings files keep loading.
+    /// Serialization writes only `policy_outputs`.
     #[serde(default)]
-    pub cedar_stub: Option<String>,
+    pub policy_outputs: Vec<PolicyOutput>,
     pub pass: ScanPass,
     /// Where in a typical app this finding lives — frontend (UI/client) or
     /// backend (server/API). Inferred from the file path via simple
@@ -37,6 +60,97 @@ pub struct Finding {
     /// authz code).
     #[serde(default)]
     pub surface: Surface,
+}
+
+impl Finding {
+    /// Look up the generated policy content for an engine, if any.
+    pub fn policy_output(&self, engine: PolicyEngine) -> Option<&str> {
+        self.policy_outputs
+            .iter()
+            .find(|p| p.engine == engine)
+            .map(|p| p.content.as_str())
+    }
+
+    /// Insert or replace the policy output for an engine.
+    pub fn set_policy_output(&mut self, engine: PolicyEngine, content: String) {
+        if let Some(existing) = self.policy_outputs.iter_mut().find(|p| p.engine == engine) {
+            existing.content = content;
+        } else {
+            self.policy_outputs.push(PolicyOutput { engine, content });
+        }
+    }
+}
+
+/// Deserialization shim for [`Finding`]. Accepts both the current
+/// `policy_outputs` array and the legacy parallel `rego_stub` / `cedar_stub`
+/// fields so existing persisted findings JSON keeps loading after the Phase B
+/// refactor (#71). On the read side legacy fields are folded into
+/// `policy_outputs`; the serialize side never emits them.
+#[derive(Deserialize)]
+struct FindingShim {
+    id: String,
+    file: PathBuf,
+    line_start: usize,
+    line_end: usize,
+    code_snippet: String,
+    language: Language,
+    category: AuthCategory,
+    confidence: Confidence,
+    description: String,
+    pattern_rule: Option<String>,
+    #[serde(default)]
+    rego_stub: Option<String>,
+    #[serde(default)]
+    cedar_stub: Option<String>,
+    #[serde(default)]
+    policy_outputs: Vec<PolicyOutput>,
+    pass: ScanPass,
+    #[serde(default)]
+    surface: Surface,
+}
+
+impl From<FindingShim> for Finding {
+    fn from(s: FindingShim) -> Self {
+        let mut policy_outputs = s.policy_outputs;
+        // Fold legacy fields into policy_outputs only when the new field
+        // doesn't already carry an entry for that engine — explicit
+        // `policy_outputs` wins on conflict.
+        if let Some(content) = s.rego_stub
+            && !policy_outputs
+                .iter()
+                .any(|p| p.engine == PolicyEngine::Rego)
+        {
+            policy_outputs.push(PolicyOutput {
+                engine: PolicyEngine::Rego,
+                content,
+            });
+        }
+        if let Some(content) = s.cedar_stub
+            && !policy_outputs
+                .iter()
+                .any(|p| p.engine == PolicyEngine::Cedar)
+        {
+            policy_outputs.push(PolicyOutput {
+                engine: PolicyEngine::Cedar,
+                content,
+            });
+        }
+        Finding {
+            id: s.id,
+            file: s.file,
+            line_start: s.line_start,
+            line_end: s.line_end,
+            code_snippet: s.code_snippet,
+            language: s.language,
+            category: s.category,
+            confidence: s.confidence,
+            description: s.description,
+            pattern_rule: s.pattern_rule,
+            policy_outputs,
+            pass: s.pass,
+            surface: s.surface,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, clap::ValueEnum)]
@@ -388,5 +502,90 @@ mod tests {
         }"#;
         let f: Finding = serde_json::from_str(no_surface).unwrap();
         assert_eq!(f.surface, Surface::Backend);
+    }
+
+    #[test]
+    fn legacy_stub_fields_fold_into_policy_outputs() {
+        // Pre-#71 findings JSON used parallel `rego_stub` and `cedar_stub`
+        // fields. The Phase B shim must accept both shapes and surface them
+        // through `policy_outputs` so consumers loading old findings files
+        // see the generated policies in the new place.
+        let legacy = r#"{
+            "id": "x",
+            "file": "a.ts",
+            "line_start": 1,
+            "line_end": 1,
+            "code_snippet": "",
+            "language": "typescript",
+            "category": "rbac",
+            "confidence": "low",
+            "description": "",
+            "pattern_rule": null,
+            "rego_stub": "package x\nallow := true",
+            "cedar_stub": "permit(principal, action, resource);",
+            "pass": "structural"
+        }"#;
+        let f: Finding = serde_json::from_str(legacy).unwrap();
+        assert_eq!(
+            f.policy_output(PolicyEngine::Rego),
+            Some("package x\nallow := true")
+        );
+        assert_eq!(
+            f.policy_output(PolicyEngine::Cedar),
+            Some("permit(principal, action, resource);")
+        );
+    }
+
+    #[test]
+    fn explicit_policy_outputs_wins_over_legacy_fields() {
+        // If a producer wrote both shapes (e.g. mid-migration), the explicit
+        // `policy_outputs` entry takes precedence — matches the From impl
+        // contract that the new field is authoritative.
+        let mixed = r#"{
+            "id": "x",
+            "file": "a.ts",
+            "line_start": 1,
+            "line_end": 1,
+            "code_snippet": "",
+            "language": "typescript",
+            "category": "rbac",
+            "confidence": "low",
+            "description": "",
+            "pattern_rule": null,
+            "rego_stub": "legacy",
+            "policy_outputs": [{"engine": "rego", "content": "current"}],
+            "pass": "structural"
+        }"#;
+        let f: Finding = serde_json::from_str(mixed).unwrap();
+        assert_eq!(f.policy_output(PolicyEngine::Rego), Some("current"));
+    }
+
+    #[test]
+    fn finding_serializes_only_policy_outputs() {
+        // After the refactor we never write `rego_stub` / `cedar_stub` on
+        // serialize — only the `policy_outputs` array. Existing downstream
+        // consumers reading the legacy keys are documented to need an
+        // update (see the changelog for #71).
+        let f: Finding = serde_json::from_str(
+            r#"{
+            "id": "x",
+            "file": "a.ts",
+            "line_start": 1,
+            "line_end": 1,
+            "code_snippet": "",
+            "language": "typescript",
+            "category": "rbac",
+            "confidence": "low",
+            "description": "",
+            "pattern_rule": null,
+            "rego_stub": "package x",
+            "pass": "structural"
+        }"#,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(!json.contains("rego_stub"));
+        assert!(!json.contains("cedar_stub"));
+        assert!(json.contains("policy_outputs"));
     }
 }

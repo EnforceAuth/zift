@@ -3,10 +3,10 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::cli::{ExtractArgs, PolicyEngine};
+use crate::cli::ExtractArgs;
 use crate::config::ZiftConfig;
 use crate::error::{Result, ZiftError};
-use crate::types::Finding;
+use crate::types::{Finding, PolicyEngine};
 
 /// Minimal struct for deserializing scan output — we only need the findings.
 #[derive(Deserialize)]
@@ -56,11 +56,9 @@ fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path
     use crate::rego::{self, templates};
 
     for finding in findings.iter_mut() {
-        if finding.rego_stub.is_none() {
-            finding.rego_stub = Some(templates::generate_default_stub(
-                finding.category,
-                &finding.code_snippet,
-            ));
+        if finding.policy_output(PolicyEngine::Rego).is_none() {
+            let stub = templates::generate_default_stub(finding.category, &finding.code_snippet);
+            finding.set_policy_output(PolicyEngine::Rego, stub);
         }
     }
 
@@ -117,16 +115,14 @@ fn extract_rego(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path
 fn extract_cedar(findings: &mut [Finding], policy_prefix: &str, output_dir: &Path) -> Result<()> {
     use crate::cedar::{self, templates};
 
-    // Mirror of the Rego pre-fill: if a finding doesn't carry a
-    // cedar_stub yet (e.g. it came from an older scan, or its rule has no
-    // `cedar_template` block), synthesize one from the category default.
-    // This keeps Cedar coverage at 100% — no rule produces zero output.
+    // Mirror of the Rego pre-fill: if a finding has no Cedar policy_output
+    // yet (e.g. it came from an older scan, or its rule has no Cedar
+    // template), synthesize one from the category default. This keeps Cedar
+    // coverage at 100% — no rule produces zero output.
     for finding in findings.iter_mut() {
-        if finding.cedar_stub.is_none() {
-            finding.cedar_stub = Some(templates::generate_default_stub(
-                finding.category,
-                &finding.code_snippet,
-            ));
+        if finding.policy_output(PolicyEngine::Cedar).is_none() {
+            let stub = templates::generate_default_stub(finding.category, &finding.code_snippet);
+            finding.set_policy_output(PolicyEngine::Cedar, stub);
         }
     }
 

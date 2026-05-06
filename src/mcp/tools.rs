@@ -774,8 +774,7 @@ fn analyze_snippet(_ctx: &ServerContext, args: &Value) -> Result<Value, String> 
         confidence: s.confidence,
         description: s.description.clone(),
         pattern_rule: s.pattern_rule.clone(),
-        rego_stub: None,
-        cedar_stub: None,
+        policy_outputs: vec![],
         pass: ScanPass::Structural,
         surface: Surface::classify(&PathBuf::from(&parsed.file)),
     });

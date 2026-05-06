@@ -8,7 +8,7 @@ use tree_sitter::{Query, QueryCursor, Tree};
 
 use crate::error::{Result, ZiftError};
 use crate::rules::{CrossPredicate, PatternRule, Predicate};
-use crate::types::{Confidence, Finding, Language, ScanPass, Surface};
+use crate::types::{Confidence, Finding, Language, PolicyEngine, PolicyOutput, ScanPass, Surface};
 
 pub struct CompiledRule<'a> {
     pub rule: &'a PatternRule,
@@ -144,6 +144,30 @@ pub fn execute_query(
             &code_snippet,
         );
 
+        let mut policy_outputs = Vec::new();
+        if let Some(tmpl) = compiled.rule.rego_template.as_ref() {
+            let mut owned: HashMap<String, String> = captures
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            add_template_derived_values(&mut owned);
+            policy_outputs.push(PolicyOutput {
+                engine: PolicyEngine::Rego,
+                content: crate::rego::render_template(tmpl, &owned),
+            });
+        }
+        if let Some(tmpl) = compiled.rule.cedar_template.as_ref() {
+            let mut owned: HashMap<String, String> = captures
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            add_cedar_template_derived_values(&mut owned);
+            policy_outputs.push(PolicyOutput {
+                engine: PolicyEngine::Cedar,
+                content: crate::cedar::render_template(tmpl, &owned),
+            });
+        }
+
         findings.push(Finding {
             id,
             file: file_path.to_path_buf(),
@@ -155,22 +179,7 @@ pub fn execute_query(
             confidence: compiled.rule.confidence,
             description: compiled.rule.description.clone(),
             pattern_rule: Some(compiled.rule.id.clone()),
-            rego_stub: compiled.rule.rego_template.as_ref().map(|tmpl| {
-                let mut owned: HashMap<String, String> = captures
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect();
-                add_template_derived_values(&mut owned);
-                crate::rego::render_template(tmpl, &owned)
-            }),
-            cedar_stub: compiled.rule.cedar_template.as_ref().map(|tmpl| {
-                let mut owned: HashMap<String, String> = captures
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect();
-                add_cedar_template_derived_values(&mut owned);
-                crate::cedar::render_template(tmpl, &owned)
-            }),
+            policy_outputs,
             pass: ScanPass::Structural,
             surface: Surface::classify(file_path),
         });
@@ -400,7 +409,7 @@ public IActionResult Delete(int id) => Ok();"#,
         );
 
         assert_eq!(findings.len(), 1);
-        let cedar = findings[0].cedar_stub.as_deref().unwrap();
+        let cedar = findings[0].policy_output(PolicyEngine::Cedar).unwrap();
         assert!(
             cedar.contains(r#"principal.role in ["Admin", "Manager"]"#),
             "cedar should split ASP.NET comma-separated roles into a set; got: {cedar}"
@@ -416,7 +425,7 @@ public IActionResult Delete(int id) => Ok();"#,
         );
 
         assert_eq!(findings.len(), 1);
-        let rego = findings[0].rego_stub.as_deref().unwrap();
+        let rego = findings[0].policy_output(PolicyEngine::Rego).unwrap();
         assert!(
             rego.contains(r#"input.user.role in {"Admin", "Manager"}"#),
             "rego should split ASP.NET comma-separated roles; got: {rego}"
@@ -433,7 +442,7 @@ public IActionResult Delete(int id) => Ok();"#,
         );
 
         assert_eq!(findings.len(), 1);
-        let rego = findings[0].rego_stub.as_deref().unwrap();
+        let rego = findings[0].policy_output(PolicyEngine::Rego).unwrap();
         assert!(
             rego.contains(r#"input.user.claims["scope"] == "users.delete""#),
             "rego should require the claim value; got: {rego}"
@@ -449,7 +458,7 @@ public IActionResult Reports() => Ok();"#,
         );
 
         assert_eq!(findings.len(), 1);
-        let rego = findings[0].rego_stub.as_deref().unwrap();
+        let rego = findings[0].policy_output(PolicyEngine::Rego).unwrap();
         assert!(
             rego.contains(r#"input.policy == "CanReadReports""#),
             "rego should include the shorthand policy name; got: {rego}"
@@ -492,12 +501,12 @@ public IActionResult Reports() => Ok();"#,
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
-        let rego = findings[0].rego_stub.as_deref().unwrap();
+        let rego = findings[0].policy_output(PolicyEngine::Rego).unwrap();
         assert!(
             rego.contains(r#""manager" in input.user.roles"#),
             "rego should use a role membership check; got: {rego}"
         );
-        let cedar = findings[0].cedar_stub.as_deref().unwrap();
+        let cedar = findings[0].policy_output(PolicyEngine::Cedar).unwrap();
         assert!(
             cedar.contains(r#"principal.roles.contains("manager")"#),
             "cedar should use a role membership check; got: {cedar}"
@@ -1418,8 +1427,7 @@ match = ".*"
             confidence: Confidence::High,
             description: "test".into(),
             pattern_rule: None,
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         };

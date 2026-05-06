@@ -477,8 +477,7 @@ fn structural_finding(file: &str, line: usize) -> Finding {
         confidence: Confidence::Low,
         description: "matched custom rule".into(),
         pattern_rule: Some("ts-custom".into()),
-        rego_stub: None,
-        cedar_stub: None,
+        policy_outputs: vec![],
         pass: ScanPass::Structural,
         surface: Surface::Backend,
     }

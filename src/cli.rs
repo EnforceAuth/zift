@@ -165,20 +165,7 @@ pub struct ExtractArgs {
     pub min_confidence: Option<Confidence>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum PolicyEngine {
-    Rego,
-    Cedar,
-}
-
-impl std::fmt::Display for PolicyEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PolicyEngine::Rego => write!(f, "rego"),
-            PolicyEngine::Cedar => write!(f, "cedar"),
-        }
-    }
-}
+pub use crate::types::PolicyEngine;
 
 // -- Report --
 

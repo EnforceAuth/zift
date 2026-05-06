@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::types::Finding;
+use crate::types::{Finding, PolicyEngine};
 
 use super::templates;
 
@@ -148,8 +148,8 @@ fn build_rego_content(package_name: &str, source_file: &Path, findings: &[&Findi
         lines.push(format!("# Original: {}", truncated.trim()));
 
         // Get the Rego stub
-        let stub = match &finding.rego_stub {
-            Some(s) => s.clone(),
+        let stub = match finding.policy_output(PolicyEngine::Rego) {
+            Some(s) => s.to_string(),
             None => templates::generate_default_stub(finding.category, &finding.code_snippet),
         };
 
@@ -232,8 +232,7 @@ mod tests {
             confidence: Confidence::High,
             description: "test".into(),
             pattern_rule: Some("test-rule".into()),
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }];
@@ -260,8 +259,7 @@ mod tests {
                 confidence: Confidence::High,
                 description: "test".into(),
                 pattern_rule: None,
-                rego_stub: None,
-                cedar_stub: None,
+                policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
             },
@@ -276,8 +274,7 @@ mod tests {
                 confidence: Confidence::Medium,
                 description: "test".into(),
                 pattern_rule: None,
-                rego_stub: None,
-                cedar_stub: None,
+                policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
             },

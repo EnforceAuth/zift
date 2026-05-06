@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::types::Finding;
+use crate::types::{Finding, PolicyEngine};
 
 use super::templates;
 
@@ -130,8 +130,8 @@ fn build_cedar_content(source_file: &Path, findings: &[&Finding]) -> String {
         };
         lines.push(format!("// Original: {}", truncated.trim()));
 
-        let stub = match &finding.cedar_stub {
-            Some(s) => s.clone(),
+        let stub = match finding.policy_output(PolicyEngine::Cedar) {
+            Some(s) => s.to_string(),
             None => templates::generate_default_stub(finding.category, &finding.code_snippet),
         };
         let wrapped = templates::apply_confidence_wrapping(&stub, finding.confidence);
@@ -161,8 +161,7 @@ mod tests {
             confidence: Confidence::High,
             description: "test".into(),
             pattern_rule: Some("test-rule".into()),
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }
