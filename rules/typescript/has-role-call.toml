@@ -24,6 +24,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
 [[rule.tests]]
 input = """
 if (hasRole("manager")) {

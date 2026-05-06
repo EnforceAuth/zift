@@ -32,6 +32,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    context.policy == "{{policy}}"
+};
+"""
 [[rule.tests]]
 input = """
 using Microsoft.AspNetCore.Authorization;

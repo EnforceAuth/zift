@@ -43,6 +43,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.memberships.contains("{{resource_id}}")
+};
+"""
 [[rule.tests]]
 input = """
 if (membership.belongsTo("team-42")) {

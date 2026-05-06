@@ -46,6 +46,20 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    // TODO: chained DSL — captured verb/resource are identifiers, not
+    // runtime values. Map onto your Cedar action/resource entities.
+    action == Action::"{{verb}}"
+};
+"""
 # -- Positive: Ghost-style permission DSL --
 
 [[rule.tests]]

@@ -31,6 +31,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    resource.owner == principal
+};
+"""
 [[rule.tests]]
 input = """
 if resource.owner_id == user.id:

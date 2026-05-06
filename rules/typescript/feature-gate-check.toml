@@ -26,6 +26,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.plan == "{{plan_value}}"
+};
+"""
 [[rule.tests]]
 input = """
 if (user.plan === "enterprise") {

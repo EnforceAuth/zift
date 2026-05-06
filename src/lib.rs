@@ -11,10 +11,12 @@
 //! - [`error`] — `ZiftError` and `Result<T>`
 //! - [`types`] — core data types (`Finding`, `Language`, `AuthCategory`, …)
 //! - [`rules`] — rule loading (read-only)
-//! - [`rego`] — policy generation; `rego::validator` is the stable surface
+//! - [`rego`] — Rego/OPA policy generation; `rego::validator` is the stable surface
+//! - [`cedar`] — Cedar policy generation; `cedar::validator` is the stable surface
 //! - [`run`] — binary entry point
 
 // Stable public API
+pub mod cedar;
 pub mod cli;
 pub mod error;
 pub mod rego;

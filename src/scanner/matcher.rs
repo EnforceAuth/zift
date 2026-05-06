@@ -163,6 +163,14 @@ pub fn execute_query(
                 add_template_derived_values(&mut owned);
                 crate::rego::render_template(tmpl, &owned)
             }),
+            cedar_stub: compiled.rule.cedar_template.as_ref().map(|tmpl| {
+                let mut owned: HashMap<String, String> = captures
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+                add_cedar_template_derived_values(&mut owned);
+                crate::cedar::render_template(tmpl, &owned)
+            }),
             pass: ScanPass::Structural,
             surface: Surface::classify(file_path),
         });
@@ -173,14 +181,26 @@ pub fn execute_query(
 
 fn add_template_derived_values(vars: &mut HashMap<String, String>) {
     if let Some(roles) = vars.get("roles") {
+        vars.insert("roles_set".to_string(), comma_separated_quoted_items(roles));
+    }
+}
+
+/// Cedar-flavored counterpart to [`add_template_derived_values`]. Cedar's set
+/// syntax is `[a, b]` (templates wrap the brackets) — the raw item list is
+/// engine-neutral, but we keep this helper separate so the Rego and Cedar
+/// derivation paths can diverge without dragging each other along (e.g. if
+/// Cedar grows entity-type prefixes like `Role::"admin"` for its set items).
+fn add_cedar_template_derived_values(vars: &mut HashMap<String, String>) {
+    let source = vars.get("roles").or_else(|| vars.get("role_value"));
+    if let Some(value) = source {
         vars.insert(
-            "roles_set".to_string(),
-            comma_separated_rego_set_items(roles),
+            "cedar_roles_set".to_string(),
+            comma_separated_quoted_items(value),
         );
     }
 }
 
-fn comma_separated_rego_set_items(value: &str) -> String {
+fn comma_separated_quoted_items(value: &str) -> String {
     value
         .trim()
         .trim_matches('"')
@@ -365,6 +385,26 @@ mod tests {
             include_str!("../../rules/typescript/has-role-call.toml"),
         );
         assert!(!findings.is_empty());
+    }
+
+    #[test]
+    fn csharp_authorize_roles_splits_comma_separated_roles_in_cedar() {
+        // Regression: the cedar_template path used to drop the captured
+        // role list and emit `principal.role == "TODO"`. With the
+        // `cedar_roles_set` derived var it should now expand to a Cedar
+        // set membership check matching the Rego sibling.
+        let findings = parse_and_match(
+            r#"[Authorize(Roles = "Admin,Manager")]
+public IActionResult Delete(int id) => Ok();"#,
+            include_str!("../../rules/csharp/aspnet-authorize-roles.toml"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        let cedar = findings[0].cedar_stub.as_deref().unwrap();
+        assert!(
+            cedar.contains(r#"principal.role in ["Admin", "Manager"]"#),
+            "cedar should split ASP.NET comma-separated roles into a set; got: {cedar}"
+        );
     }
 
     #[test]
@@ -1349,6 +1389,7 @@ match = ".*"
             description: "test".into(),
             pattern_rule: None,
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         };

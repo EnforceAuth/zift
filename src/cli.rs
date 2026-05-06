@@ -147,13 +147,37 @@ pub struct ExtractArgs {
     #[arg(long, default_value = "./policies/generated")]
     pub output_dir: PathBuf,
 
-    /// Rego package prefix
-    #[arg(long, default_value = "app")]
-    pub package_prefix: String,
+    /// Policy prefix
+    ///
+    /// For Rego: dotted package prefix (e.g. `app.authz`).
+    /// For Cedar: filename/directory prefix (Cedar has no package concept).
+    /// Aliased as `--package-prefix` for backward compatibility with the
+    /// pre-Cedar CLI.
+    #[arg(long, alias = "package-prefix", default_value = "app")]
+    pub policy_prefix: String,
+
+    /// Policy engine to generate
+    #[arg(long, value_enum, default_value_t = PolicyEngine::Rego)]
+    pub engine: PolicyEngine,
 
     /// Skip findings below this confidence
     #[arg(long)]
     pub min_confidence: Option<Confidence>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PolicyEngine {
+    Rego,
+    Cedar,
+}
+
+impl std::fmt::Display for PolicyEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PolicyEngine::Rego => write!(f, "rego"),
+            PolicyEngine::Cedar => write!(f, "cedar"),
+        }
+    }
 }
 
 // -- Report --
@@ -282,6 +306,31 @@ mod tests {
         ])
         .unwrap();
         assert!(matches!(cli.command, Some(Command::Extract(_))));
+        if let Some(Command::Extract(args)) = cli.command {
+            assert_eq!(args.policy_prefix, "myapp");
+            assert_eq!(args.engine, PolicyEngine::Rego);
+        }
+    }
+
+    #[test]
+    fn extract_subcommand_with_cedar_engine() {
+        let cli = Cli::try_parse_from([
+            "zift",
+            "extract",
+            "--input",
+            "findings.json",
+            "--policy-prefix",
+            "app",
+            "--engine",
+            "cedar",
+        ])
+        .unwrap();
+        if let Some(Command::Extract(args)) = cli.command {
+            assert_eq!(args.engine, PolicyEngine::Cedar);
+            assert_eq!(args.policy_prefix, "app");
+        } else {
+            panic!("expected Extract command");
+        }
     }
 
     #[test]

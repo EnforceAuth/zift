@@ -30,6 +30,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role_value}}")
+};
+"""
 [[rule.tests]]
 input = """
 if (user.roles.includes("admin")) {

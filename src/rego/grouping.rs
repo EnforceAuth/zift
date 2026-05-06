@@ -233,6 +233,7 @@ mod tests {
             description: "test".into(),
             pattern_rule: Some("test-rule".into()),
             rego_stub: None,
+            cedar_stub: None,
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }];
@@ -260,6 +261,7 @@ mod tests {
                 description: "test".into(),
                 pattern_rule: None,
                 rego_stub: None,
+                cedar_stub: None,
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
             },
@@ -275,6 +277,7 @@ mod tests {
                 description: "test".into(),
                 pattern_rule: None,
                 rego_stub: None,
+                cedar_stub: None,
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
             },

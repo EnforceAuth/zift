@@ -28,6 +28,19 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    // TODO: translate ASP.NET authorization service call: {{arguments}}
+    principal.authenticated == true
+};
+"""
 [[rule.tests]]
 input = """
 var result = await _authorizationService.AuthorizeAsync(User, resource, "CanDeleteUsers");

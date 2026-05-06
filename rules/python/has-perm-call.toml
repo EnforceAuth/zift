@@ -32,6 +32,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    "{{perm_name}}" in principal.permissions
+};
+"""
 [[rule.tests]]
 input = """
 if request.user.has_perm('app.delete_user'):

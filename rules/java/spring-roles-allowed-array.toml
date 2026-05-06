@@ -25,6 +25,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role in [{{cedar_roles_set}}]
+};
+"""
 [[rule.tests]]
 input = """
 public class UserController {

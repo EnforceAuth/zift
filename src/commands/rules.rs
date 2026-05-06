@@ -59,6 +59,15 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                         errors += 1;
                     }
                 }
+                // Validate Cedar template if present
+                if let Some(ref tmpl) = rule.cedar_template {
+                    let result = crate::cedar::validator::validate_template(tmpl);
+                    if !result.valid {
+                        let err = result.error.unwrap_or_default();
+                        eprintln!("FAIL  {}  cedar_template: {err}", rule.id);
+                        errors += 1;
+                    }
+                }
             }
             if errors == 0 {
                 println!("All {} rules validated successfully.", loaded.len());

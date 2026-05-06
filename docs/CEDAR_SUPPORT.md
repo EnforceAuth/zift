@@ -88,9 +88,10 @@ So: log the design now while context is fresh; revisit when v0.2 is shipping.
    - Add `suggest_policy(finding_id, engine)` and `validate_policy(content, engine)`.
    - Keep `suggest_rego` and `validate_rego` as Rego-pinned aliases that internally call the new tools with `engine="rego"`. Document them as deprecated but supported.
 
-### Phase B — clean up the abstraction (later, ~150 lines + refactor)
+### Phase B — clean up the abstraction (~150 lines + refactor)
 
-Once Phase A has shipped and users have actually generated Cedar in anger:
+Tracked separately as its own work item so Phase A can ship and Phase B can
+land on its own merits, not on a wait-for-feedback gate.
 
 6. **Extract a `PolicyGenerator` trait**
    ```rust
@@ -103,14 +104,14 @@ Once Phase A has shipped and users have actually generated Cedar in anger:
    ```
    `RegoGenerator` and `CedarGenerator` implement it. The `extract` pipeline becomes generic over `dyn PolicyGenerator`, dispatched off the `--engine` flag.
 
-7. **Consider a `PolicyOutput` collection on `Finding`**
-   Replace the parallel `*_stub` fields with `policy_outputs: Vec<PolicyOutput>` once enough engines exist that the parallel-field pattern becomes embarrassing. This is a JSON-schema break — gate it behind a major-version bump.
+7. **Replace parallel `*_stub` fields with a `PolicyOutput` collection on `Finding`**
+   Swap `rego_stub` / `cedar_stub` for `policy_outputs: Vec<PolicyOutput>`. Provide a deserialization shim that folds legacy `*_stub` fields into the new collection so existing findings files keep loading; the shim is part of Phase B, not a separate migration.
 
 ## Risks and migrations
 
 | Risk | Detail | Mitigation |
 |---|---|---|
-| Persisted JSON findings drift | Users who store findings files will have a mix of `rego_stub`-only and `rego_stub` + `cedar_stub` records | Keep both fields; never remove `rego_stub` without a major-version bump |
+| Persisted JSON findings drift | Users who store findings files will have a mix of `rego_stub`-only and `rego_stub` + `cedar_stub` records | Phase A keeps both fields. Phase B replaces them with `policy_outputs` and ships a deserialization shim that reads the legacy fields, so old findings files keep loading without a coordinated bump |
 | MCP tool-name contract | Agent hosts have `suggest_rego` / `validate_rego` wired up | Keep them as aliases indefinitely; new tools are opt-in |
 | Half-baked Cedar templates | Shipping Cedar coverage for some rules but not others reads as broken | Document Cedar coverage per-rule; CLI warns when extracting Cedar from rules that have no Cedar template |
 | `regorus` and `cedar-policy` binary size | Two policy engines linked into one binary | Both are Rust-native; combined overhead should be ~3–5MB. Acceptable. Revisit with `--features rego,cedar` if it bloats |
@@ -133,3 +134,4 @@ Once Phase A has shipped and users have actually generated Cedar in anger:
 ## Decision log
 
 - **2026-05-03** — memo drafted alongside the user-facing rename from "Rego for OPA" to "Policy as Code (PaC)." No code changes proposed yet; doc captures the investigation while context is fresh.
+- **2026-05-06** — Phase A landed (`feat: add Cedar as a second policy engine`). Phase B's "wait for users" gate and "JSON-schema break needs a major-version bump" gate dropped: the `*_stub` → `policy_outputs` migration is in Phase B's scope and ships with a deserialization shim, so it doesn't need a coordinated version cut.

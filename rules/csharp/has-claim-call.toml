@@ -36,6 +36,18 @@ allow if {
 }
 """
 
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.claims["{{claim_type}}"] == "{{claim_value}}"
+};
+"""
 [[rule.tests]]
 input = """
 if (User.HasClaim("scope", "users.delete")) {
