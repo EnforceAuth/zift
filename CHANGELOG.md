@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/EnforceAuth/zift/compare/v0.2.0...v0.2.1) - 2026-05-06
+
+### Added
+
+- detect Cedar enforcement points ([#76](https://github.com/EnforceAuth/zift/pull/76))
+- add Cedar as a second policy engine ([#72](https://github.com/EnforceAuth/zift/pull/72))
+
 ## [0.2.0](https://github.com/EnforceAuth/zift/compare/v0.1.9...v0.2.0) - 2026-05-05
 
 ### Added
