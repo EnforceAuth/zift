@@ -10,6 +10,9 @@ const POLICY_INDICATORS: &[&str] = &[
     "opa",
     "policy",
     "rego",
+    "cedar",
+    "verifiedpermissions",
+    "verified-permissions",
     "enforce",
     "open-policy-agent",
 ];

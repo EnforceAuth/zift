@@ -1,0 +1,41 @@
+[rule]
+id = "py-aws-verified-permissions"
+languages = ["python"]
+category = "custom"
+confidence = "high"
+description = "AWS Verified Permissions authorization call in Python"
+externalized = true
+query = """
+(call
+  function: (attribute
+    object: (_) @receiver
+    attribute: (identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(is_authorized|is_authorized_with_token)$"
+
+[rule.predicates.receiver]
+match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+
+[[rule.tests]]
+input = """
+import boto3
+
+client = boto3.client("verifiedpermissions")
+client.is_authorized_with_token(**params)
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+client.is_authorized(policyStoreId=store_id)
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+cache.get("is_authorized")
+"""
+expect_match = false

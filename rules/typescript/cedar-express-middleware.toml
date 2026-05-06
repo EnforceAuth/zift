@@ -1,0 +1,36 @@
+[rule]
+id = "ts-cedar-express-middleware"
+languages = ["typescript", "javascript"]
+category = "middleware"
+confidence = "high"
+description = "Cedar Express authorization middleware registration"
+externalized = true
+query = """
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @method_name)
+  arguments: (arguments
+    (call_expression
+      function: (identifier) @middleware_name))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "use"
+
+[rule.predicates.middleware_name]
+eq = "authorizationMiddleware"
+
+[[rule.tests]]
+input = """
+import { authorizationMiddleware } from "@cedar-policy/authorization-for-expressjs";
+
+app.use(authorizationMiddleware({ authorizer }));
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+app.use(cors());
+"""
+expect_match = false

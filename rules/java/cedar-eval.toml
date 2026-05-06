@@ -1,0 +1,41 @@
+[rule]
+id = "java-cedar-eval"
+languages = ["java"]
+category = "custom"
+confidence = "high"
+description = "Cedar policy evaluation in Java (AuthorizationEngine.isAuthorized)"
+externalized = true
+query = """
+(method_invocation
+  object: (_) @receiver
+  name: (identifier) @method_name
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "isAuthorized"
+
+[rule.predicates.receiver]
+match = "(?i)(authorizationengine|engine|authorizer|cedar|authz)"
+
+[[rule.tests]]
+input = """
+import com.cedarpolicy.AuthorizationEngine;
+
+class Handler {
+    boolean decide(AuthorizationEngine engine, Request request) {
+        return engine.isAuthorized(request).isAllowed();
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Handler {
+    void run(Service svc) {
+        svc.process(input);
+    }
+}
+"""
+expect_match = false

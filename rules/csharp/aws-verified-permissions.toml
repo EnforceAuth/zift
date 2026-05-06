@@ -1,0 +1,38 @@
+[rule]
+id = "csharp-aws-verified-permissions"
+languages = ["csharp"]
+category = "custom"
+confidence = "high"
+description = "AWS Verified Permissions authorization call in C#"
+externalized = true
+query = """
+(invocation_expression
+  function: (member_access_expression
+    expression: (_) @receiver
+    name: (identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(IsAuthorizedAsync|IsAuthorizedWithTokenAsync)$"
+
+[rule.predicates.receiver]
+match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+
+[[rule.tests]]
+input = """
+var response = await client.IsAuthorizedAsync(request);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var response = await client.IsAuthorizedWithTokenAsync(request);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+var response = await client.SendAsync(request);
+"""
+expect_match = false

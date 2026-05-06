@@ -72,6 +72,14 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "feature-gate-check",
         include_str!("../../rules/typescript/feature-gate-check.toml"),
     ),
+    (
+        "ts-aws-verified-permissions",
+        include_str!("../../rules/typescript/aws-verified-permissions.toml"),
+    ),
+    (
+        "ts-cedar-express-middleware",
+        include_str!("../../rules/typescript/cedar-express-middleware.toml"),
+    ),
     // -- Java --
     (
         "java-spring-preauthorize",
@@ -157,6 +165,14 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "java-custom-authz-call",
         include_str!("../../rules/java/custom-authz-call.toml"),
     ),
+    (
+        "java-cedar-eval",
+        include_str!("../../rules/java/cedar-eval.toml"),
+    ),
+    (
+        "java-aws-verified-permissions",
+        include_str!("../../rules/java/aws-verified-permissions.toml"),
+    ),
     // -- Python --
     (
         "py-django-permission-required",
@@ -206,6 +222,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "py-feature-gate-check",
         include_str!("../../rules/python/feature-gate-check.toml"),
     ),
+    (
+        "py-aws-verified-permissions",
+        include_str!("../../rules/python/aws-verified-permissions.toml"),
+    ),
     // -- Go --
     (
         "go-has-role-call",
@@ -242,6 +262,14 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
     (
         "go-opa-rego-eval",
         include_str!("../../rules/go/opa-rego-eval.toml"),
+    ),
+    (
+        "go-cedar-eval",
+        include_str!("../../rules/go/cedar-eval.toml"),
+    ),
+    (
+        "go-aws-verified-permissions",
+        include_str!("../../rules/go/aws-verified-permissions.toml"),
     ),
     (
         "go-access-descriptor-builder",
@@ -287,6 +315,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
     (
         "csharp-authorization-service-authorize-async",
         include_str!("../../rules/csharp/authorization-service-authorize-async.toml"),
+    ),
+    (
+        "csharp-aws-verified-permissions",
+        include_str!("../../rules/csharp/aws-verified-permissions.toml"),
     ),
 ];
 

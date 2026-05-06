@@ -335,3 +335,65 @@ public class OrderController {
         result.findings,
     );
 }
+
+#[test]
+fn externalized_rules_count_without_policy_import_shortcut() {
+    let cases = [
+        (
+            "handler.js",
+            r#"
+async function decide(client, params) {
+  return client.isAuthorizedWithToken(params);
+}
+"#,
+            "ts-aws-verified-permissions",
+        ),
+        (
+            "views.py",
+            r#"
+def decide(client, params):
+    return client.is_authorized(**params)
+"#,
+            "py-aws-verified-permissions",
+        ),
+        (
+            "decide.go",
+            r#"package main
+
+func decide(ps *PolicySet, req Request) {
+    ok, diag := ps.IsAuthorized(req)
+    _, _ = ok, diag
+}
+"#,
+            "go-cedar-eval",
+        ),
+        (
+            "Handler.cs",
+            r#"
+public async Task<bool> Decide(Client client, Request request) {
+    var response = await client.IsAuthorizedAsync(request);
+    return response.Decision == Decision.Allow;
+}
+"#,
+            "csharp-aws-verified-permissions",
+        ),
+    ];
+
+    for (filename, contents, rule_id) in cases {
+        let result = scan_fixture(filename, contents);
+        assert_eq!(
+            result.enforcement_points, 1,
+            "expected {rule_id} in {filename} to count as an externalized enforcement point; \
+             got {} (findings: {:?})",
+            result.enforcement_points, result.findings,
+        );
+        assert!(
+            !result
+                .findings
+                .iter()
+                .any(|f| f.pattern_rule.as_deref() == Some(rule_id)),
+            "externalized rule {rule_id} leaked into embedded findings: {:?}",
+            result.findings,
+        );
+    }
+}

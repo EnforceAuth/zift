@@ -1,0 +1,56 @@
+[rule]
+id = "go-aws-verified-permissions"
+languages = ["go"]
+category = "custom"
+confidence = "high"
+description = "AWS Verified Permissions authorization call in Go"
+externalized = true
+query = """
+(call_expression
+  function: (selector_expression
+    operand: (_) @receiver
+    field: (field_identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(IsAuthorized|IsAuthorizedWithToken)$"
+
+[rule.predicates.receiver]
+match = "(?i)(verifiedpermissions|verified_permissions|avp|vp|client)"
+
+[[rule.tests]]
+input = """
+package main
+
+import "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
+
+func decide(client *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedInput) {
+    out, err := client.IsAuthorized(ctx, input)
+    _ = out
+    _ = err
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(client *verifiedpermissions.Client, ctx context.Context, input *verifiedpermissions.IsAuthorizedWithTokenInput) {
+    out, err := client.IsAuthorizedWithToken(ctx, input)
+    _ = out
+    _ = err
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(client *http.Client, req *http.Request) {
+    client.Do(req)
+}
+"""
+expect_match = false
