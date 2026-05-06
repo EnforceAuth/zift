@@ -77,6 +77,24 @@ language = "javascript"
 
 [[rule.tests]]
 input = """
+if (scope.includes("read:billing")) {
+  allow();
+}
+"""
+expect_match = false
+language = "javascript"
+
+[[rule.tests]]
+input = """
+if (scopes.has("write:billing")) {
+  allow();
+}
+"""
+expect_match = false
+language = "javascript"
+
+[[rule.tests]]
+input = """
 if (cache.has("key")) {
   hit();
 }
