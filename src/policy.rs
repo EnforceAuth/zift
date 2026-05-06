@@ -71,11 +71,14 @@ pub trait PolicyGenerator {
 }
 
 /// Obtain the generator for a policy engine. Generators are zero-sized
-/// and constructed on demand so dispatch sites can stay generic over
-/// `&dyn PolicyGenerator` without thinking about ownership.
-pub fn generator_for(engine: PolicyEngine) -> Box<dyn PolicyGenerator> {
+/// unit structs, so we hand out `&'static` references to module-level
+/// statics and avoid per-call allocation. Dispatch sites stay generic
+/// over `&dyn PolicyGenerator`.
+pub fn generator_for(engine: PolicyEngine) -> &'static dyn PolicyGenerator {
+    static REGO: crate::rego::RegoGenerator = crate::rego::RegoGenerator;
+    static CEDAR: crate::cedar::CedarGenerator = crate::cedar::CedarGenerator;
     match engine {
-        PolicyEngine::Rego => Box::new(crate::rego::RegoGenerator),
-        PolicyEngine::Cedar => Box::new(crate::cedar::CedarGenerator),
+        PolicyEngine::Rego => &REGO,
+        PolicyEngine::Cedar => &CEDAR,
     }
 }

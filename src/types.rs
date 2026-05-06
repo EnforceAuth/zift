@@ -11,12 +11,31 @@ pub enum PolicyEngine {
     Cedar,
 }
 
+impl PolicyEngine {
+    /// Lowercase canonical identifier used in JSON keys, CLI flags, and
+    /// log lines. Stable across the public surface — matches the serde
+    /// representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PolicyEngine::Rego => "rego",
+            PolicyEngine::Cedar => "cedar",
+        }
+    }
+
+    /// Human-readable name for prose-style output (e.g. "Generated 3
+    /// Rego files"). Distinct from [`Self::as_str`] so user-facing
+    /// messages stay capitalized.
+    pub fn human_name(&self) -> &'static str {
+        match self {
+            PolicyEngine::Rego => "Rego",
+            PolicyEngine::Cedar => "Cedar",
+        }
+    }
+}
+
 impl std::fmt::Display for PolicyEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PolicyEngine::Rego => write!(f, "rego"),
-            PolicyEngine::Cedar => write!(f, "cedar"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
@@ -111,7 +130,17 @@ struct FindingShim {
 
 impl From<FindingShim> for Finding {
     fn from(s: FindingShim) -> Self {
-        let mut policy_outputs = s.policy_outputs;
+        // Dedupe explicit entries by engine, keeping the first occurrence.
+        // Hand-written or mid-migration JSON could carry duplicates; the
+        // lookup helpers (`policy_output`) silently return the first match,
+        // so dropping the rest at parse time keeps the in-memory shape
+        // honest.
+        let mut policy_outputs: Vec<PolicyOutput> = Vec::with_capacity(s.policy_outputs.len());
+        for po in s.policy_outputs {
+            if !policy_outputs.iter().any(|p| p.engine == po.engine) {
+                policy_outputs.push(po);
+            }
+        }
         // Fold legacy fields into policy_outputs only when the new field
         // doesn't already carry an entry for that engine — explicit
         // `policy_outputs` wins on conflict.

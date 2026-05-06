@@ -47,9 +47,8 @@ pub fn execute(args: ExtractArgs, config: ZiftConfig) -> Result<()> {
         return Ok(());
     }
 
-    let generator = generator_for(args.engine);
     run_extract(
-        generator.as_ref(),
+        generator_for(args.engine),
         &mut findings,
         policy_prefix,
         &output_dir,
@@ -68,6 +67,7 @@ fn run_extract(
     output_dir: &Path,
 ) -> Result<()> {
     let engine = generator.engine();
+    let engine_name = engine.human_name();
     for finding in findings.iter_mut() {
         if finding.policy_output(engine).is_none() {
             let stub = generator.default_stub(finding.category, &finding.code_snippet);
@@ -108,18 +108,18 @@ fn run_extract(
             policy_file.output_path.display(),
         );
         if let Some(err) = validation.error {
-            eprintln!("       ⚠ {engine} parse warning: {err}");
+            eprintln!("       ⚠ {engine_name} parse warning: {err}");
             validation_warnings += 1;
         }
     }
 
     eprintln!(
-        "\nGenerated {total_files} {engine} files from {} findings.",
+        "\nGenerated {total_files} {engine_name} files from {} findings.",
         findings.len(),
     );
     if validation_warnings > 0 {
         eprintln!(
-            "{validation_warnings} file(s) have {engine} syntax warnings — review before deploying.",
+            "{validation_warnings} file(s) have {engine_name} syntax warnings — review before deploying.",
         );
     }
     Ok(())

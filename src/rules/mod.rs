@@ -291,14 +291,20 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
         cross_predicates.push(parsed);
     }
 
-    let mut policy_templates: Vec<PolicyTemplate> = r
-        .policy_templates
-        .into_iter()
-        .map(|t| PolicyTemplate {
-            engine: t.engine,
-            template: t.template,
-        })
-        .collect();
+    // Dedupe by engine, keeping the first occurrence. `template_for`
+    // returns the first match, so hand-written TOML with two
+    // `[[rule.policy_templates]]` blocks for the same engine would
+    // silently use one of them — drop the rest at parse time so the
+    // in-memory shape can't surprise later code.
+    let mut policy_templates: Vec<PolicyTemplate> = Vec::with_capacity(r.policy_templates.len());
+    for t in r.policy_templates {
+        if !policy_templates.iter().any(|p| p.engine == t.engine) {
+            policy_templates.push(PolicyTemplate {
+                engine: t.engine,
+                template: t.template,
+            });
+        }
+    }
     // Fold legacy single-engine template blocks into the new collection.
     // Explicit `[[rule.policy_templates]]` entries win on conflict — same
     // contract as the Finding shim.

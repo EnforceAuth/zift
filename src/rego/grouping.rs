@@ -147,11 +147,15 @@ fn build_rego_content(package_name: &str, source_file: &Path, findings: &[&Findi
         };
         lines.push(format!("# Original: {}", truncated.trim()));
 
-        // Get the Rego stub
-        let stub = match finding.policy_output(PolicyEngine::Rego) {
-            Some(s) => s.to_string(),
-            None => templates::generate_default_stub(finding.category, &finding.code_snippet),
+        // The extract pipeline pre-fills `policy_output(Rego)` for every
+        // finding before calling into grouping (see
+        // `commands::extract::run_extract`), so we treat its presence as
+        // an invariant and skip findings without one rather than silently
+        // synthesizing a default — that would mask a missing pre-fill.
+        let Some(stub) = finding.policy_output(PolicyEngine::Rego) else {
+            continue;
         };
+        let stub = stub.to_string();
 
         // Apply confidence wrapping
         let wrapped = templates::apply_confidence_wrapping(&stub, finding.confidence);
@@ -219,9 +223,20 @@ mod tests {
         assert_eq!(path, PathBuf::from("./policies/api/orders.rego"));
     }
 
+    /// Mirrors the pre-fill `commands::extract::run_extract` performs
+    /// before invoking `group_findings`: every finding lands here with a
+    /// rendered Rego stub already attached.
+    fn with_default_stub(mut f: Finding) -> Finding {
+        f.set_policy_output(
+            PolicyEngine::Rego,
+            templates::generate_default_stub(f.category, &f.code_snippet),
+        );
+        f
+    }
+
     #[test]
     fn group_findings_single_file() {
-        let findings = vec![Finding {
+        let findings = vec![with_default_stub(Finding {
             id: "abc".into(),
             file: PathBuf::from("src/api/orders.ts"),
             line_start: 10,
@@ -235,7 +250,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
-        }];
+        })];
 
         let files = group_findings(&findings, "app", Path::new("./policies"));
         assert_eq!(files.len(), 1);
@@ -248,7 +263,7 @@ mod tests {
     #[test]
     fn group_findings_multiple_files() {
         let findings = vec![
-            Finding {
+            with_default_stub(Finding {
                 id: "a".into(),
                 file: PathBuf::from("src/api/orders.ts"),
                 line_start: 10,
@@ -262,8 +277,8 @@ mod tests {
                 policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
-            },
-            Finding {
+            }),
+            with_default_stub(Finding {
                 id: "b".into(),
                 file: PathBuf::from("src/api/users.ts"),
                 line_start: 5,
@@ -277,7 +292,7 @@ mod tests {
                 policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
-            },
+            }),
         ];
 
         let files = group_findings(&findings, "app", Path::new("./policies"));

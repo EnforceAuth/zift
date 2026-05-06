@@ -586,10 +586,7 @@ fn suggest_policy(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
 
     let wrapped = generator.wrap_by_confidence(&rendered, parsed.confidence);
 
-    let key = match engine {
-        PolicyEngine::Rego => "rego",
-        PolicyEngine::Cedar => "cedar",
-    };
+    let key = engine.as_str();
     Ok(json!({
         "engine": key,
         "policy": wrapped,
@@ -632,15 +629,10 @@ fn validate_policy_tool(args: &Value) -> Result<Value, String> {
     let parsed: ValidatePolicyArgs = parse_args(args, "validate_policy")?;
     let engine = parsed.engine.unwrap_or(PolicyEngine::Rego);
     let result = generator_for(engine).validate(&parsed.policy);
-    let (valid, error) = (result.valid, result.error);
-    let key = match engine {
-        PolicyEngine::Rego => "rego",
-        PolicyEngine::Cedar => "cedar",
-    };
     Ok(json!({
-        "engine": key,
-        "valid": valid,
-        "error": error,
+        "engine": engine.as_str(),
+        "valid": result.valid,
+        "error": result.error,
     }))
 }
 
