@@ -79,12 +79,12 @@ pub fn scan(
     // `enforce`, `open-policy-agent` — see `scanner::imports`). Those calls
     // are already routed through a policy engine, so we suppress the inline
     // finding and count them here instead — that's what feeds
-    // `summary.externalized_pct` in the JSON output. Import-statement
-    // detection is wired for TS/JS, Go, Python, and Java today; other
-    // languages (C#, Kotlin, Ruby, PHP) currently no-op the counter. Most
-    // open-source corpora we've tried also ship zero externalized policy,
-    // so a 0 here is usually correct rather than buggy. Pinned by
-    // `tests/scanner_enforcement_points.rs`.
+    // `summary.externalized_pct` in the JSON output. Some rules are
+    // explicitly marked `externalized = true` for known policy engines and
+    // managed services (OPA/Cedar/AWS Verified Permissions); those count
+    // directly because the matched API call is the external enforcement
+    // point. Import-statement detection remains the fallback for custom
+    // policy wrappers. Pinned by `tests/scanner_enforcement_points.rs`.
     let mut enforcement_points: usize = 0;
     let mut seen_enforcement: std::collections::HashSet<(std::path::PathBuf, usize)> =
         std::collections::HashSet::new();
@@ -131,11 +131,13 @@ pub fn scan(
             )?;
 
             // Separate enforcement points from inline auth findings
-            if policy_imports.is_empty() {
+            if policy_imports.is_empty() && !compiled.rule.externalized {
                 all_findings.extend(findings);
             } else {
                 for finding in findings {
-                    if imports::is_enforcement_point(&finding.code_snippet, &policy_imports) {
+                    if compiled.rule.externalized
+                        || imports::is_enforcement_point(&finding.code_snippet, &policy_imports)
+                    {
                         let key = (finding.file.clone(), finding.line_start);
                         if seen_enforcement.insert(key) {
                             enforcement_points += 1;

@@ -1,0 +1,48 @@
+[rule]
+id = "ts-aws-verified-permissions"
+languages = ["typescript", "javascript"]
+category = "custom"
+confidence = "high"
+description = "AWS Verified Permissions authorization call in JavaScript/TypeScript"
+externalized = true
+query = """
+(call_expression
+  function: (member_expression
+    object: (_) @receiver
+    property: (property_identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(isAuthorized|isAuthorizedWithToken)$"
+
+[rule.predicates.receiver]
+match = "(?i)(verifiedpermissions|verified_permissions|verifiedPermissionsClient|avp|\\bvp\\b)"
+
+[[rule.tests]]
+input = """
+import { VerifiedPermissions } from "@aws-sdk/client-verifiedpermissions";
+
+const verifiedpermissions = new VerifiedPermissions({});
+await verifiedpermissions.isAuthorizedWithToken(params);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+const verifiedPermissionsClient = new VerifiedPermissionsClient({});
+await verifiedPermissionsClient.isAuthorized(params);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+await user.isAuthorized();
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+await client.isAuthorized(params);
+"""
+expect_match = false

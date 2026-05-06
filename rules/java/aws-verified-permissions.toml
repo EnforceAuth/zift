@@ -1,0 +1,61 @@
+[rule]
+id = "java-aws-verified-permissions"
+languages = ["java"]
+category = "custom"
+confidence = "high"
+description = "AWS Verified Permissions authorization call in Java"
+externalized = true
+query = """
+(method_invocation
+  object: (_) @receiver
+  name: (identifier) @method_name
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(isAuthorized|isAuthorizedWithToken)$"
+
+[rule.predicates.receiver]
+match = "(?i)(verifiedpermissions|verified_permissions|avp|\\bvp\\b)"
+
+[[rule.tests]]
+input = """
+import software.amazon.awssdk.services.verifiedpermissions.VerifiedPermissionsClient;
+
+class Handler {
+    void decide(VerifiedPermissionsClient avp, IsAuthorizedRequest request) {
+        avp.isAuthorized(request);
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Handler {
+    void decide(VerifiedPermissionsClient verifiedPermissions, IsAuthorizedWithTokenRequest request) {
+        verifiedPermissions.isAuthorizedWithToken(request);
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Handler {
+    void run(Service svc) {
+        svc.process(input);
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+class Handler {
+    void decide(Authorizer client, Request request) {
+        client.isAuthorized(request);
+    }
+}
+"""
+expect_match = false

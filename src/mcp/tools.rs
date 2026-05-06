@@ -358,6 +358,7 @@ fn get_rule(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
         "category": rule.category,
         "confidence": rule.confidence,
         "description": rule.description,
+        "externalized": rule.externalized,
         "query": rule.query_source,
         "predicates": predicates,
         "cross_predicates": cross_predicates,

@@ -1,0 +1,56 @@
+[rule]
+id = "go-cedar-eval"
+languages = ["go"]
+category = "custom"
+confidence = "high"
+description = "Cedar policy evaluation in Go (cedar-go PolicySet/IsAuthorized calls)"
+externalized = true
+query = """
+(call_expression
+  function: (selector_expression
+    operand: (_) @receiver
+    field: (field_identifier) @method_name)
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "IsAuthorized"
+
+[rule.predicates.receiver]
+match = "(?i)(cedar|policyset|policy_set|ps|authorizer|authz)"
+
+[[rule.tests]]
+input = """
+package main
+
+import "github.com/cedar-policy/cedar-go"
+
+func loadPolicySet(src []byte) {
+    ps, err := cedar.NewPolicySetFromBytes(src)
+    _ = ps
+    _ = err
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+package main
+
+func decide(ps *cedar.PolicySet, req cedar.Request) {
+    ok, diag := ps.IsAuthorized(req)
+    _ = ok
+    _ = diag
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+package main
+
+func handle(svc *Service) {
+    svc.Process(input)
+}
+"""
+expect_match = false
