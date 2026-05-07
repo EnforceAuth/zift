@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::types::Finding;
+use crate::types::{Finding, PolicyEngine};
 
 use super::templates;
 
@@ -130,11 +130,21 @@ fn build_cedar_content(source_file: &Path, findings: &[&Finding]) -> String {
         };
         lines.push(format!("// Original: {}", truncated.trim()));
 
-        let stub = match &finding.cedar_stub {
-            Some(s) => s.clone(),
-            None => templates::generate_default_stub(finding.category, &finding.code_snippet),
+        // The extract pipeline pre-fills `policy_output(Cedar)` for every
+        // finding before calling into grouping (see
+        // `commands::extract::run_extract`), so we treat its presence as
+        // an invariant and skip findings without one rather than silently
+        // synthesizing a default — that would mask a missing pre-fill.
+        let Some(stub) = finding.policy_output(PolicyEngine::Cedar) else {
+            tracing::warn!(
+                finding_id = %finding.id,
+                file = %finding.file.display(),
+                line = finding.line_start,
+                "skipping finding without Cedar policy output; header counts will overstate coverage"
+            );
+            continue;
         };
-        let wrapped = templates::apply_confidence_wrapping(&stub, finding.confidence);
+        let wrapped = templates::apply_confidence_wrapping(stub, finding.confidence);
         for line in wrapped.lines() {
             lines.push(line.to_string());
         }
@@ -149,8 +159,11 @@ mod tests {
     use super::*;
     use crate::types::*;
 
+    /// Mirrors the pre-fill `commands::extract::run_extract` performs
+    /// before invoking `group_findings`: every finding lands here with a
+    /// rendered Cedar stub already attached.
     fn finding(file: &str, snippet: &str, category: AuthCategory) -> Finding {
-        Finding {
+        let mut f = Finding {
             id: "x".into(),
             file: PathBuf::from(file),
             line_start: 10,
@@ -161,11 +174,15 @@ mod tests {
             confidence: Confidence::High,
             description: "test".into(),
             pattern_rule: Some("test-rule".into()),
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
-        }
+        };
+        f.set_policy_output(
+            PolicyEngine::Cedar,
+            templates::generate_default_stub(f.category, &f.code_snippet),
+        );
+        f
     }
 
     #[test]

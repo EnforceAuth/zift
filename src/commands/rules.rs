@@ -50,21 +50,25 @@ pub fn execute(args: RulesArgs, config: ZiftConfig) -> Result<()> {
                         }
                     }
                 }
-                // Validate Rego template if present
-                if let Some(ref tmpl) = rule.rego_template {
-                    let result = crate::rego::validator::validate_template(tmpl);
-                    if !result.valid {
-                        let err = result.error.unwrap_or_default();
-                        eprintln!("FAIL  {}  rego_template: {err}", rule.id);
-                        errors += 1;
-                    }
-                }
-                // Validate Cedar template if present
-                if let Some(ref tmpl) = rule.cedar_template {
-                    let result = crate::cedar::validator::validate_template(tmpl);
-                    if !result.valid {
-                        let err = result.error.unwrap_or_default();
-                        eprintln!("FAIL  {}  cedar_template: {err}", rule.id);
+                // Validate each generated policy template against its
+                // engine's parser. The template-level validators wrap each
+                // body in a minimal module before parsing, which is engine
+                // shape — keep the dispatch local rather than pushing a
+                // template-flavored variant onto the PolicyGenerator trait.
+                for tmpl in &rule.policy_templates {
+                    let (valid, error) = match tmpl.engine {
+                        crate::types::PolicyEngine::Rego => {
+                            let r = crate::rego::validator::validate_template(&tmpl.template);
+                            (r.valid, r.error)
+                        }
+                        crate::types::PolicyEngine::Cedar => {
+                            let r = crate::cedar::validator::validate_template(&tmpl.template);
+                            (r.valid, r.error)
+                        }
+                    };
+                    if !valid {
+                        let err = error.unwrap_or_default();
+                        eprintln!("FAIL  {}  {} template: {err}", rule.id, tmpl.engine);
                         errors += 1;
                     }
                 }

@@ -395,8 +395,7 @@ mod tests {
             confidence,
             description: String::new(),
             pattern_rule: None,
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         }
@@ -786,8 +785,7 @@ mod tests {
             confidence: Confidence::Low,
             description: "x".into(),
             pattern_rule: None,
-            rego_stub: None,
-            cedar_stub: None,
+            policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
         };
