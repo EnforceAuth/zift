@@ -4,14 +4,29 @@ languages = ["java"]
 category = "rbac"
 confidence = "high"
 description = "Jakarta/JSR-250 @RolesAllowed annotation"
+# Accept both bare and fully-qualified annotation names. Tree-sitter parses
+# `@RolesAllowed` as `(identifier)` and `@jakarta.annotation.security.RolesAllowed`
+# as `(scoped_identifier name: (identifier))` — alternation here means the
+# `anno_name` capture always binds to the trailing identifier so the predicate
+# matches both forms across the javax/jakarta migration boundary. The
+# `@anno_scope` capture (only present on the qualified branch) feeds
+# `provenance_capture` below so consumers can split `javax` from `jakarta`
+# in migration reports without re-parsing the snippet.
 query = """
 (annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier
+      scope: (_) @anno_scope
+      name: (identifier) @anno_name)
+  ]
   arguments: (annotation_argument_list
     (string_literal
       (string_fragment) @role_value))
 ) @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 eq = "RolesAllowed"
@@ -41,6 +56,24 @@ when {
 input = """
 public class UserController {
     @RolesAllowed("admin")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @jakarta.annotation.security.RolesAllowed("admin")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @javax.annotation.security.RolesAllowed("admin")
     public void deleteUser(Long id) { }
 }
 """

@@ -132,6 +132,17 @@ when {
     principal.plan == "{{plan_value}}"
 };"#
         }
+        AuthCategory::Route => {
+            r#"// TODO: route declaration with no inline auth check — add a policy or confirm intentionally public
+// permit (
+//     principal,
+//     action,
+//     resource
+// )
+// when {
+//     ...
+// };"#
+        }
         AuthCategory::Custom => {
             r#"// TODO: custom authorization pattern — review and implement manually
 // permit (
@@ -319,6 +330,13 @@ mod tests {
             r#"if (user.plan === "enterprise") {}"#,
         );
         assert!(stub.contains("principal.plan == \"enterprise\""));
+    }
+
+    #[test]
+    fn default_stub_route_returns_commented_todo() {
+        let stub = generate_default_stub(AuthCategory::Route, "");
+        assert!(stub.contains("TODO: route declaration"));
+        assert!(!stub.contains("\npermit ("));
     }
 
     #[test]

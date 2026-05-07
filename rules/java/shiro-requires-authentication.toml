@@ -6,9 +6,16 @@ confidence = "high"
 description = "Apache Shiro @RequiresAuthentication, @RequiresGuest, or @RequiresUser annotation"
 query = """
 (marker_annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier
+      scope: (_) @anno_scope
+      name: (identifier) @anno_name)
+  ]
 ) @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 match = "^(RequiresAuthentication|RequiresGuest|RequiresUser)$"
@@ -35,6 +42,33 @@ expect_match = true
 input = """
 public class SecureController {
     @RequiresUser
+    public void userAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresAuthentication
+    public void secureAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresGuest
+    public void guestAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresUser
     public void userAction() { }
 }
 """

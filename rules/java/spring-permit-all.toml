@@ -6,9 +6,16 @@ confidence = "medium"
 description = "Spring Security @PermitAll or @DenyAll annotation"
 query = """
 (marker_annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier
+      scope: (_) @anno_scope
+      name: (identifier) @anno_name)
+  ]
 ) @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 match = "^(PermitAll|DenyAll)$"
@@ -26,6 +33,24 @@ expect_match = true
 input = """
 public class AdminController {
     @DenyAll
+    public void lockedEndpoint() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class PublicController {
+    @jakarta.annotation.security.PermitAll
+    public void publicEndpoint() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @javax.annotation.security.DenyAll
     public void lockedEndpoint() { }
 }
 """

@@ -6,12 +6,19 @@ confidence = "high"
 description = "Apache Shiro @RequiresPermissions annotation"
 query = """
 (annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier
+      scope: (_) @anno_scope
+      name: (identifier) @anno_name)
+  ]
   arguments: (annotation_argument_list
     (string_literal
       (string_fragment) @perm_value))
 ) @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 eq = "RequiresPermissions"
@@ -41,6 +48,15 @@ when {
 input = """
 public class UserController {
     @RequiresPermissions("user:delete")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @org.apache.shiro.authz.annotation.RequiresPermissions("user:delete")
     public void deleteUser(Long id) { }
 }
 """

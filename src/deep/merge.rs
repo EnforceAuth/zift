@@ -80,6 +80,7 @@ mod tests {
             policy_outputs: vec![],
             pass,
             surface: Surface::Backend,
+            provenance: None,
         }
     }
 

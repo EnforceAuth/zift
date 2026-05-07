@@ -128,6 +128,7 @@ const ALL_CATEGORIES: &[AuthCategory] = &[
     AuthCategory::BusinessRule,
     AuthCategory::Ownership,
     AuthCategory::FeatureGate,
+    AuthCategory::Route,
     AuthCategory::Custom,
 ];
 
@@ -139,6 +140,7 @@ fn category_from_slug(slug: &str) -> Option<AuthCategory> {
         "business_rule" => Some(AuthCategory::BusinessRule),
         "ownership" => Some(AuthCategory::Ownership),
         "feature_gate" => Some(AuthCategory::FeatureGate),
+        "route" => Some(AuthCategory::Route),
         "custom" => Some(AuthCategory::Custom),
         _ => None,
     }
@@ -174,6 +176,12 @@ fn category_description(c: AuthCategory) -> &'static str {
             "Plan-, tenant-, or feature-flag-based gates. \
                                      Often misclassified as RBAC but distinguished by \
                                      pivoting on subscription/feature state, not roles."
+        }
+        AuthCategory::Route => {
+            "HTTP route / endpoint declaration (JAX-RS @GET, @Path; \
+                                Spring @RequestMapping; etc.). Surfaces the endpoint \
+                                without making a claim about its auth — the absence \
+                                of a paired auth annotation is what matters."
         }
         AuthCategory::Custom => {
             "A pattern that doesn't fit any of the above. The \
@@ -211,6 +219,11 @@ fn category_examples(c: AuthCategory) -> Vec<&'static str> {
             "if user.plan in {'pro', 'enterprise'} { allow }",
             "if !flags.is_enabled('beta-feature', user) { return 403 }",
         ],
+        AuthCategory::Route => vec![
+            "@GET @Path(\"/users\")",
+            "@POST public Response create(...) { ... }",
+            "@RequestMapping(method = RequestMethod.DELETE)",
+        ],
         AuthCategory::Custom => vec!["// Bespoke check: reach out to the model to classify"],
     }
 }
@@ -247,6 +260,7 @@ mod tests {
             "business_rule",
             "ownership",
             "feature_gate",
+            "route",
             "custom",
         ] {
             assert!(

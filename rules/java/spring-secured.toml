@@ -6,12 +6,19 @@ confidence = "high"
 description = "Spring Security @Secured annotation"
 query = """
 (annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier
+      scope: (_) @anno_scope
+      name: (identifier) @anno_name)
+  ]
   arguments: (annotation_argument_list
     (string_literal
       (string_fragment) @role_value))
 ) @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 eq = "Secured"
@@ -41,6 +48,15 @@ when {
 input = """
 public class UserController {
     @Secured("ROLE_ADMIN")
+    public void deleteUser(Long id) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @org.springframework.security.access.annotation.Secured("ROLE_ADMIN")
     public void deleteUser(Long id) { }
 }
 """

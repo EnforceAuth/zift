@@ -129,6 +129,11 @@ pub fn into_finding(
         // heuristic as structural findings so a deep-pass `web/src/foo.ts`
         // finding is tagged Frontend just like its structural twin would be.
         surface: Surface::classify(&candidate.file),
+        // Semantic pass doesn't carry a structural-rule capture map; the
+        // model verdict has no notion of package provenance. Left `None`
+        // — downstream `javax`/`jakarta` reporting only consumes structural
+        // findings anyway.
+        provenance: None,
     }
 }
 
@@ -247,6 +252,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         }
     }
 

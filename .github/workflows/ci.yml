@@ -32,3 +32,9 @@ jobs:
 
       - name: Tests
         run: cargo test --all-features
+
+      - name: Validate rule queries and policy templates
+        run: cargo run --all-features -- rules validate
+
+      - name: Run rule fixtures
+        run: cargo run --all-features -- rules test

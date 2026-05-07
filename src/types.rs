@@ -79,6 +79,18 @@ pub struct Finding {
     /// authz code).
     #[serde(default)]
     pub surface: Surface,
+    /// Package-namespace provenance captured from the matched code, when the
+    /// rule asks for it (`provenance_capture` in TOML). Populated for
+    /// fully-qualified Java annotations like `@jakarta.annotation.security
+    /// .RolesAllowed` (provenance = `"jakarta.annotation.security"`) and
+    /// left `None` for the bare-identifier form where the package isn't
+    /// resolvable from the call site alone. Drives `javax`-vs-`jakarta`
+    /// migration reporting downstream — consumers should split on the head
+    /// segment (`split('.').next()`) rather than full-string-match the value
+    /// so longer prefixes (e.g. `org.springframework.security.access`) keep
+    /// working without per-package special-cases here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
 }
 
 impl Finding {
@@ -126,6 +138,8 @@ struct FindingShim {
     pass: ScanPass,
     #[serde(default)]
     surface: Surface,
+    #[serde(default)]
+    provenance: Option<String>,
 }
 
 impl From<FindingShim> for Finding {
@@ -178,6 +192,7 @@ impl From<FindingShim> for Finding {
             policy_outputs,
             pass: s.pass,
             surface: s.surface,
+            provenance: s.provenance,
         }
     }
 }
@@ -278,6 +293,7 @@ pub enum AuthCategory {
     Ownership,
     #[value(name = "feature-gate")]
     FeatureGate,
+    Route,
     Custom,
 }
 
@@ -298,6 +314,7 @@ impl AuthCategory {
             AuthCategory::BusinessRule => "business_rule",
             AuthCategory::Ownership => "ownership",
             AuthCategory::FeatureGate => "feature_gate",
+            AuthCategory::Route => "route",
             AuthCategory::Custom => "custom",
         }
     }
@@ -377,6 +394,7 @@ impl std::fmt::Display for AuthCategory {
             AuthCategory::BusinessRule => write!(f, "Business Rule"),
             AuthCategory::Ownership => write!(f, "Ownership"),
             AuthCategory::FeatureGate => write!(f, "Feature Gate"),
+            AuthCategory::Route => write!(f, "Route"),
             AuthCategory::Custom => write!(f, "Custom"),
         }
     }

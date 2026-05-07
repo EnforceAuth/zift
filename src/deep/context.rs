@@ -173,13 +173,19 @@ fn expand_inner(
     // the combined `snippet + imports + marker` cannot exceed `max_chars`.
     // Round down to a UTF-8 char boundary to avoid `String::truncate` panics
     // on multi-byte chars (e.g. Unicode comments/identifiers in source).
-    let snippet_budget = max_chars
-        .saturating_sub(TRUNCATION_MARKER.len())
-        .saturating_sub(imports_len);
+    let remaining = max_chars.saturating_sub(imports_len);
+    let marker_fits = remaining >= TRUNCATION_MARKER.len();
+    let snippet_budget = if marker_fits {
+        remaining - TRUNCATION_MARKER.len()
+    } else {
+        remaining
+    };
     if snippet.len() > snippet_budget {
         let cut = snippet.floor_char_boundary(snippet_budget);
         snippet.truncate(cut);
-        snippet.push_str(TRUNCATION_MARKER);
+        if marker_fits {
+            snippet.push_str(TRUNCATION_MARKER);
+        }
     }
 
     Ok(ExpandedContext {
@@ -215,6 +221,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         }
     }
 

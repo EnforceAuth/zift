@@ -398,6 +398,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         }
     }
 
@@ -788,6 +789,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         };
         // Should NOT propagate Io; should return Ok with the bad escalation
         // skipped. (No cold-region files either, so result is empty.)

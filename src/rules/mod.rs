@@ -26,6 +26,16 @@ pub struct PatternRule {
     /// `[rule.rego_template]` / `[rule.cedar_template]` blocks.
     pub policy_templates: Vec<PolicyTemplate>,
     pub tests: Vec<RuleTest>,
+    /// Optional capture name whose matched text should be copied onto each
+    /// finding's `provenance` field. Set on rules where the AST exposes a
+    /// package-prefix capture (e.g. `@anno_scope` on the scoped-identifier
+    /// branch of an annotation alternation) so consumers can distinguish
+    /// `javax.*` vs `jakarta.*` migrations without grepping snippets. The
+    /// referenced capture must exist in the rule's query — validated by
+    /// `compile_rule`. Left `None` when the rule has no notion of provenance
+    /// (most rules) or when the capture didn't fire on a particular match
+    /// (bare-identifier annotation form).
+    pub provenance_capture: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +147,8 @@ struct RuleToml {
     policy_templates: Vec<PolicyTemplateToml>,
     #[serde(default)]
     tests: Vec<RuleTestToml>,
+    #[serde(default)]
+    provenance_capture: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -349,6 +361,7 @@ fn parse_rule(toml_str: &str, source: &str) -> Result<PatternRule> {
                 expect_match: t.expect_match,
             })
             .collect(),
+        provenance_capture: r.provenance_capture,
     })
 }
 
@@ -615,6 +628,7 @@ template = "permit(principal, action, resource);"
             cross_predicates: vec![],
             policy_templates: vec![],
             tests: vec![],
+            provenance_capture: None,
         };
         let r2 = PatternRule {
             id: "rule-a".into(),
@@ -628,6 +642,7 @@ template = "permit(principal, action, resource);"
             cross_predicates: vec![],
             policy_templates: vec![],
             tests: vec![],
+            provenance_capture: None,
         };
 
         let mut base = vec![r1];

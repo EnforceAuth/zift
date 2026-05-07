@@ -16,16 +16,28 @@ description = "OpenMRS-style @Authorized({\"PRIV\"}) annotation"
 query = """
 [
   (annotation
-    name: (identifier) @anno_name
+    name: [
+      (identifier) @anno_name
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
+    ]
     arguments: (annotation_argument_list
       (string_literal (string_fragment) @role_value)))
   (annotation
-    name: (identifier) @anno_name
+    name: [
+      (identifier) @anno_name
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
+    ]
     arguments: (annotation_argument_list
       (element_value_array_initializer
         (string_literal (string_fragment) @role_value))))
 ] @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 eq = "Authorized"
@@ -77,6 +89,15 @@ public class UserService {
 }
 """
 expect_match = false
+
+[[rule.tests]]
+input = """
+public class UserService {
+    @org.openmrs.annotation.Authorized("Manage Users")
+    public void delete(User u) { }
+}
+"""
+expect_match = true
 
 [[rule.tests]]
 input = """

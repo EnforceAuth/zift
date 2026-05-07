@@ -9,13 +9,24 @@ When activated, commit the current working tree changes:
 1. **Sync with remote**:
    - Run `git fetch origin main` to get latest upstream
    - Run `git log HEAD..origin/main --oneline` to check if main has moved ahead
-   - If it has, warn the user but don't rebase automatically
+   - If it has, pull main into the working state before committing — either
+     `git merge origin/main` on a feature branch, or use the new-branch path
+     in step 2 if the current branch is no longer the right home for this work
+     (e.g. its name references a different issue/PR than what's being committed).
 
-2. **Ensure we're not on main**:
+2. **Ensure we're on a branch dedicated to this work**:
    - Run `git branch --show-current`
-   - If on `main`, create a new feature branch:
-     - Look at the staged/unstaged changes to infer a branch name
-     - Run `git checkout -b feat/<descriptive-name>`
+   - Create a fresh feature branch off `origin/main` if **any** of the following hold:
+     - Current branch is `main`
+     - Current branch's name references a different issue/PR than the work being
+       committed (e.g. branch is `refactor/71-…` but the diff implements #58)
+     - Current branch already merged upstream (its work is in `origin/main`)
+   - To create the new branch:
+     - Stash uncommitted work (`git stash push -m "wip: <issue>"`)
+     - `git checkout -b <type>/<issue-number>-<descriptive-name> origin/main`
+     - If a prior commit on the old branch belongs to this work, cherry-pick it:
+       `git cherry-pick <hash>`
+     - `git stash pop`
      - Inform the user of the new branch name
 
 3. **Review changes**:
