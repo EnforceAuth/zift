@@ -6,7 +6,10 @@ confidence = "high"
 description = "Spring Security @PreAuthorize annotation"
 query = """
 (annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier name: (identifier) @anno_name)
+  ]
   arguments: (annotation_argument_list
     (string_literal
       (string_fragment) @expr))
@@ -52,6 +55,15 @@ input = """
 public class AdminController {
     @PreAuthorize("hasAuthority('SCOPE_read')")
     public void readData() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public void deleteUser(Long id) { }
 }
 """
 expect_match = true

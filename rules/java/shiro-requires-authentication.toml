@@ -6,7 +6,10 @@ confidence = "high"
 description = "Apache Shiro @RequiresAuthentication, @RequiresGuest, or @RequiresUser annotation"
 query = """
 (marker_annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier name: (identifier) @anno_name)
+  ]
 ) @match
 """
 
@@ -36,6 +39,15 @@ input = """
 public class SecureController {
     @RequiresUser
     public void userAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresAuthentication
+    public void secureAction() { }
 }
 """
 expect_match = true

@@ -6,7 +6,10 @@ confidence = "high"
 description = "Apache Shiro @RequiresRoles annotation"
 query = """
 (annotation
-  name: (identifier) @anno_name
+  name: [
+    (identifier) @anno_name
+    (scoped_identifier name: (identifier) @anno_name)
+  ]
   arguments: (annotation_argument_list
     (string_literal
       (string_fragment) @role_value))
@@ -41,6 +44,15 @@ when {
 input = """
 public class AdminController {
     @RequiresRoles("admin")
+    public void adminAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class AdminController {
+    @org.apache.shiro.authz.annotation.RequiresRoles("admin")
     public void adminAction() { }
 }
 """

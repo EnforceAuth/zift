@@ -1,0 +1,107 @@
+[rule]
+id = "java-jaxrs-endpoint"
+languages = ["java"]
+category = "middleware"
+confidence = "medium"
+description = "JAX-RS / Jakarta REST resource method (@GET, @POST, @Path, ...)"
+# JAX-RS resource methods are tagged with one of `@Path`, `@GET`, `@POST`,
+# `@PUT`, `@DELETE`, `@PATCH`, `@HEAD`, or `@OPTIONS` from `javax.ws.rs.*`
+# (Java EE 8 and earlier) or `jakarta.ws.rs.*` (Jakarta EE 9+, Jersey 3+,
+# RESTEasy 6+). The annotation set is identical across the migration boundary
+# — only the package prefix changes — so the rule needs to accept bare and
+# fully-qualified forms for both.
+#
+# Without this rule a bare `@GET` REST endpoint is invisible to the
+# structural pass; the existing annotation rules cover Spring Security, JSR-250,
+# and Shiro but say nothing about REST surface area, so unprotected JAX-RS
+# methods (a `@GET` with no auth annotation) wouldn't surface at all.
+query = """
+[
+  (marker_annotation
+    name: [
+      (identifier) @anno_name
+      (scoped_identifier name: (identifier) @anno_name)
+    ])
+  (annotation
+    name: [
+      (identifier) @anno_name
+      (scoped_identifier name: (identifier) @anno_name)
+    ])
+] @match
+"""
+
+[rule.predicates.anno_name]
+match = "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Path)$"
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @GET
+    public List<User> list() { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @Path("/users")
+    public class Inner {}
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @POST
+    @Path("/users")
+    public Response create(User u) { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @jakarta.ws.rs.GET
+    public List<User> list() { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @javax.ws.rs.GET
+    public List<User> list() { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserResource {
+    @jakarta.ws.rs.Path("/users")
+    public Response find() { return null; }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Override
+    public void delete() { }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+public class UserController {
+    @Transactional
+    public void save() { }
+}
+"""
+expect_match = false

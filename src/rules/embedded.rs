@@ -177,6 +177,10 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "java-aws-verified-permissions",
         include_str!("../../rules/java/aws-verified-permissions.toml"),
     ),
+    (
+        "java-jaxrs-endpoint",
+        include_str!("../../rules/java/jaxrs-endpoint.toml"),
+    ),
     // -- Python --
     (
         "py-django-permission-required",
