@@ -177,6 +177,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         };
         f.set_policy_output(
             PolicyEngine::Cedar,

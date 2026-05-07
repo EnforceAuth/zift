@@ -54,6 +54,22 @@ pub fn compile_rule<'a>(
         }
     }
 
+    // Validate that the optional provenance capture exists. A typo'd
+    // `provenance_capture` would otherwise silently produce no-provenance
+    // findings, which is exactly the bug we're trying to avoid.
+    if let Some(capture_name) = &rule.provenance_capture
+        && !capture_names.iter().any(|n| n == capture_name)
+    {
+        return Err(ZiftError::QueryError {
+            rule_id: rule.id.clone(),
+            message: format!(
+                "provenance_capture references unknown capture '{capture_name}' \
+                 (query captures: {})",
+                capture_names.join(", "),
+            ),
+        });
+    }
+
     // Validate that every cross-predicate references real captures.
     for (i, cp) in rule.cross_predicates.iter().enumerate() {
         for capture_name in cp.referenced_captures() {
@@ -168,6 +184,14 @@ pub fn execute_query(
             });
         }
 
+        let provenance = compiled
+            .rule
+            .provenance_capture
+            .as_deref()
+            .and_then(|name| captures.get(name))
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+
         findings.push(Finding {
             id,
             file: file_path.to_path_buf(),
@@ -182,6 +206,7 @@ pub fn execute_query(
             policy_outputs,
             pass: ScanPass::Structural,
             surface: Surface::classify(file_path),
+            provenance,
         });
     }
 
@@ -602,6 +627,55 @@ public class Ctrl {
             include_str!("../../rules/java/spring-roles-allowed.toml"),
         );
         assert!(!findings.is_empty(), "should match @RolesAllowed");
+        // Bare-identifier annotation has no scope to capture — provenance
+        // must be `None`. The package isn't resolvable from the call site
+        // alone (we'd need the file's import statement), so leaving it
+        // unset is the honest answer.
+        assert!(
+            findings[0].provenance.is_none(),
+            "bare annotation should not carry provenance; got: {:?}",
+            findings[0].provenance
+        );
+    }
+
+    #[test]
+    fn java_roles_allowed_qualified_carries_provenance() {
+        // Fully-qualified annotation: `@jakarta.annotation.security.RolesAllowed`
+        // — the `scoped_identifier` exposes the package prefix, which the
+        // matcher copies into `Finding.provenance`. Consumers split on the
+        // head segment (`provenance.split('.').next()`) to bucket findings
+        // as `javax` (legacy) vs `jakarta` (modern) for migration reporting.
+        let findings = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @jakarta.annotation.security.RolesAllowed("admin")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-roles-allowed.toml"),
+        );
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].provenance.as_deref(),
+            Some("jakarta.annotation.security"),
+            "qualified annotation should carry full package prefix as provenance",
+        );
+
+        let findings_javax = parse_and_match_java(
+            r#"
+public class Ctrl {
+    @javax.annotation.security.RolesAllowed("admin")
+    public void delete() { }
+}
+"#,
+            include_str!("../../rules/java/spring-roles-allowed.toml"),
+        );
+        assert_eq!(findings_javax.len(), 1);
+        assert_eq!(
+            findings_javax[0].provenance.as_deref(),
+            Some("javax.annotation.security"),
+            "javax-qualified annotation should carry javax provenance",
+        );
     }
 
     #[test]
@@ -1430,6 +1504,7 @@ match = ".*"
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         };
         let findings = vec![f.clone(), f];
         let deduped = dedup_findings(findings);

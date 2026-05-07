@@ -20,15 +20,21 @@ query = """
   (marker_annotation
     name: [
       (identifier) @anno_name
-      (scoped_identifier name: (identifier) @anno_name)
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
     ])
   (annotation
     name: [
       (identifier) @anno_name
-      (scoped_identifier name: (identifier) @anno_name)
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
     ])
 ] @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 match = "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Path)$"

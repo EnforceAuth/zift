@@ -748,6 +748,7 @@ fn analyze_snippet(_ctx: &ServerContext, args: &Value) -> Result<Value, String> 
         policy_outputs: vec![],
         pass: ScanPass::Structural,
         surface: Surface::classify(&PathBuf::from(&parsed.file)),
+        provenance: None,
     });
 
     let rendered = render(&PromptInputs {

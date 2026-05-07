@@ -337,6 +337,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         }
     }
 

@@ -18,20 +18,26 @@ query = """
   (annotation
     name: [
       (identifier) @anno_name
-      (scoped_identifier name: (identifier) @anno_name)
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
     ]
     arguments: (annotation_argument_list
       (string_literal (string_fragment) @role_value)))
   (annotation
     name: [
       (identifier) @anno_name
-      (scoped_identifier name: (identifier) @anno_name)
+      (scoped_identifier
+        scope: (_) @anno_scope
+        name: (identifier) @anno_name)
     ]
     arguments: (annotation_argument_list
       (element_value_array_initializer
         (string_literal (string_fragment) @role_value))))
 ] @match
 """
+
+provenance_capture = "anno_scope"
 
 [rule.predicates.anno_name]
 eq = "Authorized"

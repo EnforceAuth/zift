@@ -256,6 +256,7 @@ mod tests {
             policy_outputs: vec![],
             pass: ScanPass::Structural,
             surface: Surface::Backend,
+            provenance: None,
         })];
 
         let files = group_findings(&findings, "app", Path::new("./policies"));
@@ -283,6 +284,7 @@ mod tests {
                 policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
+                provenance: None,
             }),
             with_default_stub(Finding {
                 id: "b".into(),
@@ -298,6 +300,7 @@ mod tests {
                 policy_outputs: vec![],
                 pass: ScanPass::Structural,
                 surface: Surface::Backend,
+                provenance: None,
             }),
         ];
 
