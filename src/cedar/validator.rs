@@ -42,6 +42,14 @@ pub fn validate_template(template: &str) -> ValidationResult {
     let rendered = re_quoted
         .replace_all(template, "\"placeholder\"")
         .to_string();
+    // Set-context placeholder: `[{{var}}]` expands at scan time to a
+    // comma-separated list of quoted strings (e.g. `"admin", "manager"`).
+    // Substitute the bare placeholder with a single quoted string so the
+    // resulting `["placeholder"]` parses as a valid Cedar set literal.
+    let re_set = regex::Regex::new(r"\[\s*\{\{(\w+)\}\}\s*\]").unwrap();
+    let rendered = re_set
+        .replace_all(&rendered, "[\"placeholder\"]")
+        .to_string();
     let re_bare = regex::Regex::new(r"\{\{(\w+)\}\}").unwrap();
     let rendered = re_bare
         .replace_all(&rendered, "placeholder_value")
@@ -79,6 +87,20 @@ when {
         let tmpl = r#"permit (principal, action, resource)
 when {
     principal.role == "{{role_value}}"
+};"#;
+        let res = validate_template(tmpl);
+        assert!(res.valid, "expected valid, got: {:?}", res.error);
+    }
+
+    #[test]
+    fn valid_template_set_placeholder() {
+        // Regression: `[{{cedar_roles_set}}]` expands at scan time to a CSV
+        // of quoted strings (e.g. `"admin", "manager"`). Without set-context
+        // handling, validate_template would substitute the bare identifier
+        // and produce `[placeholder_value]`, which Cedar rejects.
+        let tmpl = r#"permit (principal, action, resource)
+when {
+    principal.role in [{{cedar_roles_set}}]
 };"#;
         let res = validate_template(tmpl);
         assert!(res.valid, "expected valid, got: {:?}", res.error);
