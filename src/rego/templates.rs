@@ -83,6 +83,13 @@ allow if {
     input.user.plan in {{plans}}
 }"#
         }
+        AuthCategory::Route => {
+            r#"# TODO: route declaration with no inline auth check — add a policy or confirm intentionally public
+# default allow := false
+# allow if {
+#     ...
+# }"#
+        }
         AuthCategory::Custom => {
             r#"# TODO: custom authorization pattern — review and implement manually
 # default allow := false

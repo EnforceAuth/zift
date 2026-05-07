@@ -41,6 +41,7 @@ CATEGORIES:
 - business_rule: domain-specific access rules
 - ownership: resource-owner checks
 - feature_gate: plan/tenant/flag-based
+- route: HTTP route declaration (e.g. JAX-RS @GET, @Path) — endpoint surface, not an inline check
 - custom: doesn't fit the above
 
 CONFIDENCE:
@@ -140,7 +141,7 @@ pub fn output_schema() -> serde_json::Value {
                         "category":          {
                             "type": "string",
                             "enum": ["rbac", "abac", "middleware", "business_rule",
-                                     "ownership", "feature_gate", "custom"]
+                                     "ownership", "feature_gate", "route", "custom"]
                         },
                         "confidence":        {
                             "type": "string",
@@ -350,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_lists_all_seven_categories() {
+    fn system_prompt_lists_all_categories() {
         for cat in [
             "rbac",
             "abac",
@@ -358,6 +359,7 @@ mod tests {
             "business_rule",
             "ownership",
             "feature_gate",
+            "route",
             "custom",
         ] {
             assert!(
@@ -404,6 +406,7 @@ mod tests {
                 "business_rule",
                 "ownership",
                 "feature_gate",
+                "route",
                 "custom"
             ]
         );

@@ -293,6 +293,7 @@ pub enum AuthCategory {
     Ownership,
     #[value(name = "feature-gate")]
     FeatureGate,
+    Route,
     Custom,
 }
 
@@ -313,6 +314,7 @@ impl AuthCategory {
             AuthCategory::BusinessRule => "business_rule",
             AuthCategory::Ownership => "ownership",
             AuthCategory::FeatureGate => "feature_gate",
+            AuthCategory::Route => "route",
             AuthCategory::Custom => "custom",
         }
     }
@@ -392,6 +394,7 @@ impl std::fmt::Display for AuthCategory {
             AuthCategory::BusinessRule => write!(f, "Business Rule"),
             AuthCategory::Ownership => write!(f, "Ownership"),
             AuthCategory::FeatureGate => write!(f, "Feature Gate"),
+            AuthCategory::Route => write!(f, "Route"),
             AuthCategory::Custom => write!(f, "Custom"),
         }
     }

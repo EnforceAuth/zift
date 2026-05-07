@@ -98,7 +98,7 @@ fn scan_authz_descriptor() -> ToolDescriptor {
                     "type": "array",
                     "items": {"type": "string", "enum": [
                         "rbac", "abac", "middleware", "business_rule",
-                        "ownership", "feature_gate", "custom"
+                        "ownership", "feature_gate", "route", "custom"
                     ]},
                     "description": "Optional category filter."
                 },
@@ -234,7 +234,7 @@ fn list_rules_descriptor() -> ToolDescriptor {
                 "category": {
                     "type": "string",
                     "enum": ["rbac", "abac", "middleware", "business_rule",
-                             "ownership", "feature_gate", "custom"],
+                             "ownership", "feature_gate", "route", "custom"],
                     "description": "Optional category filter."
                 }
             },
@@ -389,7 +389,7 @@ fn suggest_rego_descriptor() -> ToolDescriptor {
                 "category": {
                     "type": "string",
                     "enum": ["rbac", "abac", "middleware", "business_rule",
-                             "ownership", "feature_gate", "custom"]
+                             "ownership", "feature_gate", "route", "custom"]
                 },
                 "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
                 "code_snippet": {"type": "string"},
@@ -539,7 +539,7 @@ fn suggest_policy_descriptor() -> ToolDescriptor {
                 "category": {
                     "type": "string",
                     "enum": ["rbac", "abac", "middleware", "business_rule",
-                             "ownership", "feature_gate", "custom"]
+                             "ownership", "feature_gate", "route", "custom"]
                 },
                 "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
                 "code_snippet": {"type": "string"},
@@ -675,7 +675,7 @@ fn analyze_snippet_descriptor() -> ToolDescriptor {
                         "category": {
                             "type": "string",
                             "enum": ["rbac", "abac", "middleware", "business_rule",
-                                     "ownership", "feature_gate", "custom"]
+                                     "ownership", "feature_gate", "route", "custom"]
                         },
                         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
                         "description": {"type": "string"},

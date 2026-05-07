@@ -132,6 +132,17 @@ when {
     principal.plan == "{{plan_value}}"
 };"#
         }
+        AuthCategory::Route => {
+            r#"// TODO: route declaration with no inline auth check — add a policy or confirm intentionally public
+// permit (
+//     principal,
+//     action,
+//     resource
+// )
+// when {
+//     ...
+// };"#
+        }
         AuthCategory::Custom => {
             r#"// TODO: custom authorization pattern — review and implement manually
 // permit (

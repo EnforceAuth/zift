@@ -1,7 +1,7 @@
 [rule]
 id = "java-jaxrs-endpoint"
 languages = ["java"]
-category = "middleware"
+category = "route"
 confidence = "medium"
 description = "JAX-RS / Jakarta REST resource method (@GET, @POST, @Path, ...)"
 # JAX-RS resource methods are tagged with one of `@Path`, `@GET`, `@POST`,
@@ -50,9 +50,9 @@ expect_match = true
 
 [[rule.tests]]
 input = """
+@Path("/users")
 public class UserResource {
-    @Path("/users")
-    public class Inner {}
+    public List<User> list() { return null; }
 }
 """
 expect_match = true
