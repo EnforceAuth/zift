@@ -12,8 +12,11 @@ When activated, create a pull request for the current branch:
    - Run `git log main..HEAD --oneline` to see commits to include
 
 2. **Move completed plan to done** (if applicable):
-   - Extract an issue/feature token from the branch name (e.g., `fix/896-buffer-import` → `896`; otherwise the kebab-case feature slug after the type prefix)
-   - Search `plans/todo/` for files whose **filename** contains the token, and as a fallback files whose **content** contains it
+   - Extract an issue/feature token from the branch name using the first rule that matches:
+     - If the branch (or the portion after a `type/` prefix) starts with digits, use the leading numeric sequence (e.g., `fix/896-buffer-import` → `896`, `123-foo` → `123`)
+     - Otherwise, if the branch is `type/slug`, use the full kebab-case slug after the slash (e.g., `feature/add-new-widget` → `add-new-widget`)
+     - Otherwise, use the full branch name (e.g., `fix-typo` → `fix-typo`)
+   - Search `plans/todo/` for files whose **filename** contains the token (case-insensitive substring match). Do not fall back to scanning file contents.
    - If **no match**: skip this step
    - If **multiple matches**: list them and skip — require human disambiguation rather than guessing
    - If **exactly one match**: inspect its checklist items
