@@ -12,11 +12,14 @@ When activated, create a pull request for the current branch:
    - Run `git log main..HEAD --oneline` to see commits to include
 
 2. **Move completed plan to done** (if applicable):
-   - Check `plans/todo/` for a plan file related to this branch (match by issue number or feature name)
-   - If found, check whether all checklist items (`- [ ]`) are complete (`- [x]`)
-   - If all complete: `mkdir -p plans/done && git mv plans/todo/<file> plans/done/<file>`
-   - Commit: `git commit -m "docs: move completed plan to plans/done/"`
-   - If not all complete, leave it in `plans/todo/`
+   - Extract an issue/feature token from the branch name (e.g., `fix/896-buffer-import` → `896`; otherwise the kebab-case feature slug after the type prefix)
+   - Search `plans/todo/` for files whose **filename** contains the token, and as a fallback files whose **content** contains it
+   - If **no match**: skip this step
+   - If **multiple matches**: list them and skip — require human disambiguation rather than guessing
+   - If **exactly one match**: inspect its checklist items
+     - If the file has zero `- [ ]` / `- [x]` items, treat it as "no checklist" and skip the move
+     - If any `- [ ]` items remain unchecked, leave it in `plans/todo/`
+     - Only when every checklist item is `- [x]`: `mkdir -p plans/done && git mv plans/todo/<file> plans/done/<file>` and commit `docs: move completed plan to plans/done/`
 
 3. **Push the branch** (if not already pushed):
    - Run `git push -u origin <branch-name>`

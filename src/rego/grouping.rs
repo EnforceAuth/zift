@@ -153,6 +153,12 @@ fn build_rego_content(package_name: &str, source_file: &Path, findings: &[&Findi
         // an invariant and skip findings without one rather than silently
         // synthesizing a default — that would mask a missing pre-fill.
         let Some(stub) = finding.policy_output(PolicyEngine::Rego) else {
+            tracing::warn!(
+                finding_id = %finding.id,
+                file = %finding.file.display(),
+                line = finding.line_start,
+                "skipping finding without Rego policy output; header counts will overstate coverage"
+            );
             continue;
         };
         let stub = stub.to_string();

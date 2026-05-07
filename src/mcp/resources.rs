@@ -290,6 +290,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&r.text).unwrap();
         assert_eq!(parsed["id"], "ts-role-check-conditional");
         assert!(parsed["query"].is_string());
+        assert!(
+            parsed["policy_templates"].is_array(),
+            "policy_templates must be a JSON array (renamed field regression guard)"
+        );
     }
 
     #[test]

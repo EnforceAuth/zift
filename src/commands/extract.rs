@@ -151,6 +151,17 @@ fn write_policy_file(output_path: &Path, content: &str, canonical_output_dir: &P
             canonical_output_dir.display()
         )));
     }
+    // Reject existing symlinks at the leaf — `fs::write` would follow them
+    // and escape the canonicalised parent containment. Use `symlink_metadata`
+    // so we inspect the link itself rather than its target.
+    if let Ok(meta) = std::fs::symlink_metadata(output_path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(ZiftError::General(format!(
+            "refusing to write through symlink at output path '{}'",
+            output_path.display()
+        )));
+    }
     std::fs::write(output_path, content)?;
     Ok(())
 }

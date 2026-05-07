@@ -90,13 +90,13 @@ impl Finding {
             .map(|p| p.content.as_str())
     }
 
-    /// Insert or replace the policy output for an engine.
+    /// Insert or replace the policy output for an engine. Removes any
+    /// existing entries for the engine first so the vector holds at most
+    /// one [`PolicyOutput`] per [`PolicyEngine`], even if a Finding was
+    /// constructed in-memory with duplicates.
     pub fn set_policy_output(&mut self, engine: PolicyEngine, content: String) {
-        if let Some(existing) = self.policy_outputs.iter_mut().find(|p| p.engine == engine) {
-            existing.content = content;
-        } else {
-            self.policy_outputs.push(PolicyOutput { engine, content });
-        }
+        self.policy_outputs.retain(|p| p.engine != engine);
+        self.policy_outputs.push(PolicyOutput { engine, content });
     }
 }
 

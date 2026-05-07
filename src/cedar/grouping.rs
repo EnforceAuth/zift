@@ -136,6 +136,12 @@ fn build_cedar_content(source_file: &Path, findings: &[&Finding]) -> String {
         // an invariant and skip findings without one rather than silently
         // synthesizing a default — that would mask a missing pre-fill.
         let Some(stub) = finding.policy_output(PolicyEngine::Cedar) else {
+            tracing::warn!(
+                finding_id = %finding.id,
+                file = %finding.file.display(),
+                line = finding.line_start,
+                "skipping finding without Cedar policy output; header counts will overstate coverage"
+            );
             continue;
         };
         let wrapped = templates::apply_confidence_wrapping(stub, finding.confidence);

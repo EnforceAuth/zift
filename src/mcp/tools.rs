@@ -22,8 +22,6 @@ use crate::deep::prompt::{PromptInputs, render};
 use crate::mcp::protocol::{ToolDescriptor, ToolsCallResult, ToolsListResult};
 use crate::mcp::server::ServerContext;
 use crate::policy::generator_for;
-use crate::rego::templates::{apply_confidence_wrapping, generate_default_stub, render_template};
-use crate::rego::validator::validate_rego;
 use crate::rules::PatternRule;
 use crate::scanner;
 use crate::types::{AuthCategory, Confidence, Finding, Language, PolicyEngine, ScanPass, Surface};
@@ -407,37 +405,16 @@ fn suggest_rego_descriptor() -> ToolDescriptor {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct SuggestRegoArgs {
-    category: AuthCategory,
-    confidence: Confidence,
-    code_snippet: String,
-    #[serde(default)]
-    rule_id: Option<String>,
-}
-
 fn suggest_rego(ctx: &ServerContext, args: &Value) -> Result<Value, String> {
-    let parsed: SuggestRegoArgs = parse_args(args, "suggest_rego")?;
-
-    let rendered = if let Some(rid) = parsed.rule_id.as_deref() {
-        let rule = ctx.rules.iter().find(|r| r.id == rid);
-        match rule.and_then(|r| r.template_for(PolicyEngine::Rego)) {
-            Some(tmpl) => {
-                // Render the rule's template with literals extracted from the
-                // snippet. We use an empty vars map keyed by capture name —
-                // the model fills these in during deep mode; here we mirror
-                // the structural-pass behavior for ad-hoc agent calls.
-                let vars = build_template_vars(&parsed.code_snippet);
-                render_template(tmpl, &vars)
-            }
-            None => generate_default_stub(parsed.category, &parsed.code_snippet),
-        }
-    } else {
-        generate_default_stub(parsed.category, &parsed.code_snippet)
-    };
-
-    let wrapped = apply_confidence_wrapping(&rendered, parsed.confidence);
-    Ok(json!({"rego": wrapped}))
+    // Thin alias: forward to `suggest_policy` pinned to Rego so the two
+    // codepaths can't drift. `suggest_policy` already echoes the engine's
+    // key (`"rego"`) alongside `"policy"`, so existing clients reading
+    // `payload["rego"]` keep working.
+    let mut forwarded = args.clone();
+    if let Value::Object(map) = &mut forwarded {
+        map.insert("engine".to_string(), json!("rego"));
+    }
+    suggest_policy(ctx, &forwarded)
 }
 
 fn build_template_vars(snippet: &str) -> std::collections::HashMap<String, String> {
@@ -474,8 +451,34 @@ fn build_template_vars(snippet: &str) -> std::collections::HashMap<String, Strin
         );
         vars.insert("roles".to_string(), set.clone());
         vars.insert("plans".to_string(), set);
+
+        // CSV-normalised item lists for `{{roles_set}}` (Rego) and
+        // `{{cedar_roles_set}}` (Cedar). Mirrors the scanner path's
+        // `comma_separated_quoted_items` so rules like ASP.NET
+        // `Authorize(Roles="Admin,Manager")` render correctly when an
+        // agent calls `suggest_policy` with a `rule_id` + raw snippet.
+        let items = csv_normalised_quoted_items(&literals);
+        vars.insert("roles_set".to_string(), items.clone());
+        vars.insert("cedar_roles_set".to_string(), items);
     }
     vars
+}
+
+/// Comma-split each literal, trim, drop empties, quote, and re-join. Matches
+/// the scanner's `comma_separated_quoted_items` so the structural and MCP
+/// suggest paths produce identical `roles_set` / `cedar_roles_set` output.
+fn csv_normalised_quoted_items(literals: &[String]) -> String {
+    literals
+        .iter()
+        .flat_map(|lit| {
+            lit.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+        .map(|s| format!("\"{s}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // -- validate_rego -------------------------------------------------------
@@ -497,18 +500,16 @@ fn validate_rego_descriptor() -> ToolDescriptor {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct ValidateRegoArgs {
-    policy: String,
-}
-
 fn validate_rego_tool(args: &Value) -> Result<Value, String> {
-    let parsed: ValidateRegoArgs = parse_args(args, "validate_rego")?;
-    let result = validate_rego(&parsed.policy);
-    Ok(json!({
-        "valid": result.valid,
-        "error": result.error,
-    }))
+    // Thin alias: forward to `validate_policy_tool` pinned to Rego.
+    // `validate_policy_tool` returns `{engine, valid, error}`; the extra
+    // `engine` field is additive and existing clients reading `valid`/
+    // `error` keep working.
+    let mut forwarded = args.clone();
+    if let Value::Object(map) = &mut forwarded {
+        map.insert("engine".to_string(), json!("rego"));
+    }
+    validate_policy_tool(&forwarded)
 }
 
 // -- suggest_policy / validate_policy -----------------------------------
