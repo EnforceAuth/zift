@@ -333,6 +333,13 @@ mod tests {
     }
 
     #[test]
+    fn default_stub_route_returns_commented_todo() {
+        let stub = generate_default_stub(AuthCategory::Route, "");
+        assert!(stub.contains("TODO: route declaration"));
+        assert!(!stub.contains("\npermit ("));
+    }
+
+    #[test]
     fn confidence_wrapping_low_uses_double_slash() {
         let wrapped =
             apply_confidence_wrapping("permit (principal, action, resource);", Confidence::Low);

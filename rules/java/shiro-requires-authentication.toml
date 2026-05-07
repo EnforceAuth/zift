@@ -58,6 +58,24 @@ expect_match = true
 
 [[rule.tests]]
 input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresGuest
+    public void guestAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+public class SecureController {
+    @org.apache.shiro.authz.annotation.RequiresUser
+    public void userAction() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
 public class Controller {
     @Override
     public void action() { }
