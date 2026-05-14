@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/EnforceAuth/zift/compare/v0.2.1...v0.2.2) - 2026-05-14
+
+### Added
+
+- *(scanner)* cross-file Go policy bindings + policy-impl path bypass ([#83](https://github.com/EnforceAuth/zift/pull/83))
+- javax/jakarta annotation coverage, JAX-RS rule, Route category ([#80](https://github.com/EnforceAuth/zift/pull/80))
+- detect bare identifier role checks ([#77](https://github.com/EnforceAuth/zift/pull/77))
+
+### Changed
+
+- extract PolicyGenerator trait and collapse parallel engine fields ([#79](https://github.com/EnforceAuth/zift/pull/79))
+
 ## [0.2.1](https://github.com/EnforceAuth/zift/compare/v0.2.0...v0.2.1) - 2026-05-06
 
 ### Added
