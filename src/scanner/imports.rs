@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use streaming_iterator::StreamingIterator;
 
@@ -21,6 +22,36 @@ const POLICY_INDICATORS: &[&str] = &[
 fn is_policy_path(source: &str) -> bool {
     let lower = source.to_lowercase();
     POLICY_INDICATORS.iter().any(|ind| lower.contains(ind))
+}
+
+/// Check if a file's path places it *inside* a policy-engine implementation
+/// module — e.g. `internal/authz/authz_test.go` lives under a directory whose
+/// name contains `authz`. Files like these are themselves the policy engine,
+/// so the structural rules (which flag *consumers* of authz primitives) would
+/// only produce noise. The scanner uses this to skip such files entirely.
+///
+/// Heuristic: any directory component along the path (excluding the filename
+/// itself) contains a `POLICY_INDICATORS` substring, case-insensitive. The
+/// filename is intentionally excluded — a top-level `authz.go` could plausibly
+/// be either the implementation or a consumer; if it really is the
+/// implementation, the user can exclude it via config. Bypassing here is
+/// reserved for the unambiguous "in a policy directory" shape.
+///
+/// False-positive risk: the indicator set is shared with import-path matching
+/// and includes broad terms (`enforce`, `opa`, `policy`). Consumer directories
+/// like `services/enforcement/` or any path with `opa` as a substring will be
+/// silently skipped — no findings, no enforcement points. The scanner surfaces
+/// a `warn!` per skipped file so accidental bypasses are visible in logs; if a
+/// legitimate consumer directory is being dropped, the user can either rename
+/// it or exclude it via config (and we can narrow the indicator set later).
+pub fn is_policy_implementation_path(rel_path: &Path) -> bool {
+    let Some(parent) = rel_path.parent() else {
+        return false;
+    };
+    parent.components().any(|component| {
+        let s = component.as_os_str().to_string_lossy().to_lowercase();
+        POLICY_INDICATORS.iter().any(|ind| s.contains(ind))
+    })
 }
 
 /// Tree-sitter query for named imports: `import { foo } from 'bar'`
@@ -144,6 +175,46 @@ pub fn find_policy_imports(
     }
 
     let edges = extract_propagation_edges(tree, source, language);
+    propagate_to_fixed_point(&mut bindings, &edges);
+    bindings
+}
+
+/// Compute policy bindings for a Go package by treating every `.go` file in
+/// the package directory as one propagation domain. Same shape as
+/// `find_policy_imports` for the single-file case — collect imports, then
+/// (if any) collect propagation edges and run to fixed point — but with
+/// imports and edges unioned across every file in the package.
+///
+/// Why: Go's idiomatic DI shape wires a policy primitive in one file and
+/// calls it from another. The OCP corpus repo is the motivating case —
+/// `internal/database/database.go` does
+/// `&Database{accessFactory: authz.NewAccess}`, and 40+ call sites in
+/// sibling files (`bundle_status.go`, etc.) reach the same field via
+/// `d.accessFactory()...`. Per-file propagation never sees the
+/// `accessFactory: authz.NewAccess` edge from the consumer's perspective,
+/// so the call site looks like raw embedded authz. Unioning at the package
+/// level matches Go's own scoping rules: package-private identifiers are
+/// visible across files in the same directory, not across packages.
+pub fn find_go_package_policy_imports<'a, I>(files: I) -> HashSet<String>
+where
+    I: IntoIterator<Item = (&'a tree_sitter::Tree, &'a [u8])>,
+{
+    // Materialize so we can do two passes — bindings first, then edges
+    // only when there's something to propagate.
+    let files: Vec<(&tree_sitter::Tree, &[u8])> = files.into_iter().collect();
+
+    let mut bindings: HashSet<String> = HashSet::new();
+    for (tree, source) in &files {
+        bindings.extend(find_go_policy_imports(tree, source));
+    }
+    if bindings.is_empty() {
+        return bindings;
+    }
+
+    let mut edges: Vec<(String, String)> = Vec::new();
+    for (tree, source) in &files {
+        edges.extend(extract_propagation_edges(tree, source, Language::Go));
+    }
     propagate_to_fixed_point(&mut bindings, &edges);
     bindings
 }
@@ -1776,5 +1847,133 @@ const cached = handler;
         let tree = parse_lang(source, Language::TypeScript);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
         assert!(imports.is_empty(), "got: {imports:?}");
+    }
+
+    // ---------- Go package-scoped propagation ----------
+
+    #[test]
+    fn go_package_propagates_across_files() {
+        // OCP-shaped: one file in the package imports `authz` and stashes
+        // its constructor on a struct field; a sibling file with no policy
+        // imports of its own calls the field via the struct receiver. The
+        // per-file pass would miss the consumer entirely; the package pass
+        // must surface `accessFactory` as a binding visible to both files.
+        let producer = r#"
+package database
+
+import "github.com/example/authz"
+
+type Database struct {
+    accessFactory func() Access
+}
+
+func New() *Database {
+    return &Database{accessFactory: authz.NewAccess}
+}
+"#;
+        let consumer = r#"
+package database
+
+func (d *Database) checkBundle() {
+    d.accessFactory().WithPrincipal("bob")
+}
+"#;
+        let producer_tree = parse_lang(producer, Language::Go);
+        let consumer_tree = parse_lang(consumer, Language::Go);
+
+        let bindings = find_go_package_policy_imports([
+            (&producer_tree, producer.as_bytes()),
+            (&consumer_tree, consumer.as_bytes()),
+        ]);
+
+        assert!(bindings.contains("authz"));
+        assert!(
+            bindings.contains("accessFactory"),
+            "expected the cross-file edge to propagate; got: {bindings:?}"
+        );
+        assert!(is_enforcement_point(
+            "d.accessFactory().WithPrincipal(\"bob\")",
+            &bindings,
+        ));
+    }
+
+    #[test]
+    fn go_package_returns_empty_when_no_file_imports_policy() {
+        // If no file in the package has a policy import, propagation has no
+        // seed and the result must be empty even when files reference each
+        // other through edges.
+        let a = r#"
+package svc
+
+import "github.com/example/utils"
+
+func wire() any {
+    return utils.New
+}
+"#;
+        let b = r#"
+package svc
+
+var helper = wire
+"#;
+        let at = parse_lang(a, Language::Go);
+        let bt = parse_lang(b, Language::Go);
+
+        let bindings = find_go_package_policy_imports([(&at, a.as_bytes()), (&bt, b.as_bytes())]);
+        assert!(bindings.is_empty(), "got: {bindings:?}");
+    }
+
+    // ---------- Policy-implementation path bypass ----------
+
+    #[test]
+    fn implementation_path_matches_policy_directory_components() {
+        // The shapes that motivated this check: files that live under a
+        // policy-engine module directory, where structural rules would
+        // only flag the engine's own internals.
+        assert!(is_policy_implementation_path(Path::new(
+            "internal/authz/authz_test.go"
+        )));
+        assert!(is_policy_implementation_path(Path::new(
+            "pkg/policy/check.go"
+        )));
+        assert!(is_policy_implementation_path(Path::new("src/opa/eval.ts")));
+        assert!(is_policy_implementation_path(Path::new(
+            "lib/cedar/engine.ts"
+        )));
+        // Indicator-bearing component anywhere along the path counts —
+        // not just the immediate parent directory.
+        assert!(is_policy_implementation_path(Path::new(
+            "services/policy/src/check.ts"
+        )));
+    }
+
+    #[test]
+    fn implementation_path_is_case_insensitive() {
+        assert!(is_policy_implementation_path(Path::new(
+            "Internal/Authz/Handler.cs"
+        )));
+        assert!(is_policy_implementation_path(Path::new(
+            "src/Policy/Engine.java"
+        )));
+    }
+
+    #[test]
+    fn implementation_path_ignores_filename_only_match() {
+        // A top-level `authz.go` shouldn't auto-bypass just because the
+        // filename mentions a policy term — the directory placement is the
+        // signal, not the basename. Users with a top-level implementation
+        // file can exclude it via config.
+        assert!(!is_policy_implementation_path(Path::new("authz.go")));
+        assert!(!is_policy_implementation_path(Path::new("policy.ts")));
+    }
+
+    #[test]
+    fn implementation_path_skips_non_policy_directories() {
+        assert!(!is_policy_implementation_path(Path::new(
+            "src/handlers/orders.ts"
+        )));
+        assert!(!is_policy_implementation_path(Path::new(
+            "internal/database/bundle_status.go"
+        )));
     }
 }
