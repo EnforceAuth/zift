@@ -98,6 +98,25 @@ pub fn scan(
         std::collections::HashSet::new();
 
     for file in &files {
+        let rel_path = file.path.strip_prefix(root).unwrap_or(&file.path);
+
+        // Files that live *inside* a policy-engine implementation directory
+        // (`internal/authz/**`, `pkg/policy/**`, etc.) are themselves the
+        // policy engine, not consumers of one. Structural rules flag the
+        // embedded-authz shape, so running them here is guaranteed noise.
+        // Skip the file entirely — these don't count as findings or as
+        // enforcement points; they don't participate in the externalization
+        // metric at all. Done before read/parse so we don't pay I/O or
+        // tree-sitter cost for files we'll immediately drop.
+        if imports::is_policy_implementation_path(rel_path) {
+            tracing::warn!(
+                "skipping policy implementation file: {} (matched policy-indicator directory; \
+                 exclude via config if this is consumer code)",
+                rel_path.display(),
+            );
+            continue;
+        }
+
         let source = match std::fs::read_to_string(&file.path) {
             Ok(s) => s,
             Err(e) => {
@@ -121,24 +140,6 @@ pub fn scan(
 
         if tree.root_node().has_error() {
             tracing::debug!("parse errors in {}, scanning anyway", file.path.display());
-        }
-
-        let rel_path = file.path.strip_prefix(root).unwrap_or(&file.path);
-
-        // Files that live *inside* a policy-engine implementation directory
-        // (`internal/authz/**`, `pkg/policy/**`, etc.) are themselves the
-        // policy engine, not consumers of one. Structural rules flag the
-        // embedded-authz shape, so running them here is guaranteed noise.
-        // Skip the file entirely — these don't count as findings or as
-        // enforcement points; they don't participate in the externalization
-        // metric at all.
-        if imports::is_policy_implementation_path(rel_path) {
-            tracing::warn!(
-                "skipping policy implementation file: {} (matched policy-indicator directory; \
-                 exclude via config if this is consumer code)",
-                rel_path.display(),
-            );
-            continue;
         }
 
         // Check for policy-engine imports. For Go we use the package-level
