@@ -36,6 +36,14 @@ fn is_policy_path(source: &str) -> bool {
 /// be either the implementation or a consumer; if it really is the
 /// implementation, the user can exclude it via config. Bypassing here is
 /// reserved for the unambiguous "in a policy directory" shape.
+///
+/// False-positive risk: the indicator set is shared with import-path matching
+/// and includes broad terms (`enforce`, `opa`, `policy`). Consumer directories
+/// like `services/enforcement/` or any path with `opa` as a substring will be
+/// silently skipped — no findings, no enforcement points. The scanner surfaces
+/// a `warn!` per skipped file so accidental bypasses are visible in logs; if a
+/// legitimate consumer directory is being dropped, the user can either rename
+/// it or exclude it via config (and we can narrow the indicator set later).
 pub fn is_policy_implementation_path(rel_path: &Path) -> bool {
     let Some(parent) = rel_path.parent() else {
         return false;
@@ -172,10 +180,10 @@ pub fn find_policy_imports(
 }
 
 /// Compute policy bindings for a Go package by treating every `.go` file in
-/// the package directory as one propagation domain. Mirrors
-/// `find_policy_imports` for the single-file case but unions the local
-/// imports and propagation edges across the whole package before
-/// propagating to fixed point.
+/// the package directory as one propagation domain. Same shape as
+/// `find_policy_imports` for the single-file case — collect imports, then
+/// (if any) collect propagation edges and run to fixed point — but with
+/// imports and edges unioned across every file in the package.
 ///
 /// Why: Go's idiomatic DI shape wires a policy primitive in one file and
 /// calls it from another. The OCP corpus repo is the motivating case —
@@ -191,14 +199,21 @@ pub fn find_go_package_policy_imports<'a, I>(files: I) -> HashSet<String>
 where
     I: IntoIterator<Item = (&'a tree_sitter::Tree, &'a [u8])>,
 {
+    // Materialize so we can do two passes — bindings first, then edges
+    // only when there's something to propagate.
+    let files: Vec<(&tree_sitter::Tree, &[u8])> = files.into_iter().collect();
+
     let mut bindings: HashSet<String> = HashSet::new();
-    let mut edges: Vec<(String, String)> = Vec::new();
-    for (tree, source) in files {
+    for (tree, source) in &files {
         bindings.extend(find_go_policy_imports(tree, source));
-        edges.extend(extract_propagation_edges(tree, source, Language::Go));
     }
     if bindings.is_empty() {
         return bindings;
+    }
+
+    let mut edges: Vec<(String, String)> = Vec::new();
+    for (tree, source) in &files {
+        edges.extend(extract_propagation_edges(tree, source, Language::Go));
     }
     propagate_to_fixed_point(&mut bindings, &edges);
     bindings

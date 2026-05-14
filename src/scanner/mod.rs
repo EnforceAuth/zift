@@ -133,8 +133,9 @@ pub fn scan(
         // enforcement points; they don't participate in the externalization
         // metric at all.
         if imports::is_policy_implementation_path(rel_path) {
-            tracing::debug!(
-                "skipping policy implementation file: {}",
+            tracing::warn!(
+                "skipping policy implementation file: {} (matched policy-indicator directory; \
+                 exclude via config if this is consumer code)",
                 rel_path.display(),
             );
             continue;
@@ -232,6 +233,15 @@ pub fn scan(
 /// number of `.go` files in real repos is bounded) and the simpler control
 /// flow is worth it; if profiling later flags this, the obvious next step
 /// is to pre-parse once and pass the trees through.
+///
+/// Same-directory ≠ same Go package: `_test.go` files can declare
+/// `package foo_test` alongside `package foo`, and build constraints can
+/// gate files to different OS/arch combos. We deliberately union bindings
+/// across all of them. The union is monotonic for consumer detection
+/// (extra bindings only reduce false embedded findings; they can't turn a
+/// real finding into a false enforcement point), so this is safe today.
+/// Revisit if propagation ever gains non-monotonic logic (scoring,
+/// subtraction, etc.).
 fn build_go_package_bindings(
     root: &Path,
     files: &[discovery::DiscoveredFile],
