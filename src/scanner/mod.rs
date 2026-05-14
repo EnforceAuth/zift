@@ -117,6 +117,21 @@ pub fn scan(
 
         let rel_path = file.path.strip_prefix(root).unwrap_or(&file.path);
 
+        // Files that live *inside* a policy-engine implementation directory
+        // (`internal/authz/**`, `pkg/policy/**`, etc.) are themselves the
+        // policy engine, not consumers of one. Structural rules flag the
+        // embedded-authz shape, so running them here is guaranteed noise.
+        // Skip the file entirely — these don't count as findings or as
+        // enforcement points; they don't participate in the externalization
+        // metric at all.
+        if imports::is_policy_implementation_path(rel_path) {
+            tracing::debug!(
+                "skipping policy implementation file: {}",
+                rel_path.display(),
+            );
+            continue;
+        }
+
         // Check for policy-engine imports in this file
         let policy_imports = imports::find_policy_imports(&tree, source.as_bytes(), file.language);
 

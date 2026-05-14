@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use streaming_iterator::StreamingIterator;
 
@@ -21,6 +22,28 @@ const POLICY_INDICATORS: &[&str] = &[
 fn is_policy_path(source: &str) -> bool {
     let lower = source.to_lowercase();
     POLICY_INDICATORS.iter().any(|ind| lower.contains(ind))
+}
+
+/// Check if a file's path places it *inside* a policy-engine implementation
+/// module — e.g. `internal/authz/authz_test.go` lives under a directory whose
+/// name contains `authz`. Files like these are themselves the policy engine,
+/// so the structural rules (which flag *consumers* of authz primitives) would
+/// only produce noise. The scanner uses this to skip such files entirely.
+///
+/// Heuristic: any directory component along the path (excluding the filename
+/// itself) contains a `POLICY_INDICATORS` substring, case-insensitive. The
+/// filename is intentionally excluded — a top-level `authz.go` could plausibly
+/// be either the implementation or a consumer; if it really is the
+/// implementation, the user can exclude it via config. Bypassing here is
+/// reserved for the unambiguous "in a policy directory" shape.
+pub fn is_policy_implementation_path(rel_path: &Path) -> bool {
+    let Some(parent) = rel_path.parent() else {
+        return false;
+    };
+    parent.components().any(|component| {
+        let s = component.as_os_str().to_string_lossy().to_lowercase();
+        POLICY_INDICATORS.iter().any(|ind| s.contains(ind))
+    })
 }
 
 /// Tree-sitter query for named imports: `import { foo } from 'bar'`
@@ -1776,5 +1799,59 @@ const cached = handler;
         let tree = parse_lang(source, Language::TypeScript);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
         assert!(imports.is_empty(), "got: {imports:?}");
+    }
+
+    // ---------- Policy-implementation path bypass ----------
+
+    #[test]
+    fn implementation_path_matches_policy_directory_components() {
+        // The shapes that motivated this check: files that live under a
+        // policy-engine module directory, where structural rules would
+        // only flag the engine's own internals.
+        assert!(is_policy_implementation_path(Path::new(
+            "internal/authz/authz_test.go"
+        )));
+        assert!(is_policy_implementation_path(Path::new(
+            "pkg/policy/check.go"
+        )));
+        assert!(is_policy_implementation_path(Path::new("src/opa/eval.ts")));
+        assert!(is_policy_implementation_path(Path::new(
+            "lib/cedar/engine.ts"
+        )));
+        // Indicator-bearing component anywhere along the path counts —
+        // not just the immediate parent directory.
+        assert!(is_policy_implementation_path(Path::new(
+            "services/policy/src/check.ts"
+        )));
+    }
+
+    #[test]
+    fn implementation_path_is_case_insensitive() {
+        assert!(is_policy_implementation_path(Path::new(
+            "Internal/Authz/Handler.cs"
+        )));
+        assert!(is_policy_implementation_path(Path::new(
+            "src/Policy/Engine.java"
+        )));
+    }
+
+    #[test]
+    fn implementation_path_ignores_filename_only_match() {
+        // A top-level `authz.go` shouldn't auto-bypass just because the
+        // filename mentions a policy term — the directory placement is the
+        // signal, not the basename. Users with a top-level implementation
+        // file can exclude it via config.
+        assert!(!is_policy_implementation_path(Path::new("authz.go")));
+        assert!(!is_policy_implementation_path(Path::new("policy.ts")));
+    }
+
+    #[test]
+    fn implementation_path_skips_non_policy_directories() {
+        assert!(!is_policy_implementation_path(Path::new(
+            "src/handlers/orders.ts"
+        )));
+        assert!(!is_policy_implementation_path(Path::new(
+            "internal/database/bundle_status.go"
+        )));
     }
 }

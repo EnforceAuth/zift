@@ -337,6 +337,52 @@ public class OrderController {
 }
 
 #[test]
+fn in_package_policy_implementation_file_is_skipped() {
+    // OCP case: `internal/authz/authz_test.go` lives in `package authz` and
+    // calls policy constructors directly (no import — same package). The
+    // structural rules still match those call sites, but the file *is* the
+    // policy engine, not a consumer. The path-based bypass should drop it
+    // before structural matching runs: no findings, no enforcement points.
+    let dir = tempdir().unwrap();
+    let policy_dir = dir.path().join("internal").join("authz");
+    fs::create_dir_all(&policy_dir).unwrap();
+    fs::write(
+        policy_dir.join("authz_test.go"),
+        r#"package authz
+
+func TestNewAccess(t *testing.T) {
+    a := NewAccess()
+    _ = a.WithPrincipal("bob").WithResource("doc").Allow()
+}
+"#,
+    )
+    .unwrap();
+
+    let config = ZiftConfig::default();
+    let loaded_rules = rules::load_rules(None, &config).expect("embedded rules load");
+    let args = ScanArgs {
+        path: dir.path().to_path_buf(),
+        ..ScanArgs::default()
+    };
+
+    let result = scanner::scan(dir.path(), &loaded_rules, &args, &config).unwrap();
+
+    assert!(
+        result.findings.is_empty(),
+        "in-package policy implementation file leaked findings: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(
+        result.enforcement_points, 0,
+        "in-package policy implementation file should not be counted as an enforcement point",
+    );
+}
+
+#[test]
 fn externalized_rules_count_without_policy_import_shortcut() {
     let cases = [
         (
