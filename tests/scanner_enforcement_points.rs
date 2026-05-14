@@ -227,6 +227,88 @@ func check() {
 }
 
 #[test]
+fn go_package_propagation_reroutes_cross_file_consumer() {
+    // OCP-shaped: one file in `package database` imports `authz` and wires
+    // its constructor onto a struct field; a sibling consumer file with no
+    // imports of its own calls the field via the receiver. Per-file scan
+    // sees nothing in the consumer. Package-scoped propagation must surface
+    // `accessFactory` as a policy binding so the consumer's call counts as
+    // an enforcement point, not an embedded finding.
+    let dir = tempdir().unwrap();
+    let pkg_dir = dir.path().join("internal").join("database");
+    fs::create_dir_all(&pkg_dir).unwrap();
+    fs::write(
+        pkg_dir.join("database.go"),
+        r#"package database
+
+import "github.com/example/authz"
+
+type Database struct {
+    accessFactory func() any
+}
+
+func New() *Database {
+    return &Database{accessFactory: authz.NewAccess}
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        pkg_dir.join("bundle_status.go"),
+        r#"package database
+
+func (d *Database) checkBundle() {
+    _ = d.accessFactory().WithPrincipal("bob").WithResource("bundles")
+}
+"#,
+    )
+    .unwrap();
+
+    let config = ZiftConfig::default();
+    let loaded_rules = rules::load_rules(None, &config).expect("embedded rules load");
+    let args = ScanArgs {
+        path: dir.path().to_path_buf(),
+        ..ScanArgs::default()
+    };
+
+    let result = scanner::scan(dir.path(), &loaded_rules, &args, &config).unwrap();
+
+    assert!(
+        result.enforcement_points >= 1,
+        "expected the consumer's d.accessFactory().WithPrincipal(...) chain to \
+         count as an enforcement point via cross-file propagation; got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (
+                f.pattern_rule.clone(),
+                f.file.display().to_string(),
+                f.line_start
+            ))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        !result
+            .findings
+            .iter()
+            .any(|f| f.file.ends_with("bundle_status.go")
+                && f.pattern_rule.as_deref() == Some("go-access-descriptor-builder")),
+        "consumer file leaked an embedded finding — package-scoped propagation \
+         should have rerouted the call: {:?}",
+        result
+            .findings
+            .iter()
+            .map(|f| (
+                f.pattern_rule.clone(),
+                f.file.display().to_string(),
+                f.line_start
+            ))
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
 fn enforcement_points_increments_for_python_authz_import() {
     // Use a `check_*_permission` shape so it actually trips a structural rule
     // (`py-check-helper-call`) — without a matching rule there's no candidate

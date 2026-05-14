@@ -171,6 +171,39 @@ pub fn find_policy_imports(
     bindings
 }
 
+/// Compute policy bindings for a Go package by treating every `.go` file in
+/// the package directory as one propagation domain. Mirrors
+/// `find_policy_imports` for the single-file case but unions the local
+/// imports and propagation edges across the whole package before
+/// propagating to fixed point.
+///
+/// Why: Go's idiomatic DI shape wires a policy primitive in one file and
+/// calls it from another. The OCP corpus repo is the motivating case —
+/// `internal/database/database.go` does
+/// `&Database{accessFactory: authz.NewAccess}`, and 40+ call sites in
+/// sibling files (`bundle_status.go`, etc.) reach the same field via
+/// `d.accessFactory()...`. Per-file propagation never sees the
+/// `accessFactory: authz.NewAccess` edge from the consumer's perspective,
+/// so the call site looks like raw embedded authz. Unioning at the package
+/// level matches Go's own scoping rules: package-private identifiers are
+/// visible across files in the same directory, not across packages.
+pub fn find_go_package_policy_imports<'a, I>(files: I) -> HashSet<String>
+where
+    I: IntoIterator<Item = (&'a tree_sitter::Tree, &'a [u8])>,
+{
+    let mut bindings: HashSet<String> = HashSet::new();
+    let mut edges: Vec<(String, String)> = Vec::new();
+    for (tree, source) in files {
+        bindings.extend(find_go_policy_imports(tree, source));
+        edges.extend(extract_propagation_edges(tree, source, Language::Go));
+    }
+    if bindings.is_empty() {
+        return bindings;
+    }
+    propagate_to_fixed_point(&mut bindings, &edges);
+    bindings
+}
+
 /// Iteratively grow `bindings` by adding any edge LHS whose RHS textually
 /// mentions a known binding. Stops when no edge changed the set.
 ///
@@ -1799,6 +1832,80 @@ const cached = handler;
         let tree = parse_lang(source, Language::TypeScript);
         let imports = find_policy_imports(&tree, source.as_bytes(), Language::TypeScript);
         assert!(imports.is_empty(), "got: {imports:?}");
+    }
+
+    // ---------- Go package-scoped propagation ----------
+
+    #[test]
+    fn go_package_propagates_across_files() {
+        // OCP-shaped: one file in the package imports `authz` and stashes
+        // its constructor on a struct field; a sibling file with no policy
+        // imports of its own calls the field via the struct receiver. The
+        // per-file pass would miss the consumer entirely; the package pass
+        // must surface `accessFactory` as a binding visible to both files.
+        let producer = r#"
+package database
+
+import "github.com/example/authz"
+
+type Database struct {
+    accessFactory func() Access
+}
+
+func New() *Database {
+    return &Database{accessFactory: authz.NewAccess}
+}
+"#;
+        let consumer = r#"
+package database
+
+func (d *Database) checkBundle() {
+    d.accessFactory().WithPrincipal("bob")
+}
+"#;
+        let producer_tree = parse_lang(producer, Language::Go);
+        let consumer_tree = parse_lang(consumer, Language::Go);
+
+        let bindings = find_go_package_policy_imports([
+            (&producer_tree, producer.as_bytes()),
+            (&consumer_tree, consumer.as_bytes()),
+        ]);
+
+        assert!(bindings.contains("authz"));
+        assert!(
+            bindings.contains("accessFactory"),
+            "expected the cross-file edge to propagate; got: {bindings:?}"
+        );
+        assert!(is_enforcement_point(
+            "d.accessFactory().WithPrincipal(\"bob\")",
+            &bindings,
+        ));
+    }
+
+    #[test]
+    fn go_package_returns_empty_when_no_file_imports_policy() {
+        // If no file in the package has a policy import, propagation has no
+        // seed and the result must be empty even when files reference each
+        // other through edges.
+        let a = r#"
+package svc
+
+import "github.com/example/utils"
+
+func wire() any {
+    return utils.New
+}
+"#;
+        let b = r#"
+package svc
+
+var helper = wire
+"#;
+        let at = parse_lang(a, Language::Go);
+        let bt = parse_lang(b, Language::Go);
+
+        let bindings = find_go_package_policy_imports([(&at, a.as_bytes()), (&bt, b.as_bytes())]);
+        assert!(bindings.is_empty(), "got: {bindings:?}");
     }
 
     // ---------- Policy-implementation path bypass ----------

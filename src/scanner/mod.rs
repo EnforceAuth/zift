@@ -3,8 +3,8 @@ pub mod imports;
 pub mod matcher;
 pub mod parser;
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::cli::ScanArgs;
 use crate::config::ZiftConfig;
@@ -71,6 +71,14 @@ pub fn scan(
         compiled_cache.insert((*lang, *is_tsx_jsx), compiled_rules);
     }
 
+    // Pre-compute per-Go-package policy bindings. Go's scoping makes the
+    // package directory the natural propagation domain — bindings declared
+    // in one file are visible to siblings via package-private identifiers.
+    // Without this pass, a consumer file with no policy imports of its own
+    // would never recognize a call like `d.accessFactory()` even when a
+    // sibling file wired `accessFactory: authz.NewAccess`.
+    let go_package_bindings = build_go_package_bindings(root, &files);
+
     let mut ts_parser = tree_sitter::Parser::new();
     let mut all_findings = Vec::new();
     // `enforcement_points` counts call sites that *would* have matched a
@@ -132,8 +140,20 @@ pub fn scan(
             continue;
         }
 
-        // Check for policy-engine imports in this file
-        let policy_imports = imports::find_policy_imports(&tree, source.as_bytes(), file.language);
+        // Check for policy-engine imports. For Go we use the package-level
+        // binding set computed in the pre-pass (a superset of this file's
+        // local bindings, including any propagated from sibling files). For
+        // every other language we stay per-file — cross-file flow there
+        // needs a project-wide symbol table that isn't built yet.
+        let policy_imports = if file.language == Language::Go {
+            file.path
+                .parent()
+                .and_then(|d| go_package_bindings.get(d))
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            imports::find_policy_imports(&tree, source.as_bytes(), file.language)
+        };
 
         let compiled_rules = &compiled_cache[&(file.language, file.is_tsx_jsx)];
         for compiled in compiled_rules {
@@ -196,4 +216,76 @@ pub fn scan(
         findings: all_findings,
         enforcement_points,
     })
+}
+
+/// Group Go files by their parent directory (=Go package) and compute the
+/// union of imports + propagation edges across each group, returning the
+/// per-package binding set keyed by directory.
+///
+/// Files inside policy-engine implementation directories (`internal/authz/`
+/// etc.) are skipped here for the same reason the main loop skips them: the
+/// files themselves *are* the policy engine, and any bindings they contribute
+/// are noise relative to consumer-side detection.
+///
+/// We re-parse Go files here rather than threading a tree cache through the
+/// main loop. The double parse is cheap (tree-sitter Go is fast and the
+/// number of `.go` files in real repos is bounded) and the simpler control
+/// flow is worth it; if profiling later flags this, the obvious next step
+/// is to pre-parse once and pass the trees through.
+fn build_go_package_bindings(
+    root: &Path,
+    files: &[discovery::DiscoveredFile],
+) -> HashMap<PathBuf, HashSet<String>> {
+    let mut by_dir: HashMap<PathBuf, Vec<&Path>> = HashMap::new();
+    for file in files {
+        if file.language != Language::Go {
+            continue;
+        }
+        let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
+        if imports::is_policy_implementation_path(rel) {
+            continue;
+        }
+        let Some(dir) = file.path.parent() else {
+            continue;
+        };
+        by_dir
+            .entry(dir.to_path_buf())
+            .or_default()
+            .push(&file.path);
+    }
+
+    let mut result: HashMap<PathBuf, HashSet<String>> = HashMap::new();
+    let mut ts_parser = tree_sitter::Parser::new();
+
+    for (dir, paths) in by_dir {
+        let mut parsed: Vec<(tree_sitter::Tree, Vec<u8>)> = Vec::with_capacity(paths.len());
+        for path in paths {
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("skipping {} during package scan: {}", path.display(), e);
+                    continue;
+                }
+            };
+            let tree = match parser::parse_source(
+                &mut ts_parser,
+                source.as_bytes(),
+                Language::Go,
+                false,
+            ) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("skipping {} during package scan: {}", path.display(), e);
+                    continue;
+                }
+            };
+            parsed.push((tree, source.into_bytes()));
+        }
+        let bindings =
+            imports::find_go_package_policy_imports(parsed.iter().map(|(t, s)| (t, s.as_slice())));
+        if !bindings.is_empty() {
+            result.insert(dir, bindings);
+        }
+    }
+    result
 }
