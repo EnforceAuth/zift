@@ -1,6 +1,6 @@
 # Zift
 
-Static analysis tool that scans codebases for embedded authorization logic and generates Policy as Code (PaC). Rego/OPA today; architecture is designed to grow into other policy languages (e.g. Cedar) over time.
+Static analysis tool that scans codebases for embedded authorization logic and generates Policy as Code (PaC). Generates Rego for OPA and Cedar for AWS Verified Permissions, Arbiter, and other Cedar-compatible engines; the backend layer is pluggable for additional policy languages.
 
 > This file is the canonical instructions document for AI coding agents working on Zift. `CLAUDE.md` is a symlink to this file so Claude Code picks it up automatically; other agents (Codex, Aider, Cursor, etc.) should read `AGENTS.md` directly.
 
@@ -34,8 +34,9 @@ cargo clippy --all-features -- -D warnings
 
 - **CLI** (`src/cli.rs`): Subcommands — `scan`, `extract`, `report`, `rules`, `init`
 - **Scanner** (`src/scanner/`): Tree-sitter AST parsing and pattern matching across languages
-- **Rules** (`rules/`): TOML-based pattern definitions with tree-sitter queries and policy templates (Rego today)
-- **Rego** (`src/rego/`): Policy-as-Code generation from scan findings (Rego/OPA today; additional engines like Cedar planned)
+- **Rules** (`rules/`): TOML-based pattern definitions with tree-sitter queries and per-engine policy templates (`rego_template`, `cedar_template`)
+- **Rego** (`src/rego/`): Rego/OPA policy generation, grouping, and validation (via `regorus`)
+- **Cedar** (`src/cedar/`): Cedar policy generation, grouping, and validation (via `cedar-policy`) for AWS Verified Permissions, Arbiter, and other Cedar-compatible engines
 - **Output** (`src/output/`): Formatters (JSON, text)
 
 ### Design principles

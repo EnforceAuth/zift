@@ -4,7 +4,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.91%2B-orange.svg)](https://www.rust-lang.org/)
 
-Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/) today, with other engines (e.g. Cedar) on the roadmap.
+Sift through your codebase for embedded authorization logic. Extract it into Policy as Code (PaC) — [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) for [OPA](https://www.openpolicyagent.org/), or [Cedar](https://www.cedarpolicy.com/) for [AWS Verified Permissions](https://aws.amazon.com/verified-permissions/), Arbiter, and other Cedar-compatible engines.
 
 > **Status:** v0.2 — structural scanning ready for TypeScript, JavaScript, Java, Python, Go, and C#. `--deep` (LLM-assisted) mode functional via any OpenAI-compatible endpoint or MCP-capable agent host.
 
@@ -12,14 +12,14 @@ Sift through your codebase for embedded authorization logic. Extract it into Pol
 
 Most applications embed authorization decisions directly in application code: role checks in `if` statements, permission guards in middleware, business rules that act as access control. This scattered auth logic is hard to audit, hard to test, and impossible to enforce consistently.
 
-**zift** scans your codebase, finds these embedded authorization patterns, and helps you externalize them into Policy as Code (PaC) — Rego policies for OPA today — that a policy engine can enforce centrally.
+**zift** scans your codebase, finds these embedded authorization patterns, and helps you externalize them into Policy as Code (PaC) — Rego for OPA, or Cedar for AWS Verified Permissions, Arbiter, and other Cedar-compatible engines — that a policy engine can enforce centrally.
 
 ## How it works
 
 ```bash
 zift .                          # structural scan of current directory (fast, free)
 zift scan ./src --deep ...      # also run LLM-assisted semantic analysis
-zift extract ./findings.json    # generate Policy-as-Code from scan findings (Rego today)
+zift extract ./findings.json    # generate Policy-as-Code from scan findings (Rego or Cedar via --engine)
 zift report .                   # detailed findings report
 ```
 
@@ -176,7 +176,7 @@ If you already use an agent host — Claude Code, Cursor, Continue, Cline, Zed, 
 zift mcp --scan-root .
 ```
 
-Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, Rego validation today).
+Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, policy generation and validation for Rego and Cedar).
 
 ### Tools exposed
 
@@ -186,8 +186,9 @@ Your agent host calls Zift's tools; *its* model produces the analysis. Zift neve
 | `get_finding_context` | Expand a finding's surrounding code window |
 | `list_rules` | Enumerate the rule library (filter by language / category) |
 | `get_rule` | Fetch a rule's full definition (tree-sitter query, predicates, Rego template) |
-| `suggest_rego` | Render a Rego stub for a finding (template-driven or category default) |
-| `validate_rego` | Parse a Rego policy with the embedded `regorus` engine |
+| `suggest_policy` | Render a policy stub for a finding in the requested engine (`rego` or `cedar`, default `rego`); template-driven or category default |
+| `validate_policy` | Parse a policy with the embedded engine — `regorus` for Rego, `cedar-policy` for Cedar |
+| `suggest_rego` / `validate_rego` | Rego-pinned aliases of `suggest_policy` / `validate_policy`, kept for backward compatibility |
 | `analyze_snippet` | Render the deep-scan prompt + JSON Schema *without* calling any model — the agent host's model produces the response |
 
 ### Resources exposed
@@ -226,7 +227,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ```
 
 You should see a single line back with `serverInfo.name == "zift"` and capability flags for tools/resources.
-Then call `tools/list` to see the seven tool descriptors.
+Then call `tools/list` to see the tool descriptors.
 
 ## Contributing
 
