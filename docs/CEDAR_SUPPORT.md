@@ -1,7 +1,6 @@
 # Cedar Support — Design Memo
 
-**Status:** Draft — exploring for v0.3
-**Author:** seeded from a scoping investigation; refine before committing to a milestone
+**Status:** Historical — Cedar shipped in v0.2 as a peer backend to Rego. `src/cedar/` mirrors `src/rego/` (generator, grouping, templates, validator via `cedar-policy`); `extract --engine cedar` and the engine-agnostic MCP tools (`suggest_policy`, `validate_policy`) are live. This memo is preserved as the scoping document that informed the implementation — most of the "today" framing below was accurate at the time of writing and is now superseded by the shipped code.
 **Companion issue:** [#27 — Cedar support / pluggable policy backends](https://github.com/EnforceAuth/zift/issues/27)
 
 ## TL;DR
