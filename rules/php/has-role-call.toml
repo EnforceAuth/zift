@@ -1,0 +1,74 @@
+[rule]
+id = "php-has-role-call"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "hasRole / hasPermission / hasAnyRole call (PHP)"
+# Matches `$user->hasRole('admin')`, `$user->hasPermission('posts.edit')`,
+# `$user->hasAnyRole(['admin', 'editor'])` — the Spatie/laravel-permission
+# and hand-rolled idiom. The method name is gated to the role/permission
+# family so generic predicates (`hasMany`, `hasField`) don't fire.
+query = """
+(member_call_expression
+  name: (name) @method_name
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @role_value)
+        (encapsed_string (string_content) @role_value)
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(hasRole|hasAnyRole|hasAllRoles|hasPermission|hasPermissionTo|hasAnyPermission|hasAllPermissions)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# ->{{method_name}}('{{role_value}}').
+allow if {
+    "{{role_value}}" in input.user.roles
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role_value}}")
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+function isAdmin($user) {
+    return $user->hasRole('admin');
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function canEdit($user) {
+    return $user->hasPermissionTo('posts.edit');
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function loadComments($post) {
+    return $post->hasMany('App\\Comment');
+}
+"""
+expect_match = false

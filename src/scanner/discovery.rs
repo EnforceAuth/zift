@@ -30,6 +30,7 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "cs" => Some((Language::CSharp, false)),
         "kt" | "kts" => Some((Language::Kotlin, false)),
         "rb" | "rake" => Some((Language::Ruby, false)),
+        "php" | "phtml" => Some((Language::Php, false)),
         _ => None,
     }
 }
@@ -234,6 +235,19 @@ mod tests {
     }
 
     #[test]
+    fn detect_php_extensions() {
+        assert_eq!(
+            detect_language(Path::new("foo.php")),
+            Some((Language::Php, false))
+        );
+        // Laravel/legacy templating extension.
+        assert_eq!(
+            detect_language(Path::new("foo.phtml")),
+            Some((Language::Php, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
         assert_eq!(detect_language(Path::new("foo.txt")), None);
@@ -307,16 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn structural_detect_language_does_not_pick_up_unsupported_languages() {
-        // Sanity: the structural detector must NOT include languages without
-        // a wired-up tree-sitter grammar — otherwise the structural pass
-        // would try to parse files it can't handle. The deep detector picks
-        // them up; the structural one doesn't. (Ruby / Kotlin / C# were here
-        // before their structural support landed.)
-        assert_eq!(detect_language(Path::new("foo.php")), None);
-    }
-
-    #[test]
     fn discover_for_deep_picks_up_extra_languages() {
         use std::collections::HashSet;
 
@@ -327,6 +331,7 @@ mod tests {
         fs::write(dir.path().join("d.cs"), "class C {}").unwrap();
         fs::write(dir.path().join("e.kt"), "class K\n").unwrap();
         fs::write(dir.path().join("f.rb"), "class R\nend\n").unwrap();
+        fs::write(dir.path().join("g.php"), "<?php\nclass P {}\n").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
         let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
@@ -339,8 +344,9 @@ mod tests {
                 Language::CSharp,
                 Language::Kotlin,
                 Language::Ruby,
+                Language::Php,
             ]),
-            "structural should include TS + Python + Go + C# + Kotlin + Ruby",
+            "structural should include TS + Python + Go + C# + Kotlin + Ruby + PHP",
         );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
@@ -354,8 +360,9 @@ mod tests {
                 Language::CSharp,
                 Language::Kotlin,
                 Language::Ruby,
+                Language::Php,
             ]),
-            "deep should include TS + Python + Go + C# + Kotlin + Ruby",
+            "deep should include TS + Python + Go + C# + Kotlin + Ruby + PHP",
         );
     }
 }

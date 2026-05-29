@@ -1,0 +1,72 @@
+[rule]
+id = "php-symfony-voter-class"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Symfony Voter subclass (PHP)"
+# Matches `class FooVoter extends Voter` — the Symfony Security idiom for
+# declarative authorization. The base name can be the short class
+# (`Voter`) or fully-qualified (`\Symfony\Component\Security\Core\Authorization\Voter\Voter`).
+# The trailing `name` of the qualified branch is the constant we care about.
+query = """
+(class_declaration
+  name: (name) @class_name
+  (base_clause
+    [
+      (name) @parent
+      (qualified_name (name) @parent)
+    ])) @match
+"""
+
+[rule.predicates.parent]
+match = "Voter$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Symfony Voter subclass {{class_name}} — translate `voteOnAttribute` into rules.
+allow if {
+    input.user.permissions[_] == "TODO"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostVoter extends Voter {
+    protected function supports(string $attribute, mixed $subject): bool {
+        return in_array($attribute, ['VIEW', 'EDIT']);
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+abstract class CommentVoter extends \\Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter {
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController extends Controller {
+    public function index() {}
+}
+"""
+expect_match = false

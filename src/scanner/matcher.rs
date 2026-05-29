@@ -1880,6 +1880,374 @@ end
         );
     }
 
+    // -- PHP rule tests --
+
+    fn parse_and_match_php(source: &str, rule_toml: &str) -> Vec<Finding> {
+        let rule = rules::parse_rule_for_test(rule_toml);
+        let mut ts_parser = tree_sitter::Parser::new();
+        let lang = Language::Php;
+        let ts_lang = parser::get_language(lang, false).unwrap();
+        let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
+        let compiled = compile_rule(&rule, &ts_lang).unwrap();
+        execute_query(
+            &compiled,
+            &tree,
+            source.as_bytes(),
+            Path::new("test.php"),
+            lang,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn php_laravel_gate_allows_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class C {
+    public function update($post) {
+        if (Gate::allows('update-post', $post)) { return true; }
+    }
+}
+"#,
+            include_str!("../../rules/php/laravel-gate-allows-denies.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Gate::allows");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn php_laravel_gate_denies_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class C { public function f($post) { if (Gate::denies('delete', $post)) { abort(403); } } }
+"#,
+            include_str!("../../rules/php/laravel-gate-allows-denies.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Gate::denies");
+    }
+
+    #[test]
+    fn php_laravel_gate_excludes_non_gate_scope() {
+        // `Other::allows(...)` shares the verb but not the scope — must not
+        // fire. That guard is what keeps the rule from claiming unrelated
+        // facade-style calls in third-party libraries.
+        let findings = parse_and_match_php(
+            r#"<?php
+class C { public function f($post) { return Other::allows('x', $post); } }
+"#,
+            include_str!("../../rules/php/laravel-gate-allows-denies.toml"),
+        );
+        assert!(findings.is_empty(), "must not match non-Gate scopes");
+    }
+
+    #[test]
+    fn php_laravel_gate_define_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class AuthServiceProvider {
+    public function boot() {
+        Gate::define('update-post', function ($user, $post) { return $user->id === $post->user_id; });
+    }
+}
+"#,
+            include_str!("../../rules/php/laravel-gate-define.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Gate::define");
+    }
+
+    #[test]
+    fn php_laravel_authorize_helper_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostController {
+    public function update(Request $request, Post $post) {
+        $this->authorize('update', $post);
+        $post->save();
+    }
+}
+"#,
+            include_str!("../../rules/php/laravel-authorize-helper.toml"),
+        );
+        assert!(!findings.is_empty(), "should match $this->authorize");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn php_laravel_can_helper_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostController { public function show($req, $post) { if ($req->user()->can('view', $post)) { return view('post'); } } }
+"#,
+            include_str!("../../rules/php/laravel-authorize-helper.toml"),
+        );
+        assert!(!findings.is_empty(), "should match ->can()");
+    }
+
+    #[test]
+    fn php_laravel_policy_class_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostPolicy {
+    public function update(User $user, Post $post) { return $user->id === $post->user_id; }
+    public function delete(User $user, Post $post) { return $user->is_admin; }
+}
+"#,
+            include_str!("../../rules/php/laravel-policy-class.toml"),
+        );
+        // Two policy-verb methods on a *Policy class — each becomes its own
+        // ability finding.
+        assert_eq!(
+            findings.len(),
+            2,
+            "policy class with two ability methods should produce two findings"
+        );
+    }
+
+    #[test]
+    fn php_laravel_policy_class_excludes_non_policy_class() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostPresenter {
+    public function update($post) { return $post; }
+}
+"#,
+            include_str!("../../rules/php/laravel-policy-class.toml"),
+        );
+        assert!(findings.is_empty(), "must not match non-*Policy classes");
+    }
+
+    #[test]
+    fn php_laravel_route_middleware_matches_auth_alias() {
+        let findings = parse_and_match_php(
+            r#"<?php
+Route::middleware('auth')->group(function () {
+    Route::get('/dashboard', [DashboardController::class, 'index']);
+});
+"#,
+            include_str!("../../rules/php/laravel-route-middleware.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match Route::middleware('auth')"
+        );
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Middleware);
+    }
+
+    #[test]
+    fn php_laravel_route_middleware_matches_can_alias() {
+        let findings = parse_and_match_php(
+            r#"<?php
+Route::get('/admin', [AdminController::class, 'index'])->middleware(['auth', 'can:update,post']);
+"#,
+            include_str!("../../rules/php/laravel-route-middleware.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match chained ->middleware([...]) with auth/can aliases"
+        );
+    }
+
+    #[test]
+    fn php_laravel_route_middleware_excludes_throttle() {
+        // Throttle isn't authz — it's rate-limiting. The arg-regex gate is
+        // what keeps the rule from claiming every `->middleware(...)` call.
+        let findings = parse_and_match_php(
+            r#"<?php
+Route::middleware(['throttle:60,1'])->group(function () {});
+"#,
+            include_str!("../../rules/php/laravel-route-middleware.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match throttle/non-authz middleware aliases"
+        );
+    }
+
+    #[test]
+    fn php_symfony_voter_class_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostVoter extends Voter {
+    protected function supports(string $attribute, mixed $subject): bool {
+        return in_array($attribute, ['VIEW', 'EDIT']);
+    }
+}
+"#,
+            include_str!("../../rules/php/symfony-voter-class.toml"),
+        );
+        assert!(!findings.is_empty(), "should match class extending Voter");
+    }
+
+    #[test]
+    fn php_symfony_voter_class_qualified_base_matches() {
+        // Real-world Symfony code often uses the fully-qualified parent —
+        // the qualified_name branch of the query alternation handles it.
+        let findings = parse_and_match_php(
+            r#"<?php
+abstract class CommentVoter extends \Symfony\Component\Security\Core\Authorization\Voter\Voter {
+}
+"#,
+            include_str!("../../rules/php/symfony-voter-class.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match fully-qualified \\Symfony\\...\\Voter base"
+        );
+    }
+
+    #[test]
+    fn php_symfony_is_granted_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostController {
+    public function edit(Post $post) {
+        $this->denyAccessUnlessGranted('EDIT', $post);
+    }
+}
+"#,
+            include_str!("../../rules/php/symfony-is-granted.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match $this->denyAccessUnlessGranted(...)"
+        );
+    }
+
+    #[test]
+    fn php_symfony_is_granted_attribute_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class AdminController {
+    #[IsGranted('ROLE_ADMIN')]
+    public function dashboard() {}
+}
+"#,
+            include_str!("../../rules/php/symfony-is-granted-attribute.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match #[IsGranted('ROLE_ADMIN')]"
+        );
+    }
+
+    #[test]
+    fn php_symfony_is_granted_attribute_excludes_other_attributes() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class FooController {
+    #[Route('/foo')]
+    public function show() {}
+}
+"#,
+            include_str!("../../rules/php/symfony-is-granted-attribute.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match unrelated attributes like #[Route]"
+        );
+    }
+
+    #[test]
+    fn php_role_equals_check_strict_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($user) { if ($user->role === 'admin') { return true; } }
+"#,
+            include_str!("../../rules/php/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match `$user->role === 'admin'`"
+        );
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn php_role_equals_check_loose_matches() {
+        // Loose `==` is also widely used in real PHP code; the alternation
+        // covers both forms.
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($account) { return $account->account_type == "enterprise"; }
+"#,
+            include_str!("../../rules/php/role-equals-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match loose `==` role comparison"
+        );
+    }
+
+    #[test]
+    fn php_role_equals_check_excludes_non_role_property() {
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($user) { if ($user->name === 'admin') { echo "hi"; } }
+"#,
+            include_str!("../../rules/php/role-equals-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match property comparisons whose name isn't role-shaped"
+        );
+    }
+
+    #[test]
+    fn php_in_array_role_check_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($user) { return in_array('manager', $user->roles); }
+"#,
+            include_str!("../../rules/php/in-array-role-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match `in_array('manager', $user->roles)`"
+        );
+    }
+
+    #[test]
+    fn php_in_array_role_check_excludes_unrelated_collection() {
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($post) { return in_array('featured', $post->tags); }
+"#,
+            include_str!("../../rules/php/in-array-role-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match in_array against unrelated collections"
+        );
+    }
+
+    #[test]
+    fn php_has_role_call_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($user) { return $user->hasRole('admin'); }
+"#,
+            include_str!("../../rules/php/has-role-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match `->hasRole('admin')`");
+    }
+
+    #[test]
+    fn php_has_role_call_excludes_unrelated_predicate() {
+        // `hasMany` is an Eloquent relation, not authz; the method-name
+        // predicate is exactly what keeps this rule from claiming
+        // `->hasMany('Comment')`.
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($post) { return $post->hasMany('App\Comment'); }
+"#,
+            include_str!("../../rules/php/has-role-call.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match `->hasMany` or other unrelated predicates"
+        );
+    }
+
     // -- cross_predicates tests (synthetic rules) --
 
     /// A synthetic rule shaped like ownership-check: two getters in an

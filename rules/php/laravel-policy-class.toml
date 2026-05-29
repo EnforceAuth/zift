@@ -1,0 +1,91 @@
+[rule]
+id = "php-laravel-policy-class"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Laravel policy class method (PHP)"
+# Matches the canonical Laravel policy shape: a class whose name ends in
+# `Policy` containing methods named after the standard CRUD ability set
+# (`view`, `create`, `update`, `delete`, `restore`, `viewAny`, ...). Each
+# match is a single ability method, mirroring the resource→action shape
+# that Laravel's `Gate::authorize('update', $post)` lookup uses; one finding
+# per ability translates cleanly to one Rego/Cedar permit rule.
+query = """
+(class_declaration
+  name: (name) @class_name
+  body: (declaration_list
+    (method_declaration
+      name: (name) @method_name) @match))
+"""
+
+[rule.predicates.class_name]
+match = "Policy$"
+
+[rule.predicates.method_name]
+match = "^(view|viewAny|create|update|delete|forceDelete|restore|attach|detach|replicate|sync)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel policy method {{class_name}}::{{method_name}}.
+allow if {
+    input.action == "{{method_name}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action == Action::"{{method_name}}",
+    resource
+);
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostPolicy {
+    public function update(User $user, Post $post) {
+        return $user->id === $post->user_id;
+    }
+    public function delete(User $user, Post $post) {
+        return $user->is_admin;
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostPolicy {
+    public function view(User $user, Post $post) {
+        return true;
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostPresenter {
+    public function update($post) {
+        return $post;
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+<?php
+class PostPolicy {
+    public function setLogger($logger) {
+        $this->logger = $logger;
+    }
+}
+"""
+expect_match = false

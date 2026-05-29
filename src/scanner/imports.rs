@@ -165,6 +165,7 @@ pub fn find_policy_imports(
         Language::Python => find_py_policy_imports(tree, source),
         Language::Java => find_java_policy_imports(tree, source),
         Language::CSharp => find_csharp_policy_imports(tree, source),
+        Language::Php => find_php_policy_imports(tree, source),
         // Other languages: no import detection yet.
         _ => HashSet::new(),
     };
@@ -577,6 +578,146 @@ fn csharp_node_can_be_policy_path(node: tree_sitter::Node) -> bool {
     )
 }
 
+fn find_php_policy_imports(tree: &tree_sitter::Tree, source: &[u8]) -> HashSet<String> {
+    let mut policy_names = HashSet::new();
+
+    iter_named_descendants(tree.root_node(), |node| {
+        if node.kind() != "namespace_use_declaration" {
+            return;
+        }
+
+        // PHP `use` comes in two structural shapes:
+        //   A) `use Company\Policy\Authorize [as A];` — one or more direct
+        //      `namespace_use_clause` children, each carrying the full
+        //      `qualified_name`.
+        //   B) `use Company\Policy\{Authorize, Engine as E};` — a single
+        //      `namespace_name` prefix child plus a `namespace_use_group`
+        //      whose children are leaf `namespace_use_clause`s.
+        // `use function …` / `use const …` carry a leading `type` field on
+        // the clause; we don't filter on it — the binding shape is identical
+        // and any of those names can legitimately point at a policy module.
+        let mut prefix: Option<&str> = None;
+        let mut group_node: Option<tree_sitter::Node> = None;
+        let mut top_clauses: Vec<tree_sitter::Node> = Vec::new();
+
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            match child.kind() {
+                "namespace_name" => {
+                    if let Ok(t) = child.utf8_text(source) {
+                        prefix = Some(t);
+                    }
+                }
+                "namespace_use_group" => {
+                    group_node = Some(child);
+                }
+                "namespace_use_clause" => {
+                    top_clauses.push(child);
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(group) = group_node {
+            let pfx = prefix.unwrap_or("");
+            let mut g_cursor = group.walk();
+            for clause in group.named_children(&mut g_cursor) {
+                if clause.kind() == "namespace_use_clause" {
+                    process_php_use_clause(clause, source, pfx, &mut policy_names);
+                }
+            }
+        } else {
+            for clause in top_clauses {
+                process_php_use_clause(clause, source, "", &mut policy_names);
+            }
+        }
+    });
+
+    policy_names
+}
+
+/// Resolve one `namespace_use_clause` to its (full path, binding) pair and
+/// insert the binding when the path looks policy-y. `prefix` is non-empty
+/// only inside a group import (`use Company\Policy\{Authorize, Engine};`);
+/// in the simple-form path the clause's own `qualified_name` already carries
+/// the full namespace.
+fn process_php_use_clause(
+    clause: tree_sitter::Node,
+    source: &[u8],
+    prefix: &str,
+    out: &mut HashSet<String>,
+) {
+    let alias_node = clause.child_by_field_name("alias");
+    let alias = alias_node.and_then(|n| n.utf8_text(source).ok());
+
+    // Find the qualified_name (simple form) and the leaf `name` (either form).
+    // We skip the alias `name` child by node id so it isn't mistaken for the
+    // imported leaf.
+    let alias_id = alias_node.map(|n| n.id());
+    let mut qname: Option<tree_sitter::Node> = None;
+    let mut leaf_name: Option<&str> = None;
+
+    let mut cursor = clause.walk();
+    for child in clause.named_children(&mut cursor) {
+        match child.kind() {
+            "qualified_name" => qname = Some(child),
+            "name" => {
+                if Some(child.id()) != alias_id
+                    && let Ok(t) = child.utf8_text(source)
+                {
+                    leaf_name = Some(t);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Full path used to decide policy-ness. Group form concatenates
+    // prefix + "\" + leaf; simple form already has it on the qualified_name.
+    let full_path = if let Some(qn) = qname {
+        qn.utf8_text(source).unwrap_or("").to_string()
+    } else if let Some(leaf) = leaf_name {
+        if prefix.is_empty() {
+            leaf.to_string()
+        } else {
+            format!("{prefix}\\{leaf}")
+        }
+    } else {
+        return;
+    };
+
+    if !is_policy_path(&full_path) {
+        return;
+    }
+
+    // Binding actually used in code: alias if present, otherwise the leaf
+    // name (the last identifier of the qualified path for the simple form,
+    // or the clause's bare name for the group form).
+    let binding = if let Some(a) = alias {
+        a.to_string()
+    } else if let Some(qn) = qname {
+        let mut last: Option<&str> = None;
+        let mut c = qn.walk();
+        for child in qn.named_children(&mut c) {
+            if child.kind() == "name"
+                && let Ok(t) = child.utf8_text(source)
+            {
+                last = Some(t);
+            }
+        }
+        match last {
+            Some(t) => t.to_string(),
+            None => return,
+        }
+    } else if let Some(leaf) = leaf_name {
+        leaf.to_string()
+    } else {
+        return;
+    };
+
+    out.insert(binding);
+}
+
 /// Walk the tree once, collecting `(lhs_name, rhs_source_text)` edges from
 /// assignment-shaped nodes. The propagation step then checks each RHS for
 /// any current binding and adds the LHS if it matches.
@@ -599,6 +740,7 @@ fn extract_propagation_edges(
         Language::Python => visit_py_edge(node, source, &mut edges),
         Language::Java => visit_java_edge(node, source, &mut edges),
         Language::CSharp => visit_csharp_edge(node, source, &mut edges),
+        Language::Php => visit_php_edge(node, source, &mut edges),
         _ => {}
     });
 
@@ -970,6 +1112,87 @@ fn visit_csharp_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(St
             if let Some(lhs) = csharp_lhs_name(left, source) {
                 push_edge(&lhs, right.utf8_text(source).unwrap_or(""), edges);
             }
+        }
+        _ => {}
+    }
+}
+
+/// Pull a binding-shaped name out of the LHS of a PHP edge. `$x` exposes its
+/// trailing identifier (`x`); `$this->guard` propagates the field name
+/// (`guard`) so later `$anything->guard(...)` calls match via `\bguard\b`,
+/// mirroring the Java `field_access` / TS `member_expression` treatment.
+fn php_lhs_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "variable_name" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if child.kind() == "name" {
+                    return child.utf8_text(source).ok().map(str::to_string);
+                }
+            }
+            None
+        }
+        "member_access_expression" => node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(source).ok())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn visit_php_edge(node: tree_sitter::Node, source: &[u8], edges: &mut Vec<(String, String)>) {
+    match node.kind() {
+        // `$x = expr;`, `$this->guard = $guard;`. PHP doesn't separate
+        // declaration from assignment for locals — every binding update
+        // comes through this node.
+        "assignment_expression" => {
+            let (Some(left), Some(right)) = (
+                node.child_by_field_name("left"),
+                node.child_by_field_name("right"),
+            ) else {
+                return;
+            };
+            if let Some(lhs) = php_lhs_name(left, source) {
+                push_edge(&lhs, right.utf8_text(source).unwrap_or(""), edges);
+            }
+        }
+        // Constructor/method DI: `function __construct(Authorize $guard)`.
+        // Bind `$guard`'s identifier to the type so that an `Authorize`
+        // policy binding propagates into method bodies via the parameter.
+        "simple_parameter" => {
+            let (Some(name), Some(ty)) = (
+                node.child_by_field_name("name"),
+                node.child_by_field_name("type"),
+            ) else {
+                return;
+            };
+            if name.kind() != "variable_name" {
+                return;
+            }
+            let Some(lhs) = php_lhs_name(name, source) else {
+                return;
+            };
+            let rhs = ty.utf8_text(source).unwrap_or("");
+            push_edge(&lhs, rhs, edges);
+        }
+        // Class property with an initializer: `private $guard = Foo::DEFAULT;`.
+        // PHP grammar puts the initializer on the `property_element` under
+        // field `default_value`; the `variable_name` is field `name`.
+        "property_element" => {
+            let (Some(name), Some(value)) = (
+                node.child_by_field_name("name"),
+                node.child_by_field_name("default_value"),
+            ) else {
+                return;
+            };
+            if name.kind() != "variable_name" {
+                return;
+            }
+            let Some(lhs) = php_lhs_name(name, source) else {
+                return;
+            };
+            let rhs = value.utf8_text(source).unwrap_or("");
+            push_edge(&lhs, rhs, edges);
         }
         _ => {}
     }
@@ -1530,6 +1753,148 @@ using PolicyAlias = Company.Policy.Authorizer;
             &imports,
         ));
         assert!(!is_enforcement_point("User.IsInRole(\"Admin\")", &imports));
+    }
+
+    // ---------- PHP ----------
+
+    #[test]
+    fn php_detects_simple_class_use() {
+        let source = r#"<?php
+use Company\Policy\Authorize;
+use Symfony\Component\HttpFoundation\Request;
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("Authorize"));
+        assert!(!imports.contains("Request"));
+    }
+
+    #[test]
+    fn php_detects_aliased_use() {
+        let source = r#"<?php
+use Company\Authz\Engine as PolicyEngine;
+use Vendor\Other\Thing as Other;
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("PolicyEngine"));
+        // The original leaf name must NOT also be captured when an alias
+        // shadows it — same contract as the Go/C# aliased cases.
+        assert!(!imports.contains("Engine"));
+        assert!(!imports.contains("Other"));
+    }
+
+    #[test]
+    fn php_detects_function_and_const_use() {
+        // `use function …` / `use const …` carry a leading `type` field on
+        // the clause but bind the same way as a class import.
+        let source = r#"<?php
+use function Company\Policy\check_perm;
+use const Company\Policy\PERM_ADMIN;
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("check_perm"));
+        assert!(imports.contains("PERM_ADMIN"));
+    }
+
+    #[test]
+    fn php_detects_grouped_use() {
+        let source = r#"<?php
+use Company\Policy\{Authorize, Engine as E};
+use Vendor\Other\{Thing};
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("Authorize"));
+        // Aliased member of a group keeps the alias as the binding.
+        assert!(imports.contains("E"));
+        assert!(!imports.contains("Engine"));
+        // Non-policy group is ignored entirely.
+        assert!(!imports.contains("Thing"));
+    }
+
+    #[test]
+    fn php_enforcement_point_check() {
+        let source = r#"<?php
+use Company\Policy\Authorize;
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(is_enforcement_point(
+            "Authorize::check($user, 'orders:read')",
+            &imports,
+        ));
+        assert!(!is_enforcement_point("$user->role === 'admin'", &imports));
+    }
+
+    #[test]
+    fn php_propagates_through_constructor_di_and_field() {
+        // Symfony-flavoured DI: a controller injects a policy service via
+        // the constructor and stashes it on a private field. Both `$authz`
+        // (parameter) and `authz` (field assigned via `$this->authz =`)
+        // should propagate so later `$this->authz->isGranted(...)` calls
+        // count as enforcement points.
+        let source = r#"<?php
+use Company\Policy\Authorize;
+
+class Service {
+    private $authz;
+
+    public function __construct(Authorize $authz) {
+        $this->authz = $authz;
+    }
+
+    public function check($user, $resource) {
+        return $this->authz->isGranted($user, $resource);
+    }
+}
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("Authorize"));
+        assert!(
+            imports.contains("authz"),
+            "parameter + field assignment should propagate to `authz`; got: {imports:?}",
+        );
+        assert!(is_enforcement_point(
+            "$this->authz->isGranted($user, $resource)",
+            &imports,
+        ));
+    }
+
+    #[test]
+    fn php_propagates_through_property_default_value() {
+        // `private $guard = Authorize::INSTANCE;` — the property element's
+        // default_value flows into the property's binding.
+        let source = r#"<?php
+use Company\Policy\Authorize;
+
+class Service {
+    private $guard = Authorize::INSTANCE;
+}
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.contains("Authorize"));
+        assert!(imports.contains("guard"), "got: {imports:?}");
+    }
+
+    #[test]
+    fn php_no_propagation_without_policy_use() {
+        let source = r#"<?php
+use Vendor\Utils\Helper;
+
+class Service {
+    private $helper;
+    public function __construct(Helper $helper) {
+        $this->helper = $helper;
+    }
+}
+"#;
+        let tree = parse_lang(source, Language::Php);
+        let imports = find_policy_imports(&tree, source.as_bytes(), Language::Php);
+        assert!(imports.is_empty(), "got: {imports:?}");
     }
 
     // ---------- Local data-flow propagation (option #2) ----------

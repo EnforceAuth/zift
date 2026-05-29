@@ -1,0 +1,82 @@
+[rule]
+id = "php-laravel-authorize-helper"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Laravel $this->authorize / can / cannot policy helper (PHP)"
+# Matches Laravel's controller-side helpers: `$this->authorize('update', $post)`,
+# `$user->can('view', $post)`, and `$user->cannot(...)`. The shape is a
+# `member_call_expression` where the method name is a Laravel policy verb.
+# The first arg is the ability (string literal) — captured so downstream
+# tooling can map it to a permission.
+query = """
+(member_call_expression
+  name: (name) @method_name
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @ability)
+        (encapsed_string (string_content) @ability)
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(authorize|can|cannot)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel ->{{method_name}} {{ability}}.
+allow if {
+    input.action == "{{ability}}"
+    input.user.permissions[_] == "{{ability}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action == Action::"{{ability}}",
+    resource
+);
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function update(Request $request, Post $post) {
+        $this->authorize('update', $post);
+        $post->save();
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function show(Post $post) {
+        if ($request->user()->can('view', $post)) {
+            return view('post');
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function index() {
+        return view('posts');
+    }
+}
+"""
+expect_match = false

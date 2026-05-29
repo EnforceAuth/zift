@@ -1,0 +1,83 @@
+[rule]
+id = "php-symfony-is-granted"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Symfony $this->isGranted / denyAccessUnlessGranted call (PHP)"
+# Matches Symfony's controller authz call sites: `$this->isGranted('ROLE_ADMIN', $subject)`
+# and `$this->denyAccessUnlessGranted('EDIT', $post)`. The first argument is
+# the attribute (role string or ability slug) — captured so downstream
+# tooling can translate the check to a permission predicate.
+query = """
+(member_call_expression
+  name: (name) @method_name
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @attribute)
+        (encapsed_string (string_content) @attribute)
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(isGranted|denyAccessUnlessGranted)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Symfony ->{{method_name}} {{attribute}}.
+allow if {
+    input.user.roles[_] == "{{attribute}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{attribute}}")
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostController extends AbstractController {
+    public function edit(Post $post) {
+        $this->denyAccessUnlessGranted('EDIT', $post);
+        return $this->render('post/edit.html.twig');
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class AdminController extends AbstractController {
+    public function index() {
+        if ($this->isGranted('ROLE_ADMIN')) {
+            return $this->render('admin.html.twig');
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class FooController {
+    public function index() {
+        return view('foo');
+    }
+}
+"""
+expect_match = false

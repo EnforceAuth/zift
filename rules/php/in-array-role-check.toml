@@ -1,0 +1,81 @@
+[rule]
+id = "php-in-array-role-check"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "in_array role/permission membership check (PHP)"
+# Matches `in_array('manager', $user->roles)` — the canonical PHP shape for
+# "is this principal in this role collection?". First arg is the role
+# literal; second arg's trailing property name must be role-shaped
+# (`roles`, `permissions`, `authorities`, ...) so unrelated `in_array($x,
+# $widgets)` calls don't fire.
+query = """
+(function_call_expression
+  function: (name) @fn
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @role_value)
+        (encapsed_string (string_content) @role_value)
+      ])
+    .
+    (argument
+      (member_access_expression
+        name: (name) @collection)))
+) @match
+"""
+
+[rule.predicates.fn]
+eq = "in_array"
+
+[rule.predicates.collection]
+match = "(?i)^(roles|permissions|authorities|scopes|granted_authorities|groups)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{role_value}}" in input.user.roles
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role_value}}")
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+function managerOnly($user) {
+    return in_array('manager', $user->roles);
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function hasRead($user) {
+    return in_array("read", $user->permissions);
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function tagged($post) {
+    return in_array('featured', $post->tags);
+}
+"""
+expect_match = false
