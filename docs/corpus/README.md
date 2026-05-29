@@ -30,6 +30,7 @@ We are **not** shipping policies for these projects. The runs exist to stress-te
 | Go | [go-gitea/gitea](https://github.com/go-gitea/gitea) | 18 | 23 (perm subset) | Deep surfaces the entire `IsAdmin`/`IsOwner`/`Has*` family the structural pass missed; one predicate widening on `go-has-role-call` closes most of the gap. See [go.md](go.md). |
 | C# | [bitwarden/server](https://github.com/bitwarden/server) | 318 | 88 (AdminConsole subset) | ASP.NET Core resource authorization dominates structurally; deep surfaces generic `[Authorize<TRequirement>]`, ownership checks, and helper gates. See [csharp.md](csharp.md). |
 | Kotlin | [ktorio/ktor-samples](https://github.com/ktorio/ktor-samples) | 13 | — | Ktor `install(Authentication)` + named `authenticate(...) { ... }` route guards account for every finding; Spring-Kotlin rules need a separate corpus target to calibrate. See [kotlin.md](kotlin.md). |
+| Ruby | [discourse/discourse](https://github.com/discourse/discourse) | 339 | — | Rails `before_action` filters (180) and `current_user.<role>?` predicates (159) carry every finding; Discourse's `Guardian` call sites are the gap. Pundit/CanCanCan rules need a Pundit-flavored target to calibrate. See [ruby.md](ruby.md). |
 
 > The "deep" column is intentionally a **scoped subset** rather than the whole repo — running deep against 5,000+ files per language is neither cheap nor necessary to surface gaps. Each per-language doc explains the subset and why.
 >

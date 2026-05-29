@@ -1,0 +1,75 @@
+[rule]
+id = "ruby-role-collection-include"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Membership check on roles/permissions collection (Ruby)"
+# Matches `user.roles.include?(:manager)` and friends — second-most common
+# Ruby RBAC shape after equality. Accepts the role value as either a symbol
+# (`:manager`) or string ("manager"). The intermediate `roles` identifier
+# (`@collection`) is gated by predicate so unrelated `tags.include?` calls
+# don't fire.
+query = """
+(call
+  receiver: (call
+    receiver: (_)
+    method: (identifier) @collection)
+  method: (identifier) @method_name
+  arguments: (argument_list
+    [
+      (simple_symbol) @role_value
+      (string (string_content) @role_value)
+    ])
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "include?"
+
+[rule.predicates.collection]
+match = "(?i)^(roles|permissions|authorities|scopes|granted_authorities)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{role_value}}" in input.user.roles
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role_value}}")
+};
+"""
+[[rule.tests]]
+input = """
+def manager_only?
+  current_user.roles.include?(:manager)
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def has_read?
+  user.permissions.include?("read")
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def tagged?
+  post.tags.include?(:featured)
+end
+"""
+expect_match = false

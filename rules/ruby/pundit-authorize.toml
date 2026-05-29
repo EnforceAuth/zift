@@ -1,0 +1,92 @@
+[rule]
+id = "ruby-pundit-authorize"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Pundit authorize / authorize! call (Ruby)"
+# Pundit's `authorize @post` and `authorize @post, :update?` are the canonical
+# controller-side gate, plus CanCanCan's `authorize! :update, @article` which
+# parses with the same `call` shape (method=`authorize!`). Both forms have no
+# receiver — that's how we distinguish them from arbitrary `something.authorize`
+# chains the rule shouldn't claim. The first argument is the resource (instance
+# variable, identifier, or constant) and the optional second is the action
+# symbol; we capture the trailing symbol when present.
+query = """
+(call
+  !receiver
+  method: (identifier) @method_name
+  arguments: (argument_list
+    [
+      (instance_variable)
+      (identifier)
+      (constant)
+    ]
+    (simple_symbol)? @action)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^authorize!?$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# TODO: translate Pundit policy method {{action}} to a permission predicate.
+allow if {
+    input.user.permissions[_] == "TODO"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+class PostsController < ApplicationController
+  def destroy
+    authorize @post
+    @post.destroy
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class ArticlesController < ApplicationController
+  def update
+    authorize! :update, @article
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class PostsController < ApplicationController
+  def update
+    authorize @post, :update?
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class HomeController < ApplicationController
+  def index
+    @posts = Post.all
+  end
+end
+"""
+expect_match = false

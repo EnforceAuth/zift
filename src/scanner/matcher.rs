@@ -1556,6 +1556,330 @@ fun Application.module() {
         );
     }
 
+    // -- Ruby rule tests --
+
+    fn parse_and_match_ruby(source: &str, rule_toml: &str) -> Vec<Finding> {
+        let rule = rules::parse_rule_for_test(rule_toml);
+        let mut ts_parser = tree_sitter::Parser::new();
+        let lang = Language::Ruby;
+        let ts_lang = parser::get_language(lang, false).unwrap();
+        let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
+        let compiled = compile_rule(&rule, &ts_lang).unwrap();
+        execute_query(
+            &compiled,
+            &tree,
+            source.as_bytes(),
+            Path::new("app.rb"),
+            lang,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ruby_pundit_authorize_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+class PostsController < ApplicationController
+  def destroy
+    authorize @post
+    @post.destroy
+  end
+end
+"#,
+            include_str!("../../rules/ruby/pundit-authorize.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Pundit authorize call");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn ruby_pundit_authorize_bang_matches() {
+        // CanCanCan's `authorize!` shape — same AST as Pundit's `authorize`
+        // (no receiver, method=identifier), so it collapses into the same rule.
+        let findings = parse_and_match_ruby(
+            r#"
+class ArticlesController < ApplicationController
+  def update
+    authorize! :update, @article
+  end
+end
+"#,
+            include_str!("../../rules/ruby/pundit-authorize.toml"),
+        );
+        assert!(!findings.is_empty(), "should match authorize! bang form");
+    }
+
+    #[test]
+    fn ruby_pundit_authorize_no_false_positive_on_receiver_chain() {
+        // `something.authorize(...)` is NOT a Pundit gate; the rule restricts
+        // to bare (receiver-less) calls so chained method calls don't fire.
+        let findings = parse_and_match_ruby(
+            r#"
+def init
+  client.authorize(token)
+end
+"#,
+            include_str!("../../rules/ruby/pundit-authorize.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match chained `obj.authorize` calls"
+        );
+    }
+
+    #[test]
+    fn ruby_pundit_policy_method_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+def edit_link
+  link_to 'Edit', edit_post_path(@post) if policy(@post).edit?
+end
+"#,
+            include_str!("../../rules/ruby/pundit-policy-method.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match policy(@post).<action>? chain"
+        );
+    }
+
+    #[test]
+    fn ruby_pundit_policy_class_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+class PostPolicy < ApplicationPolicy
+  def update?
+    user.admin? || record.owner == user
+  end
+end
+"#,
+            include_str!("../../rules/ruby/pundit-policy-class.toml"),
+        );
+        assert!(!findings.is_empty(), "should match Pundit policy class");
+    }
+
+    #[test]
+    fn ruby_pundit_policy_class_no_false_positive_on_unrelated_class() {
+        let findings = parse_and_match_ruby(
+            r#"
+class PostPresenter
+  def initialize(post)
+    @post = post
+  end
+end
+"#,
+            include_str!("../../rules/ruby/pundit-policy-class.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match non-Policy classes without an ApplicationPolicy superclass"
+        );
+    }
+
+    #[test]
+    fn ruby_cancancan_can_declaration_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+class Ability
+  include CanCan::Ability
+  def initialize(user)
+    can :read, Article
+  end
+end
+"#,
+            include_str!("../../rules/ruby/cancancan-can-declaration.toml"),
+        );
+        assert!(!findings.is_empty(), "should match `can :read, Article`");
+    }
+
+    #[test]
+    fn ruby_cancancan_can_check_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+def gate
+  return unless current_user.can?(:update, @post)
+end
+"#,
+            include_str!("../../rules/ruby/cancancan-can-check.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match `user.can?(:action, ...)`"
+        );
+    }
+
+    #[test]
+    fn ruby_cancancan_can_check_excludes_non_principal_receiver() {
+        // Domain objects that happen to expose `.can?` aren't authz — the
+        // tightened receiver predicate is what keeps the rule honest.
+        let findings = parse_and_match_ruby(
+            r#"
+def render_widget
+  return unless widget.can?(:render)
+end
+"#,
+            include_str!("../../rules/ruby/cancancan-can-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match `.can?` on non-principal receivers"
+        );
+    }
+
+    #[test]
+    fn ruby_rails_before_action_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+class AdminController < ApplicationController
+  before_action :require_admin
+end
+"#,
+            include_str!("../../rules/ruby/rails-before-action-filter.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match before_action :require_admin"
+        );
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Middleware);
+    }
+
+    #[test]
+    fn ruby_rails_before_action_devise_marker_matches() {
+        // Devise's `before_action :authenticate_user!` is the most common
+        // Rails-auth filter in the wild; bang-suffixed symbol must match.
+        let findings = parse_and_match_ruby(
+            r#"
+class ApplicationController < ActionController::Base
+  before_action :authenticate_user!
+end
+"#,
+            include_str!("../../rules/ruby/rails-before-action-filter.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match before_action :authenticate_user! (Devise idiom)"
+        );
+    }
+
+    #[test]
+    fn ruby_rails_before_action_skip_matches() {
+        let findings = parse_and_match_ruby(
+            r#"
+class PublicController < ApplicationController
+  skip_before_action :authorize_resource, only: [:show]
+end
+"#,
+            include_str!("../../rules/ruby/rails-before-action-filter.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match skip_before_action :authorize_resource"
+        );
+    }
+
+    #[test]
+    fn ruby_rails_before_action_excludes_non_authz_filter_names() {
+        // Plain bookkeeping callbacks (`load_post`, etc.) must NOT fire — the
+        // rule's filter-name predicate is exactly what keeps this rule
+        // useful at scale on real Rails repos.
+        let findings = parse_and_match_ruby(
+            r#"
+class PostsController < ApplicationController
+  before_action :load_post
+end
+"#,
+            include_str!("../../rules/ruby/rails-before-action-filter.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match `before_action :load_post` — not authz-shaped"
+        );
+    }
+
+    #[test]
+    fn ruby_role_equals_check_matches() {
+        let findings = parse_and_match_ruby(
+            "def gate(user)\n  return unless user.role == \"admin\"\nend\n",
+            include_str!("../../rules/ruby/role-equals-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match user.role == \"admin\"");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn ruby_role_equals_check_excludes_unrelated_property() {
+        let findings = parse_and_match_ruby(
+            "def greet(user)\n  puts user.name if user.name == \"admin\"\nend\n",
+            include_str!("../../rules/ruby/role-equals-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match unrelated property comparisons"
+        );
+    }
+
+    #[test]
+    fn ruby_role_collection_include_matches() {
+        let findings = parse_and_match_ruby(
+            "def manager?\n  current_user.roles.include?(:manager)\nend\n",
+            include_str!("../../rules/ruby/role-collection-include.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match user.roles.include?(:manager)"
+        );
+    }
+
+    #[test]
+    fn ruby_role_collection_include_string_arg_matches() {
+        // Both symbol and string args are common — the alternation in the
+        // query covers both, so the test must pin both shapes.
+        let findings = parse_and_match_ruby(
+            "def has_read?\n  user.permissions.include?(\"read\")\nend\n",
+            include_str!("../../rules/ruby/role-collection-include.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match user.permissions.include?(\"read\")"
+        );
+    }
+
+    #[test]
+    fn ruby_role_collection_include_excludes_unrelated_collection() {
+        let findings = parse_and_match_ruby(
+            "def tagged?\n  post.tags.include?(:featured)\nend\n",
+            include_str!("../../rules/ruby/role-collection-include.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match unrelated `tags.include?` collections"
+        );
+    }
+
+    #[test]
+    fn ruby_current_user_role_predicate_matches() {
+        let findings = parse_and_match_ruby(
+            "def admin_only\n  redirect_to root_path unless current_user.admin?\nend\n",
+            include_str!("../../rules/ruby/current-user-role-predicate.toml"),
+        );
+        assert!(!findings.is_empty(), "should match current_user.admin?");
+    }
+
+    #[test]
+    fn ruby_current_user_role_predicate_excludes_non_role_predicates() {
+        // `published?` and `confirmed?` are predicate methods but not
+        // role-shaped — the rule's regex is exactly what keeps it from
+        // flagging arbitrary `?` predicates on `user`-shaped receivers.
+        let findings = parse_and_match_ruby(
+            "def show\n  return unless user.confirmed?\nend\n",
+            include_str!("../../rules/ruby/current-user-role-predicate.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match non-role predicate methods on user-shaped receivers"
+        );
+    }
+
     // -- cross_predicates tests (synthetic rules) --
 
     /// A synthetic rule shaped like ownership-check: two getters in an

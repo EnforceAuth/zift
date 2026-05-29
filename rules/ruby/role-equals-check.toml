@@ -1,0 +1,95 @@
+[rule]
+id = "ruby-role-equals-check"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Inline role/permission equality check (Ruby)"
+# Matches `user.role == "admin"` and friends — the idiomatic Ruby RBAC shape.
+# The right side is captured as either a string literal or a symbol (both are
+# common); the left side's trailing attribute is the role-shaped property.
+# `!=` is intentionally excluded — its semantics invert relative to the
+# allow-style template.
+query = """
+(binary
+  left: (call
+    receiver: (_)
+    method: (identifier) @prop)
+  operator: "=="
+  right: [
+    (string (string_content) @role_value)
+    (simple_symbol) @role_value
+  ]
+) @match
+"""
+
+[rule.predicates.prop]
+match = "(?i)^(role|roles|user_role|account_type|user_type|permission|permissions)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role == "{{role_value}}"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+def admin_only
+  return unless user.role == "admin"
+  yield
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def gate
+  if account.account_type == "enterprise"
+    enable_advanced
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def greet
+  if user.name == "admin"
+    puts "hi admin"
+  end
+end
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+def deny_others
+  if user.role != "admin"
+    deny
+  end
+end
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+def admin_only
+  return unless user.role == :admin
+  yield
+end
+"""
+expect_match = true

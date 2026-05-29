@@ -1,0 +1,84 @@
+[rule]
+id = "ruby-cancancan-can-declaration"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "CanCanCan ability declaration: can :action, Model (Ruby)"
+# CanCanCan abilities are declared in `Ability#initialize` as
+# `can :action, Resource` (or `:manage` for any action, `:all` for any
+# resource). The method has no receiver — it's invoked from `Ability`'s `self`
+# scope. We capture the action symbol and the resource constant. Symbol-only
+# args also catch `cannot :destroy, Account`-style guards.
+query = """
+(call
+  !receiver
+  method: (identifier) @method_name
+  arguments: (argument_list
+    (simple_symbol) @action
+    .
+    [
+      (constant) @resource
+      (call) @resource
+      (identifier) @resource
+    ])
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(can|cannot)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# CanCanCan ability: {{method_name}} {{action}} on {{resource}}.
+allow if {
+    input.action == "{{action}}"
+    input.resource.type == "{{resource}}"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+class Ability
+  include CanCan::Ability
+  def initialize(user)
+    can :read, Article
+    can :manage, Comment
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Ability
+  include CanCan::Ability
+  def initialize(user)
+    cannot :destroy, Account if user.guest?
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Ability
+  def initialize(user)
+    enable :feature_flags
+  end
+end
+"""
+expect_match = false

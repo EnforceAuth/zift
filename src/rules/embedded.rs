@@ -361,6 +361,43 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "kotlin-ktor-install-authentication",
         include_str!("../../rules/kotlin/ktor-install-authentication.toml"),
     ),
+    // -- Ruby --
+    (
+        "ruby-pundit-authorize",
+        include_str!("../../rules/ruby/pundit-authorize.toml"),
+    ),
+    (
+        "ruby-pundit-policy-method",
+        include_str!("../../rules/ruby/pundit-policy-method.toml"),
+    ),
+    (
+        "ruby-pundit-policy-class",
+        include_str!("../../rules/ruby/pundit-policy-class.toml"),
+    ),
+    (
+        "ruby-cancancan-can-declaration",
+        include_str!("../../rules/ruby/cancancan-can-declaration.toml"),
+    ),
+    (
+        "ruby-cancancan-can-check",
+        include_str!("../../rules/ruby/cancancan-can-check.toml"),
+    ),
+    (
+        "ruby-rails-before-action-filter",
+        include_str!("../../rules/ruby/rails-before-action-filter.toml"),
+    ),
+    (
+        "ruby-role-equals-check",
+        include_str!("../../rules/ruby/role-equals-check.toml"),
+    ),
+    (
+        "ruby-role-collection-include",
+        include_str!("../../rules/ruby/role-collection-include.toml"),
+    ),
+    (
+        "ruby-current-user-role-predicate",
+        include_str!("../../rules/ruby/current-user-role-predicate.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {
