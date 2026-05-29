@@ -9,10 +9,11 @@ description = "Inline role/permission equality check (Kotlin)"
 # require the trailing identifier to look role/permission-shaped via predicate.
 query = """
 (binary_expression
-  (navigation_expression
+  left: (navigation_expression
     (_)
     (identifier) @prop)
-  (string_literal (string_content) @role_value)
+  operator: "=="
+  right: (string_literal (string_content) @role_value)
 ) @match
 """
 
@@ -60,6 +61,14 @@ expect_match = true
 input = """
 fun check(user: User) {
     if (user.name == "admin") { greet() }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.role != "admin") { deny() }
 }
 """
 expect_match = false

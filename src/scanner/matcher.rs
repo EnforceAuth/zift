@@ -1446,6 +1446,18 @@ fun check(acct: Account) {
     }
 
     #[test]
+    fn kotlin_role_equals_check_excludes_inequality_operator() {
+        let findings = parse_and_match_kotlin(
+            "fun check(user: User) {\n    if (user.role != \"admin\") { deny() }\n}\n",
+            include_str!("../../rules/kotlin/role-equals-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match `!=` — this rule covers equality only"
+        );
+    }
+
+    #[test]
     fn kotlin_role_collection_contains_matches() {
         let findings = parse_and_match_kotlin(
             "fun check(user: User) {\n    if (user.roles.contains(\"admin\")) { allow() }\n}\n",
