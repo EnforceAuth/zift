@@ -25,14 +25,15 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "py" | "pyi" => Some((Language::Python, false)),
         "go" => Some((Language::Go, false)),
         "cs" => Some((Language::CSharp, false)),
+        "kt" | "kts" => Some((Language::Kotlin, false)),
         _ => None,
     }
 }
 
 /// Extension → language map covering **all** languages in the [`Language`]
-/// enum, including those without structural parser support yet (C#, Kotlin,
-/// Ruby, PHP). Used by the deep (semantic) scan, which can run regex-based
-/// cold-region detection on any language regardless of grammar availability.
+/// enum, including those without structural parser support yet (Ruby, PHP).
+/// Used by the deep (semantic) scan, which can run regex-based cold-region
+/// detection on any language regardless of grammar availability.
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
@@ -193,6 +194,18 @@ mod tests {
     }
 
     #[test]
+    fn detect_kotlin_extensions() {
+        assert_eq!(
+            detect_language(Path::new("Foo.kt")),
+            Some((Language::Kotlin, false))
+        );
+        assert_eq!(
+            detect_language(Path::new("build.kts")),
+            Some((Language::Kotlin, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
         assert_eq!(detect_language(Path::new("foo.txt")), None);
@@ -266,9 +279,8 @@ mod tests {
         // Sanity: the structural detector must NOT include languages without
         // a wired-up tree-sitter grammar — otherwise the structural pass
         // would try to parse files it can't handle. The deep detector picks
-        // them up; the structural one doesn't. (C# was here before C#
-        // structural support.)
-        assert_eq!(detect_language(Path::new("Foo.kt")), None);
+        // them up; the structural one doesn't. (Kotlin / C# were here
+        // before their structural support landed.)
         assert_eq!(detect_language(Path::new("foo.rb")), None);
         assert_eq!(detect_language(Path::new("foo.php")), None);
     }
@@ -282,6 +294,7 @@ mod tests {
         fs::write(dir.path().join("b.py"), "x = 1\n").unwrap();
         fs::write(dir.path().join("c.go"), "package main\n").unwrap();
         fs::write(dir.path().join("d.cs"), "class C {}").unwrap();
+        fs::write(dir.path().join("e.kt"), "class K\n").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
         let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
@@ -291,9 +304,10 @@ mod tests {
                 Language::TypeScript,
                 Language::Python,
                 Language::Go,
-                Language::CSharp
+                Language::CSharp,
+                Language::Kotlin,
             ]),
-            "structural should include TS + Python + Go + C#",
+            "structural should include TS + Python + Go + C# + Kotlin",
         );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
@@ -304,9 +318,10 @@ mod tests {
                 Language::TypeScript,
                 Language::Python,
                 Language::Go,
-                Language::CSharp
+                Language::CSharp,
+                Language::Kotlin,
             ]),
-            "deep should include TS + Python + Go + C#",
+            "deep should include TS + Python + Go + C# + Kotlin",
         );
     }
 }

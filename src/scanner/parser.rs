@@ -17,6 +17,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::Python, _) => Ok(tree_sitter_python::LANGUAGE.into()),
         (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
         (Language::CSharp, _) => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
+        (Language::Kotlin, _) => Ok(tree_sitter_kotlin_ng::LANGUAGE.into()),
         _ => Err(ZiftError::UnsupportedLanguage(lang)),
     }
 }
@@ -126,15 +127,29 @@ public class AdminController : ControllerBase {
     }
 
     #[test]
+    fn parse_kotlin() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"class Foo {\n    fun bar() {}\n}\n";
+        let tree = parse_source(&mut parser, source, Language::Kotlin, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn kotlin_is_supported() {
+        assert!(is_language_supported(Language::Kotlin));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
-        // Kotlin has no structural grammar wired up yet — kept as the canary
+        // Ruby has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
-        // name says it does. (Was C# before C# structural support.)
-        let err = get_language(Language::Kotlin, false).unwrap_err();
+        // name says it does. (Was Kotlin before Kotlin structural support;
+        // C# before that.)
+        let err = get_language(Language::Ruby, false).unwrap_err();
         assert!(matches!(
             err,
-            ZiftError::UnsupportedLanguage(Language::Kotlin)
+            ZiftError::UnsupportedLanguage(Language::Ruby)
         ));
-        assert!(!is_language_supported(Language::Kotlin));
+        assert!(!is_language_supported(Language::Ruby));
     }
 }

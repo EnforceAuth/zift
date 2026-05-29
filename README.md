@@ -27,7 +27,7 @@ zift report .                   # detailed findings report
 
 1. **Structural scan** (tree-sitter) — fast, deterministic, zero-cost. Finds known authorization patterns: role checks, permission guards, auth middleware, security annotations.
 
-2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (Kotlin, Ruby, PHP, etc.).
+2. **Semantic scan** (`--deep`, opt-in) — sends candidate code regions to an LLM that classifies authorization logic the structural pass missed or misjudged. Useful for business rules that implicitly encode access control, and for languages where structural support hasn't shipped yet (Ruby, PHP, etc.).
 
 ## Supported languages
 
@@ -38,7 +38,7 @@ zift report .                   # detailed findings report
 | Python | yes (v0.1) | yes (v0.1) | Django, Flask, FastAPI |
 | Go | yes (v0.1) | yes (v0.1) | Gin, Echo |
 | C# | yes (v0.2) | yes (v0.1) | ASP.NET Core |
-| Kotlin | planned (v0.2) | yes (v0.1) | Spring (Kotlin) |
+| Kotlin | yes (v0.2) | yes (v0.1) | Spring (Kotlin), Ktor |
 | Ruby | planned (v0.2) | yes (v0.1) | Rails |
 | PHP | planned (v0.2) | yes (v0.1) | Laravel |
 

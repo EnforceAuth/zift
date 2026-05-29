@@ -1,0 +1,86 @@
+[rule]
+id = "kotlin-ktor-authenticate-block"
+languages = ["kotlin"]
+category = "middleware"
+confidence = "high"
+description = "Ktor authenticate { ... } route guard (Kotlin)"
+# Ktor's `authenticate { ... }` and `authenticate(\"auth-jwt\") { ... }` both
+# emit a `call_expression` whose function is the bare identifier
+# `authenticate`. The form WITHOUT string args looks like
+# `(call_expression (identifier) (annotated_lambda ...))`; the form WITH
+# string args wraps in an inner call:
+# `(call_expression (call_expression (identifier) (value_arguments ...))
+#  (annotated_lambda ...))`. We match the inner shape — the bare-identifier
+# call with a value_arguments list — which fires once per `authenticate(...)`
+# regardless of whether a trailing lambda follows. The no-args
+# `authenticate { ... }` form is caught by the alternate query branch.
+query = """
+[
+  (call_expression
+    (identifier) @method_name
+    (value_arguments
+      (value_argument
+        (string_literal (string_content) @config_name))))
+  (call_expression
+    (identifier) @method_name
+    (annotated_lambda) @lambda)
+] @match
+"""
+
+[rule.predicates.method_name]
+eq = "authenticate"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Ktor authenticate { ... } guard. The chosen authenticator (named via
+# `authenticate("config")` or the default authenticator otherwise) governs
+# which principals reach the enclosed routes. Translate to a policy that
+# asserts the principal is authenticated via the matching config.
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal has authenticated && principal.authenticated == true
+};
+"""
+[[rule.tests]]
+input = """
+fun Application.module() {
+    authenticate("auth-jwt") {
+        get("/admin") { call.respondText("hi") }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun Application.module() {
+    authenticate {
+        get("/admin") { call.respondText("hi") }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun Application.module() {
+    routing {
+        get("/public") { call.respondText("hi") }
+    }
+}
+"""
+expect_match = false

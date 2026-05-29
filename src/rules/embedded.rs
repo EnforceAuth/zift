@@ -328,6 +328,39 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "csharp-aws-verified-permissions",
         include_str!("../../rules/csharp/aws-verified-permissions.toml"),
     ),
+    // -- Kotlin --
+    (
+        "kotlin-spring-preauthorize",
+        include_str!("../../rules/kotlin/spring-preauthorize.toml"),
+    ),
+    (
+        "kotlin-spring-secured",
+        include_str!("../../rules/kotlin/spring-secured.toml"),
+    ),
+    (
+        "kotlin-roles-allowed",
+        include_str!("../../rules/kotlin/roles-allowed.toml"),
+    ),
+    (
+        "kotlin-has-role-call",
+        include_str!("../../rules/kotlin/has-role-call.toml"),
+    ),
+    (
+        "kotlin-role-equals-check",
+        include_str!("../../rules/kotlin/role-equals-check.toml"),
+    ),
+    (
+        "kotlin-role-collection-contains",
+        include_str!("../../rules/kotlin/role-collection-contains.toml"),
+    ),
+    (
+        "kotlin-ktor-authenticate-block",
+        include_str!("../../rules/kotlin/ktor-authenticate-block.toml"),
+    ),
+    (
+        "kotlin-ktor-install-authentication",
+        include_str!("../../rules/kotlin/ktor-install-authentication.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {
