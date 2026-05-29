@@ -398,6 +398,51 @@ const EMBEDDED_RULES: &[(&str, &str)] = &[
         "ruby-current-user-role-predicate",
         include_str!("../../rules/ruby/current-user-role-predicate.toml"),
     ),
+    // -- PHP --
+    (
+        "php-laravel-gate-allows-denies",
+        include_str!("../../rules/php/laravel-gate-allows-denies.toml"),
+    ),
+    (
+        "php-laravel-gate-define",
+        include_str!("../../rules/php/laravel-gate-define.toml"),
+    ),
+    (
+        "php-laravel-authorize-helper",
+        include_str!("../../rules/php/laravel-authorize-helper.toml"),
+    ),
+    (
+        "php-laravel-policy-class",
+        include_str!("../../rules/php/laravel-policy-class.toml"),
+    ),
+    (
+        "php-laravel-route-middleware",
+        include_str!("../../rules/php/laravel-route-middleware.toml"),
+    ),
+    (
+        "php-symfony-voter-class",
+        include_str!("../../rules/php/symfony-voter-class.toml"),
+    ),
+    (
+        "php-symfony-is-granted",
+        include_str!("../../rules/php/symfony-is-granted.toml"),
+    ),
+    (
+        "php-symfony-is-granted-attribute",
+        include_str!("../../rules/php/symfony-is-granted-attribute.toml"),
+    ),
+    (
+        "php-role-equals-check",
+        include_str!("../../rules/php/role-equals-check.toml"),
+    ),
+    (
+        "php-in-array-role-check",
+        include_str!("../../rules/php/in-array-role-check.toml"),
+    ),
+    (
+        "php-has-role-call",
+        include_str!("../../rules/php/has-role-call.toml"),
+    ),
 ];
 
 pub fn load_embedded_rules() -> Result<Vec<PatternRule>> {

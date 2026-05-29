@@ -1,0 +1,87 @@
+[rule]
+id = "php-laravel-gate-allows-denies"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Laravel Gate::allows / Gate::denies / Gate::check call (PHP)"
+# Matches `Gate::allows('update-post', $post)`, `Gate::denies(...)`, and
+# `Gate::check(...)` — Laravel's facade-style permission gate. The scope is
+# `Gate` and the method is one of the predicate-shaped verbs. The first
+# argument is the ability name (string literal or constant); we capture it so
+# downstream tooling can route it through a permission predicate.
+query = """
+(scoped_call_expression
+  scope: (name) @scope
+  name: (name) @method_name
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @ability)
+        (encapsed_string (string_content) @ability)
+      ]))
+) @match
+"""
+
+[rule.predicates.scope]
+eq = "Gate"
+
+[rule.predicates.method_name]
+match = "^(allows|denies|check|any|none|authorize|forUser)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel Gate::{{method_name}} {{ability}}.
+allow if {
+    input.action == "{{ability}}"
+    input.user.permissions[_] == "{{ability}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action == Action::"{{ability}}",
+    resource
+);
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function update($post) {
+        if (Gate::allows('update-post', $post)) {
+            return view('post');
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function destroy($post) {
+        if (Gate::denies('delete', $post)) {
+            abort(403);
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class FooController {
+    public function show() {
+        return view('foo');
+    }
+}
+"""
+expect_match = false

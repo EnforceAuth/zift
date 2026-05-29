@@ -1,0 +1,78 @@
+[rule]
+id = "php-laravel-route-middleware"
+languages = ["php"]
+category = "middleware"
+confidence = "high"
+description = "Laravel Route::middleware / ->middleware auth filter (PHP)"
+# Laravel routers attach authz via `Route::middleware('auth')`,
+# `Route::middleware(['auth', 'can:update,post'])`, and chained
+# `Route::get(...)->middleware('auth')`. The structural signature is a call
+# to a method literally named `middleware`. We don't constrain the receiver
+# (it can be the `Route` facade or a chained route builder), and we don't
+# constrain arg shape (string, array, multiple) — instead a regex on the
+# whole arg list filters to entries that look like an auth/role middleware
+# alias (`auth`, `can:…`, `role:…`, `permission:…`, `verified`, …) so we
+# don't flag `->middleware('throttle:60,1')` as authz.
+query = """
+[
+  (member_call_expression
+    name: (name) @method_name
+    arguments: (arguments) @args)
+  (scoped_call_expression
+    name: (name) @method_name
+    arguments: (arguments) @args)
+] @match
+"""
+
+[rule.predicates.method_name]
+eq = "middleware"
+
+[rule.predicates.args]
+match = "(?i)['\\\"]\\s*(auth|auth\\.[a-z]+|guest|verified|signed|can:|role:|permission:|abilities:|ability:|password\\.confirm)"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel route middleware — translate the matched alias into an auth predicate.
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal has authenticated && principal.authenticated == true
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+Route::middleware('auth')->group(function () {
+    Route::get('/dashboard', [DashboardController::class, 'index']);
+});
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+Route::get('/admin', [AdminController::class, 'index'])->middleware(['auth', 'can:admin']);
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+Route::middleware(['throttle:60,1'])->group(function () {
+    Route::get('/api/foo', [FooController::class, 'index']);
+});
+"""
+expect_match = false
