@@ -1,0 +1,82 @@
+[rule]
+id = "ruby-cancancan-can-check"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "CanCanCan ability predicate: user.can?(:action, resource) (Ruby)"
+# The call-site check for CanCanCan and the related `user.can?(:read, Post)` /
+# `cannot?` predicates. Requires the question-mark predicate form to avoid
+# colliding with the `can :read, ...` declaration rule. The receiver is pinned
+# to principal-shaped identifiers (`current_user`, `user`, `@account`, etc.)
+# so unrelated domain objects that happen to expose a `.can?` predicate don't
+# fire — `widget.can?(:render)` is not authz.
+query = """
+(call
+  receiver: [
+    (identifier) @receiver
+    (instance_variable) @receiver
+  ]
+  method: (identifier) @method_name
+  arguments: (argument_list
+    (simple_symbol) @action)
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(can\\?|cannot\\?)$"
+
+[rule.predicates.receiver]
+match = "(?i)^@?(current_user|user|account|member|principal|viewer|actor)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.action == "{{action}}"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+def edit_link
+  link_to 'Edit', edit_post_path(@post) if current_user.can?(:update, @post)
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def guard
+  return unless current_user.cannot?(:delete, @account)
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def list
+  user.posts.each { |p| render p }
+end
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+def render_widget
+  return unless widget.can?(:render)
+end
+"""
+expect_match = false

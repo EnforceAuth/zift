@@ -1,0 +1,90 @@
+[rule]
+id = "ruby-current-user-role-predicate"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Devise-style role predicate on current_user/user (Ruby)"
+# Matches `current_user.admin?`, `user.staff?`, `@account.superuser?` — the
+# Devise/Rails idiom for role checks that lean on Ruby's predicate-method
+# convention. The receiver is gated to principal-shaped identifiers (and the
+# instance-variable equivalent), and the method must be a role-shaped
+# predicate. Bare `?` predicates on arbitrary receivers stay out of scope —
+# they're too noisy to claim as authz without more context.
+query = """
+(call
+  receiver: [
+    (identifier) @receiver
+    (instance_variable) @receiver
+  ]
+  method: (identifier) @method_name
+) @match
+"""
+
+[rule.predicates.receiver]
+match = "(?i)^@?(current_user|user|account|member|principal|viewer|actor)$"
+
+[rule.predicates.method_name]
+match = "(?i)^(admin|superuser|staff|owner|moderator|manager|operator|root|member|guest|signed_in|logged_in)\\?$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# {{receiver}}.{{method_name}} — translate the role predicate to a permission.
+allow if {
+    input.user.role == "{{method_name}}"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{method_name}}"
+};
+"""
+[[rule.tests]]
+input = """
+def admin_dashboard
+  redirect_to root_path unless current_user.admin?
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def staff_only
+  return unless user.staff?
+  yield
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def gate
+  return unless @account.owner?
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def list
+  return unless post.published?
+end
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+def show
+  return unless user.confirmed?
+end
+"""
+expect_match = false

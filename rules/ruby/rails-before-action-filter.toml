@@ -1,0 +1,89 @@
+[rule]
+id = "ruby-rails-before-action-filter"
+languages = ["ruby"]
+category = "middleware"
+confidence = "high"
+description = "Rails before_action / skip_before_action authorization filter (Ruby)"
+# Matches `before_action :require_admin`, `before_action :authenticate_user!`,
+# and the family — Rails controller-level filters that run an authz check
+# before the action. Restricts the filter name to authz-shaped symbols so
+# bookkeeping callbacks like `before_action :load_post` don't trip the rule.
+# Symbol shapes match Devise (`authenticate_user!`), CanCanCan
+# (`authorize_resource`, `load_and_authorize_resource`), and hand-rolled
+# names (`require_*`, `ensure_*`, `verify_*`, `check_*`).
+query = """
+(call
+  !receiver
+  method: (identifier) @callback_name
+  arguments: (argument_list
+    (simple_symbol) @filter)
+) @match
+"""
+
+[rule.predicates.callback_name]
+match = "^(before_action|prepend_before_action|append_before_action|skip_before_action|before_filter|skip_before_filter)$"
+
+[rule.predicates.filter]
+match = "(?i)^:(require_|ensure_|verify_|check_|authenticate|authorize|load_and_authorize|restrict_|deny_|forbid_)"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Rails {{callback_name}} {{filter}} — runs before controller actions.
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal has authenticated && principal.authenticated == true
+};
+"""
+[[rule.tests]]
+input = """
+class AdminController < ApplicationController
+  before_action :require_admin
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class PostsController < ApplicationController
+  before_action :authenticate_user!
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class AccountsController < ApplicationController
+  skip_before_action :authorize_resource, only: [:public_show]
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class PostsController < ApplicationController
+  before_action :load_post
+end
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+class PostsController < ApplicationController
+  helper_method :current_user
+end
+"""
+expect_match = false

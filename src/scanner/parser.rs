@@ -18,6 +18,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::Go, _) => Ok(tree_sitter_go::LANGUAGE.into()),
         (Language::CSharp, _) => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
         (Language::Kotlin, _) => Ok(tree_sitter_kotlin_ng::LANGUAGE.into()),
+        (Language::Ruby, _) => Ok(tree_sitter_ruby::LANGUAGE.into()),
         _ => Err(ZiftError::UnsupportedLanguage(lang)),
     }
 }
@@ -140,16 +141,26 @@ public class AdminController : ControllerBase {
     }
 
     #[test]
+    fn parse_ruby() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"class Foo\n  def bar\n  end\nend\n";
+        let tree = parse_source(&mut parser, source, Language::Ruby, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn ruby_is_supported() {
+        assert!(is_language_supported(Language::Ruby));
+    }
+
+    #[test]
     fn unsupported_language_returns_error() {
-        // Ruby has no structural grammar wired up yet — kept as the canary
+        // PHP has no structural grammar wired up yet — kept as the canary
         // that `unsupported_language_returns_error` keeps testing what its
-        // name says it does. (Was Kotlin before Kotlin structural support;
-        // C# before that.)
-        let err = get_language(Language::Ruby, false).unwrap_err();
-        assert!(matches!(
-            err,
-            ZiftError::UnsupportedLanguage(Language::Ruby)
-        ));
-        assert!(!is_language_supported(Language::Ruby));
+        // name says it does. (Was Ruby before Ruby structural support;
+        // Kotlin before that; C# before that.)
+        let err = get_language(Language::Php, false).unwrap_err();
+        assert!(matches!(err, ZiftError::UnsupportedLanguage(Language::Php)));
+        assert!(!is_language_supported(Language::Php));
     }
 }

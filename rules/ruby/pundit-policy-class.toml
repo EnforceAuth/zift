@@ -1,0 +1,79 @@
+[rule]
+id = "ruby-pundit-policy-class"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Pundit policy class declaration (Ruby)"
+# Matches `class FooPolicy < ApplicationPolicy` — the structural signature of a
+# Pundit policy. We require the class name to end in `Policy` AND the captured
+# superclass constant to end in `Policy` (`ApplicationPolicy` is canonical;
+# `< Foo::ApplicationPolicy` also fires because the scope_resolution branch
+# captures the trailing constant). Matching the superclass is what keeps this
+# from claiming arbitrary `*Policy` named classes (RuleStorePolicy, etc.)
+# that aren't actually Pundit policies.
+query = """
+(class
+  name: (constant) @class_name
+  superclass: (superclass
+    [
+      (constant) @parent
+      (scope_resolution (constant) @parent)
+    ])
+) @match
+"""
+
+[rule.predicates.class_name]
+match = "Policy$"
+
+[rule.predicates.parent]
+match = "Policy$"
+
+[rule.rego_template]
+template = """
+# Pundit policy class {{class_name}} — translate each action method into a
+# permit rule keyed on the principal/resource/action triple.
+default allow := false
+
+allow if {
+    input.user.permissions[_] == "TODO"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+class PostPolicy < ApplicationPolicy
+  def update?
+    user.admin? || record.owner == user
+  end
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class CommentPolicy < ApplicationPolicy
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class PostPresenter
+  def initialize(post)
+    @post = post
+  end
+end
+"""
+expect_match = false

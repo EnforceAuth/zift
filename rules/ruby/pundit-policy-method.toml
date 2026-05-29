@@ -1,0 +1,77 @@
+[rule]
+id = "ruby-pundit-policy-method"
+languages = ["ruby"]
+category = "rbac"
+confidence = "high"
+description = "Pundit policy(...).<action>? method call (Ruby)"
+# Captures `policy(@post).update?` — the explicit form used in views, helpers,
+# and service objects where `authorize` isn't available. The outer call's
+# receiver is a `policy(...)` call (method=`policy`); the outer method name is
+# any predicate-style identifier (trailing `?`). The receiver-resource is
+# captured for downstream tooling.
+query = """
+(call
+  receiver: (call
+    !receiver
+    method: (identifier) @policy_fn
+    arguments: (argument_list
+      [
+        (instance_variable)
+        (identifier)
+        (constant)
+      ] @resource))
+  method: (identifier) @action
+) @match
+"""
+
+[rule.predicates.policy_fn]
+eq = "policy"
+
+[rule.predicates.action]
+match = "\\?$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# TODO: translate Pundit policy method {{action}} on {{resource}}.
+allow if {
+    input.user.permissions[_] == "TODO"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+def can_edit?
+  policy(@post).update?
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def edit_link
+  link_to 'Edit', edit_post_path(@post) if policy(@post).edit?
+end
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+def can_destroy?
+  current_user.admin?
+end
+"""
+expect_match = false

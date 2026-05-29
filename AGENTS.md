@@ -48,8 +48,8 @@ cargo clippy --all-features -- -D warnings
 ### Language support
 
 - v0.1: TypeScript, JavaScript, Java, Python, Go, C#
-- v0.2: Kotlin (Spring, Ktor)
-- planned: Ruby, PHP
+- v0.2: Kotlin (Spring, Ktor), Ruby (Rails, Pundit, CanCanCan, Devise)
+- planned: PHP
 
 ## Conventional Commits & Versioning
 

@@ -15,6 +15,9 @@ pub struct DiscoveredFile {
 /// Extension → language map for languages with structural parser support.
 /// Used by the structural scanning pass.
 pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("Rakefile") {
+        return Some((Language::Ruby, false));
+    }
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
         "ts" => Some((Language::TypeScript, false)),
@@ -26,15 +29,19 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
         "go" => Some((Language::Go, false)),
         "cs" => Some((Language::CSharp, false)),
         "kt" | "kts" => Some((Language::Kotlin, false)),
+        "rb" | "rake" => Some((Language::Ruby, false)),
         _ => None,
     }
 }
 
 /// Extension → language map covering **all** languages in the [`Language`]
-/// enum, including those without structural parser support yet (Ruby, PHP).
+/// enum, including those without structural parser support yet (PHP).
 /// Used by the deep (semantic) scan, which can run regex-based cold-region
 /// detection on any language regardless of grammar availability.
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("Rakefile") {
+        return Some((Language::Ruby, false));
+    }
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
         "ts" => Some((Language::TypeScript, false)),
@@ -206,6 +213,27 @@ mod tests {
     }
 
     #[test]
+    fn detect_ruby_extensions() {
+        assert_eq!(
+            detect_language(Path::new("foo.rb")),
+            Some((Language::Ruby, false))
+        );
+        assert_eq!(
+            detect_language(Path::new("Rakefile.rake")),
+            Some((Language::Ruby, false))
+        );
+        // Bare "Rakefile" (no extension) is the common Rails entrypoint.
+        assert_eq!(
+            detect_language(Path::new("Rakefile")),
+            Some((Language::Ruby, false))
+        );
+        assert_eq!(
+            detect_language(Path::new("project/Rakefile")),
+            Some((Language::Ruby, false))
+        );
+    }
+
+    #[test]
     fn detect_unknown_extension() {
         assert_eq!(detect_language(Path::new("foo.rs")), None);
         assert_eq!(detect_language(Path::new("foo.txt")), None);
@@ -257,6 +285,10 @@ mod tests {
             Some((Language::Ruby, false))
         );
         assert_eq!(
+            detect_language_for_deep(Path::new("Rakefile")),
+            Some((Language::Ruby, false))
+        );
+        assert_eq!(
             detect_language_for_deep(Path::new("foo.php")),
             Some((Language::Php, false))
         );
@@ -279,9 +311,8 @@ mod tests {
         // Sanity: the structural detector must NOT include languages without
         // a wired-up tree-sitter grammar — otherwise the structural pass
         // would try to parse files it can't handle. The deep detector picks
-        // them up; the structural one doesn't. (Kotlin / C# were here
+        // them up; the structural one doesn't. (Ruby / Kotlin / C# were here
         // before their structural support landed.)
-        assert_eq!(detect_language(Path::new("foo.rb")), None);
         assert_eq!(detect_language(Path::new("foo.php")), None);
     }
 
@@ -295,6 +326,7 @@ mod tests {
         fs::write(dir.path().join("c.go"), "package main\n").unwrap();
         fs::write(dir.path().join("d.cs"), "class C {}").unwrap();
         fs::write(dir.path().join("e.kt"), "class K\n").unwrap();
+        fs::write(dir.path().join("f.rb"), "class R\nend\n").unwrap();
 
         let structural = discover_files(dir.path(), &[], &[]);
         let structural_langs: HashSet<_> = structural.iter().map(|f| f.language).collect();
@@ -306,8 +338,9 @@ mod tests {
                 Language::Go,
                 Language::CSharp,
                 Language::Kotlin,
+                Language::Ruby,
             ]),
-            "structural should include TS + Python + Go + C# + Kotlin",
+            "structural should include TS + Python + Go + C# + Kotlin + Ruby",
         );
 
         let deep = discover_files_for_deep(dir.path(), &[], &[]);
@@ -320,8 +353,9 @@ mod tests {
                 Language::Go,
                 Language::CSharp,
                 Language::Kotlin,
+                Language::Ruby,
             ]),
-            "deep should include TS + Python + Go + C# + Kotlin",
+            "deep should include TS + Python + Go + C# + Kotlin + Ruby",
         );
     }
 }

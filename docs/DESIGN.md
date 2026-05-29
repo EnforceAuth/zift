@@ -200,7 +200,7 @@ allow if {
 
 ## Language support
 
-These priorities describe release milestones. C# shipped in the v0.2 milestone; Kotlin (Spring + Ktor) followed in v0.2.x.
+These priorities describe release milestones. C# shipped in the v0.2 milestone; Kotlin (Spring + Ktor) and Ruby (Rails + Pundit + CanCanCan + Devise) followed in v0.2.x.
 
 ### Priority 1 (v0.1)
 
@@ -218,12 +218,12 @@ These priorities describe release milestones. C# shipped in the v0.2 milestone; 
 | Go | Custom middleware, Casbin, chi/gorilla middleware chains, `if claims.Role` |
 | C# | ASP.NET Core `[Authorize]`, policy-based authorization, `ClaimsPrincipal` checks |
 | Kotlin | Spring Security (same patterns as Java), Ktor `install(Authentication)` + `authenticate { ... }`, idiomatic role checks |
+| Ruby | Pundit (`authorize @post`, `policy(...).<action>?`, `*Policy < ApplicationPolicy`), CanCanCan (`authorize!`, `can :read, Article`, `user.can?(:action)`), Devise / Rails (`before_action :authenticate_user!`, `current_user.admin?`), idiomatic role checks |
 
 ### Priority 3 (v0.3)
 
 | Language | Key frameworks / patterns |
 |----------|--------------------------|
-| Ruby | Pundit, CanCanCan, Devise, `before_action` guards |
 | PHP | Laravel Gates/Policies, Symfony Voters |
 
 ### Adding a new language
