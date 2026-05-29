@@ -1,0 +1,92 @@
+[rule]
+id = "php-role-equals-check"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Inline role/permission equality check (PHP)"
+# Matches `$user->role === 'admin'` and friends — the idiomatic PHP RBAC
+# shape. The receiver is gated to a role-shaped property name and the
+# operator is one of PHP's two equality operators (`==`, `===`). Loose `==`
+# is included because real-world Laravel/Symfony code uses both even though
+# the strict form is recommended. `!=` / `!==` are intentionally excluded —
+# their semantics invert relative to the allow-style template.
+query = """
+(binary_expression
+  left: (member_access_expression
+    name: (name) @prop)
+  operator: [
+    "==="
+    "=="
+  ]
+  right: [
+    (string (string_content) @role_value)
+    (encapsed_string (string_content) @role_value)
+  ]
+) @match
+"""
+
+[rule.predicates.prop]
+match = "(?i)^(role|roles|user_role|account_type|user_type|permission|permissions)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role == "{{role_value}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+function adminOnly($user) {
+    if ($user->role === 'admin') {
+        return true;
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function tierGate($account) {
+    return $account->account_type == "enterprise";
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function greet($user) {
+    if ($user->name === 'admin') {
+        echo "hi admin";
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+<?php
+function denyOthers($user) {
+    if ($user->role !== 'admin') {
+        return false;
+    }
+}
+"""
+expect_match = false

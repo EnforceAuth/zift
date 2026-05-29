@@ -1,0 +1,147 @@
+[rule]
+id = "php-laravel-authorize-helper"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Laravel $this->authorize / can / cannot policy helper (PHP)"
+# Matches Laravel's controller-side helpers: `$this->authorize('update', $post)`,
+# `$user->can('view', $post)`, and `$user->cannot(...)`. The shape is a
+# `member_call_expression` (or its `?->` nullsafe variant — idiomatic in
+# PHP 8) where the method name is a Laravel policy verb. The receiver is
+# pinned to principal-shaped receivers — `$this`, a user-named variable
+# (`$user`, `$currentUser`, `$me`, …), or a chain ending in `->user()` /
+# `::user()` (the canonical `Auth::user()` / `auth()->user()` /
+# `$request->user()` shapes) — so unrelated `->can(…)` / `->cannot(…)`
+# calls on domain objects don't fire. `can`/`cannot` are common method
+# names well outside authz; the receiver predicate is what keeps the
+# rule's high-confidence promise honest. The first arg is the ability
+# (string literal) — captured so downstream tooling can map it to a
+# permission.
+query = """
+[
+  (member_call_expression
+    object: (_) @receiver
+    name: (name) @method_name
+    arguments: (arguments
+      .
+      (argument
+        [
+          (string (string_content) @ability)
+          (encapsed_string (string_content) @ability)
+        ])))
+  (nullsafe_member_call_expression
+    object: (_) @receiver
+    name: (name) @method_name
+    arguments: (arguments
+      .
+      (argument
+        [
+          (string (string_content) @ability)
+          (encapsed_string (string_content) @ability)
+        ])))
+] @match
+"""
+
+[rule.predicates.method_name]
+match = "^(authorize|can|cannot)$"
+
+[rule.predicates.receiver]
+match = "(?i)^(\\$this|\\$(user|currentUser|current_user|account|member|principal|viewer|actor|me|admin|customer|loggedInUser|authUser|authenticatedUser|requestUser)|.+(?:->|\\?->)user\\(\\)|.+::user\\(\\))$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel ->{{method_name}} {{ability}}.
+allow if {
+    input.action == "{{ability}}"
+    input.user.permissions[_] == "{{ability}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action == Action::"{{ability}}",
+    resource
+);
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function update(Request $request, Post $post) {
+        $this->authorize('update', $post);
+        $post->save();
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function show(Post $post) {
+        if ($request->user()->can('view', $post)) {
+            return view('post');
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+function f($user, $post) {
+    if ($user->can('view', $post)) {
+        return true;
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function show(Request $request, Post $post) {
+        if ($request?->user()?->can('view', $post)) {
+            return view('post');
+        }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function index() {
+        return view('posts');
+    }
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+<?php
+function render($widget) {
+    return $widget->can('render');
+}
+"""
+expect_match = false
+
+[[rule.tests]]
+input = """
+<?php
+function disconnect($client) {
+    return $client->cannot('disconnect');
+}
+"""
+expect_match = false

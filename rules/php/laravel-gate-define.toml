@@ -1,0 +1,71 @@
+[rule]
+id = "php-laravel-gate-define"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Laravel Gate::define ability declaration (PHP)"
+# Matches `Gate::define('update-post', function ($user, $post) { ... })` —
+# the canonical Laravel place where an ability and its policy callback are
+# wired together. First argument is the ability name (the policy slug).
+query = """
+(scoped_call_expression
+  scope: (name) @scope
+  name: (name) @method_name
+  arguments: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @ability)
+        (encapsed_string (string_content) @ability)
+      ]))
+) @match
+"""
+
+[rule.predicates.scope]
+eq = "Gate"
+
+[rule.predicates.method_name]
+eq = "define"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Laravel Gate::define {{ability}} — translate the callback to a rule.
+allow if {
+    input.action == "{{ability}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action == Action::"{{ability}}",
+    resource
+);
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class AuthServiceProvider {
+    public function boot() {
+        Gate::define('update-post', function ($user, $post) {
+            return $user->id === $post->user_id;
+        });
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class AuthServiceProvider {
+    public function boot() {
+        return null;
+    }
+}
+"""
+expect_match = false

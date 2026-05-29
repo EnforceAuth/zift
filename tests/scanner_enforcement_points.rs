@@ -419,6 +419,55 @@ public class OrderController {
 }
 
 #[test]
+fn enforcement_points_increments_for_php_policy_di() {
+    // Symfony-flavoured DI: a controller imports a policy class from a path
+    // containing `policy`, the constructor receives it via a typed parameter,
+    // and the field copy is later called as `$this->authz->isGranted(...)`.
+    // The PHP import tracker should seed `Authorize` and propagate through
+    // the parameter (`authz`) and the field (`authz` again) so the
+    // `isGranted` call gets rerouted into the enforcement-point counter
+    // rather than firing the structural Symfony rule.
+    let result = scan_fixture(
+        "PostController.php",
+        r#"<?php
+use Company\Policy\Authorize;
+
+class PostController {
+    private $authz;
+
+    public function __construct(Authorize $authz) {
+        $this->authz = $authz;
+    }
+
+    public function edit($post) {
+        return $this->authz->isGranted('EDIT', $post);
+    }
+}
+"#,
+    );
+
+    assert!(
+        result.enforcement_points >= 1,
+        "expected the PHP policy DI isGranted call to count as an enforcement point; \
+         got {} (findings: {:?})",
+        result.enforcement_points,
+        result
+            .findings
+            .iter()
+            .map(|f| (f.pattern_rule.clone(), f.line_start))
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        !result
+            .findings
+            .iter()
+            .any(|f| f.pattern_rule.as_deref() == Some("php-symfony-is-granted")),
+        "policy-routed PHP isGranted call leaked into findings: {:?}",
+        result.findings,
+    );
+}
+
+#[test]
 fn in_package_policy_implementation_file_is_skipped() {
     // OCP case: `internal/authz/authz_test.go` lives in `package authz` and
     // calls policy constructors directly (no import — same package). The

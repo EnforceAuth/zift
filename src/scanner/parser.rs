@@ -19,7 +19,7 @@ pub fn get_language(lang: Language, is_tsx_jsx: bool) -> Result<tree_sitter::Lan
         (Language::CSharp, _) => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
         (Language::Kotlin, _) => Ok(tree_sitter_kotlin_ng::LANGUAGE.into()),
         (Language::Ruby, _) => Ok(tree_sitter_ruby::LANGUAGE.into()),
-        _ => Err(ZiftError::UnsupportedLanguage(lang)),
+        (Language::Php, _) => Ok(tree_sitter_php::LANGUAGE_PHP.into()),
     }
 }
 
@@ -42,7 +42,6 @@ pub fn parse_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ZiftError;
 
     #[test]
     fn parse_typescript() {
@@ -154,13 +153,15 @@ public class AdminController : ControllerBase {
     }
 
     #[test]
-    fn unsupported_language_returns_error() {
-        // PHP has no structural grammar wired up yet — kept as the canary
-        // that `unsupported_language_returns_error` keeps testing what its
-        // name says it does. (Was Ruby before Ruby structural support;
-        // Kotlin before that; C# before that.)
-        let err = get_language(Language::Php, false).unwrap_err();
-        assert!(matches!(err, ZiftError::UnsupportedLanguage(Language::Php)));
-        assert!(!is_language_supported(Language::Php));
+    fn parse_php() {
+        let mut parser = tree_sitter::Parser::new();
+        let source = b"<?php\nclass Foo { public function bar() {} }\n";
+        let tree = parse_source(&mut parser, source, Language::Php, false).unwrap();
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn php_is_supported() {
+        assert!(is_language_supported(Language::Php));
     }
 }

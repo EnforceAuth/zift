@@ -1,0 +1,92 @@
+[rule]
+id = "php-symfony-is-granted-attribute"
+languages = ["php"]
+category = "rbac"
+confidence = "high"
+description = "Symfony #[IsGranted] attribute (PHP 8+)"
+# Matches Symfony's PHP-8-attribute-based authorization:
+# `#[IsGranted('ROLE_ADMIN')]`, `#[IsGranted('EDIT', subject: 'post')]`.
+# The structure is `attribute_list > attribute_group > attribute` with the
+# attribute name and the first string argument captured. The docblock-style
+# `@IsGranted` form (a comment) isn't structurally parseable and is out of
+# scope here; it can be picked up by the deep pass when it appears.
+query = """
+(attribute
+  [
+    (name) @attr_name
+    (qualified_name (name) @attr_name)
+  ]
+  parameters: (arguments
+    .
+    (argument
+      [
+        (string (string_content) @role)
+        (encapsed_string (string_content) @role)
+      ]))
+) @match
+"""
+
+[rule.predicates.attr_name]
+eq = "IsGranted"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Symfony #[IsGranted('{{role}}')].
+allow if {
+    input.user.roles[_] == "{{role}}"
+}
+"""
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.roles.contains("{{role}}")
+};
+"""
+
+[[rule.tests]]
+input = """
+<?php
+class AdminController {
+    #[IsGranted('ROLE_ADMIN')]
+    public function dashboard() {}
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    #[IsGranted('EDIT', subject: 'post')]
+    public function edit(Post $post) {}
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class AdminController {
+    #[\\Symfony\\Component\\Security\\Http\\Attribute\\IsGranted('ROLE_ADMIN')]
+    public function dashboard() {}
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class FooController {
+    #[Route('/foo')]
+    public function show() {}
+}
+"""
+expect_match = false
