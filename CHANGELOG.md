@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/EnforceAuth/zift/compare/v0.2.2...v0.2.3) - 2026-05-29
+
+### Added
+
+- ruby (Rails + Pundit + CanCanCan + Devise) structural support ([#96](https://github.com/EnforceAuth/zift/pull/96))
+- kotlin (Spring + Ktor) structural support ([#93](https://github.com/EnforceAuth/zift/pull/93))
+
 ## [0.2.2](https://github.com/EnforceAuth/zift/compare/v0.2.1...v0.2.2) - 2026-05-14
 
 ### Added

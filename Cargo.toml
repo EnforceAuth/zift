@@ -1,6 +1,6 @@
 [package]
 name = "zift"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.91"
 description = "Scan codebases for embedded authorization logic and generate Policy as Code (Rego for OPA, Cedar for AWS Verified Permissions and other Cedar-compatible engines)"

@@ -3257,7 +3257,7 @@ dependencies = [
 
 [[package]]
 name = "zift"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "cedar-policy",
  "clap",
