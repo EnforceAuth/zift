@@ -1,0 +1,78 @@
+[rule]
+id = "kotlin-roles-allowed"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Jakarta/JSR-250 @RolesAllowed annotation (Kotlin)"
+# Mirrors the Java rule shape, adapted to Kotlin's `user_type` flattening of
+# qualified annotation names. See spring-preauthorize for the regex-on-
+# user-type pattern.
+query = """
+(annotation
+  (constructor_invocation
+    (user_type) @anno_type
+    (value_arguments
+      (value_argument
+        (string_literal (string_content) @role_value))))
+) @match
+"""
+
+[rule.predicates.anno_type]
+match = "(^|\\.)RolesAllowed$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+class UserController {
+    @RolesAllowed("admin")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
+    @jakarta.annotation.security.RolesAllowed("admin")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
+    @javax.annotation.security.RolesAllowed("admin")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
+    @Transactional
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = false

@@ -1,0 +1,84 @@
+[rule]
+id = "kotlin-spring-preauthorize"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security @PreAuthorize annotation (Kotlin)"
+# Kotlin's tree-sitter grammar models annotations as
+# `(annotation (constructor_invocation (user_type ...) (value_arguments ...)))`.
+# `user_type` is a flat sequence of identifiers — `(identifier)` for bare
+# `@PreAuthorize` and `(identifier) (identifier) ...` for the fully-qualified
+# `@org.springframework.security.access.prepost.PreAuthorize` form. Capturing
+# the whole `user_type` and matching the regex `(^|\.)PreAuthorize$` covers
+# both shapes with a single rule and avoids the multi-match explosion you get
+# from capturing each identifier individually.
+query = """
+(annotation
+  (constructor_invocation
+    (user_type) @anno_type
+    (value_arguments
+      (value_argument
+        (string_literal (string_content) @expr))))
+) @match
+"""
+
+[rule.predicates.anno_type]
+match = "(^|\\.)PreAuthorize$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    # TODO: translate SpEL expression: {{expr}}
+    input.user.role in {"TODO"}
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "TODO"
+};
+"""
+[[rule.tests]]
+input = """
+class AdminController {
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class AdminController {
+    @PreAuthorize("hasAuthority('SCOPE_read')")
+    fun readData() { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class AdminController {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class AdminController {
+    @Override
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = false

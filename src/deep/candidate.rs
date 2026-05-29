@@ -9,7 +9,7 @@
 //! 2. **Cold regions** — file regions discovered by regex over auth-y
 //!    function names. Capped at 30% of `max_candidates` so escalations get
 //!    priority. Runs on **all** languages in the [`Language`] enum, including
-//!    those without structural parser support (Kotlin, Ruby, PHP) —
+//!    those without structural parser support (Ruby, PHP) —
 //!    see plans/todo/01-pr1-deep-http-transport.md §6 for rationale.
 //!
 //! Candidates are sorted deterministically by `(file, line_start)`.

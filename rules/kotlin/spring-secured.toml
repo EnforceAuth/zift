@@ -1,0 +1,71 @@
+[rule]
+id = "kotlin-spring-secured"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security @Secured annotation (Kotlin)"
+# See spring-preauthorize for the `user_type` + regex pattern. `@Secured` may
+# carry one or more string roles; this rule fires once per string argument,
+# which is intentional — the matcher's per-finding dedup keys on (rule_id,
+# file, line, snippet), so two `@Secured("A", "B")` strings on the same line
+# collapse to a single finding once dedup runs.
+query = """
+(annotation
+  (constructor_invocation
+    (user_type) @anno_type
+    (value_arguments
+      (value_argument
+        (string_literal (string_content) @role_value))))
+) @match
+"""
+
+[rule.predicates.anno_type]
+match = "(^|\\.)Secured$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role in {"{{role_value}}"}
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+class UserController {
+    @Secured("ROLE_ADMIN")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
+    @org.springframework.security.access.annotation.Secured("ROLE_ADMIN")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
+    @Override
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = false

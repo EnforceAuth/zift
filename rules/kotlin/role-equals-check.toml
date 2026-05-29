@@ -1,0 +1,65 @@
+[rule]
+id = "kotlin-role-equals-check"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Inline role/permission equality check (Kotlin)"
+# Matches `user.role == "admin"` and similar — the idiomatic Kotlin shape for
+# embedded RBAC. The navigation_expression captures `<owner>.<prop>`; we
+# require the trailing identifier to look role/permission-shaped via predicate.
+query = """
+(binary_expression
+  (navigation_expression
+    (_)
+    (identifier) @prop)
+  (string_literal (string_content) @role_value)
+) @match
+"""
+
+[rule.predicates.prop]
+match = "(?i)^(role|roles|permission|permissions|authority|authorities)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    input.user.role == "{{role_value}}"
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.role == "admin") { allow() }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.permission == "write") { allow() }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.name == "admin") { greet() }
+}
+"""
+expect_match = false

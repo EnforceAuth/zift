@@ -1,0 +1,73 @@
+[rule]
+id = "kotlin-role-collection-contains"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Membership check on roles/authorities/permissions collection (Kotlin)"
+# Matches `user.roles.contains("admin")` and friends — the second-most common
+# idiomatic Kotlin RBAC shape. The collection identifier (`@collection`)
+# carries the property name; predicate restricts to roles-shaped names so
+# unrelated `tags.contains("...")` doesn't fire.
+query = """
+(call_expression
+  (navigation_expression
+    (navigation_expression
+      (_)
+      (identifier) @collection)
+    (identifier) @method_name)
+  (value_arguments
+    (value_argument
+      (string_literal (string_content) @role_value)))
+) @match
+"""
+
+[rule.predicates.method_name]
+eq = "contains"
+
+[rule.predicates.collection]
+match = "(?i)^(roles|permissions|authorities|grantedAuthorities|scopes)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+allow if {
+    "{{role_value}}" in input.user.roles
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.roles.contains("admin")) { allow() }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.authorities.contains("SCOPE_read")) { allow() }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun check(user: User) {
+    if (user.tags.contains("admin")) { tag() }
+}
+"""
+expect_match = false

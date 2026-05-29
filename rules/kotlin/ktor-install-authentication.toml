@@ -1,0 +1,86 @@
+[rule]
+id = "kotlin-ktor-install-authentication"
+languages = ["kotlin"]
+category = "middleware"
+confidence = "high"
+description = "Ktor install() of an auth-adjacent plugin (Kotlin)"
+# `install(Authentication) { ... }` and the bare `install(Authentication)`
+# form both emit an inner `call_expression` whose function is the identifier
+# `install` and whose first value-argument is the bare identifier
+# `Authentication`. The trailing lambda lives on the outer call_expression
+# and is irrelevant for detection. We also fire on `install(Sessions)` —
+# Ktor sessions back authentication state in nearly every real app, so they
+# are an auth-adjacent enforcement point in practice.
+query = """
+(call_expression
+  (identifier) @method_name
+  (value_arguments
+    (value_argument
+      (identifier) @plugin)))
+ @match
+"""
+
+[rule.predicates.method_name]
+eq = "install"
+
+[rule.predicates.plugin]
+match = "^(Authentication|Sessions)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# Ktor install({{plugin}}) registers an auth-adjacent plugin. Translate the
+# chained authenticator/session configs into per-authenticator allow conditions.
+allow if {
+    input.user.authenticated == true
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal has authenticated && principal.authenticated == true
+};
+"""
+[[rule.tests]]
+input = """
+fun Application.module() {
+    install(Authentication) {
+        jwt("auth-jwt") { }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun Application.module() {
+    install(Authentication)
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun Application.module() {
+    install(Sessions) {
+        cookie<UserSession>("SESSION")
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+fun Application.module() {
+    install(CallLogging)
+}
+"""
+expect_match = false

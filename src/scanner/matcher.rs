@@ -1281,6 +1281,269 @@ public class MyService implements Serializable {
         );
     }
 
+    // -- Kotlin rule tests --
+
+    fn parse_and_match_kotlin(source: &str, rule_toml: &str) -> Vec<Finding> {
+        let rule = rules::parse_rule_for_test(rule_toml);
+        let mut ts_parser = tree_sitter::Parser::new();
+        let lang = Language::Kotlin;
+        let ts_lang = parser::get_language(lang, false).unwrap();
+        let tree = parser::parse_source(&mut ts_parser, source.as_bytes(), lang, false).unwrap();
+        let compiled = compile_rule(&rule, &ts_lang).unwrap();
+        execute_query(
+            &compiled,
+            &tree,
+            source.as_bytes(),
+            Path::new("Test.kt"),
+            lang,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn kotlin_preauthorize_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+class Ctrl {
+    @PreAuthorize("hasRole('ADMIN')")
+    fun delete() { }
+}
+"#,
+            include_str!("../../rules/kotlin/spring-preauthorize.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @PreAuthorize in Kotlin");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn kotlin_preauthorize_qualified_matches() {
+        // Kotlin's grammar flattens fully-qualified annotation names into a
+        // single `user_type` node with one identifier per dotted segment.
+        // The rule regex matches the trailing segment, so both bare and
+        // qualified forms produce exactly one finding (no per-identifier
+        // explosion).
+        let findings = parse_and_match_kotlin(
+            r#"
+class Ctrl {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    fun delete() { }
+}
+"#,
+            include_str!("../../rules/kotlin/spring-preauthorize.toml"),
+        );
+        assert_eq!(
+            dedup_findings(findings).len(),
+            1,
+            "qualified annotation should collapse to a single finding after dedup",
+        );
+    }
+
+    #[test]
+    fn kotlin_secured_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+class Ctrl {
+    @Secured("ROLE_ADMIN")
+    fun delete() { }
+}
+"#,
+            include_str!("../../rules/kotlin/spring-secured.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @Secured in Kotlin");
+    }
+
+    #[test]
+    fn kotlin_secured_multi_string_dedups() {
+        // `@Secured("A", "B")` fires the query twice (once per string arg)
+        // but both raw findings share the same (rule_id, file, line range,
+        // snippet) — the whole annotation node — so dedup collapses them
+        // to a single finding. This guards the dedup claim in
+        // rules/kotlin/spring-secured.toml.
+        let findings = parse_and_match_kotlin(
+            r#"
+class Ctrl {
+    @Secured("ROLE_ADMIN", "ROLE_USER")
+    fun delete() { }
+}
+"#,
+            include_str!("../../rules/kotlin/spring-secured.toml"),
+        );
+        assert_eq!(
+            findings.len(),
+            2,
+            "raw matcher should fire once per string arg",
+        );
+        assert_eq!(
+            dedup_findings(findings).len(),
+            1,
+            "multi-string @Secured should collapse to one finding after dedup",
+        );
+    }
+
+    #[test]
+    fn kotlin_roles_allowed_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+class Ctrl {
+    @RolesAllowed("admin")
+    fun delete() { }
+}
+"#,
+            include_str!("../../rules/kotlin/roles-allowed.toml"),
+        );
+        assert!(!findings.is_empty(), "should match @RolesAllowed in Kotlin");
+    }
+
+    #[test]
+    fn kotlin_has_role_call_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun check(acct: Account) {
+    if (!acct.hasRole("ADMIN")) { throw Forbidden() }
+}
+"#,
+            include_str!("../../rules/kotlin/has-role-call.toml"),
+        );
+        assert!(!findings.is_empty(), "should match hasRole(\"...\")");
+    }
+
+    #[test]
+    fn kotlin_has_role_call_field_arg_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun check(acct: Account) {
+    if (!acct.hasRole(Role.ADMIN)) { throw Forbidden() }
+}
+"#,
+            include_str!("../../rules/kotlin/has-role-call.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match hasRole with field-access arg"
+        );
+    }
+
+    #[test]
+    fn kotlin_role_equals_check_matches() {
+        let findings = parse_and_match_kotlin(
+            "fun check(user: User) {\n    if (user.role == \"admin\") { allow() }\n}\n",
+            include_str!("../../rules/kotlin/role-equals-check.toml"),
+        );
+        assert!(!findings.is_empty(), "should match user.role == \"admin\"");
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Rbac);
+    }
+
+    #[test]
+    fn kotlin_role_equals_check_excludes_unrelated_property() {
+        let findings = parse_and_match_kotlin(
+            "fun check(user: User) {\n    if (user.name == \"admin\") { greet() }\n}\n",
+            include_str!("../../rules/kotlin/role-equals-check.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match unrelated property comparisons"
+        );
+    }
+
+    #[test]
+    fn kotlin_role_collection_contains_matches() {
+        let findings = parse_and_match_kotlin(
+            "fun check(user: User) {\n    if (user.roles.contains(\"admin\")) { allow() }\n}\n",
+            include_str!("../../rules/kotlin/role-collection-contains.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match user.roles.contains(\"...\")"
+        );
+    }
+
+    #[test]
+    fn kotlin_ktor_authenticate_block_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun Application.module() {
+    authenticate("auth-jwt") {
+        get("/admin") { call.respondText("hi") }
+    }
+}
+"#,
+            include_str!("../../rules/kotlin/ktor-authenticate-block.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match Ktor authenticate(...) {{ ... }}"
+        );
+        assert_eq!(findings[0].category, crate::types::AuthCategory::Middleware);
+    }
+
+    #[test]
+    fn kotlin_ktor_authenticate_no_args_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun Application.module() {
+    authenticate {
+        get("/admin") { call.respondText("hi") }
+    }
+}
+"#,
+            include_str!("../../rules/kotlin/ktor-authenticate-block.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match Ktor authenticate {{ ... }} no-args form"
+        );
+    }
+
+    #[test]
+    fn kotlin_ktor_install_authentication_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun Application.module() {
+    install(Authentication) {
+        jwt("auth-jwt") { }
+    }
+}
+"#,
+            include_str!("../../rules/kotlin/ktor-install-authentication.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match install(Authentication) with block"
+        );
+    }
+
+    #[test]
+    fn kotlin_ktor_install_authentication_no_block_matches() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun Application.module() {
+    install(Authentication)
+}
+"#,
+            include_str!("../../rules/kotlin/ktor-install-authentication.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match install(Authentication) without a trailing lambda"
+        );
+    }
+
+    #[test]
+    fn kotlin_ktor_install_authentication_rejects_other_plugins() {
+        let findings = parse_and_match_kotlin(
+            r#"
+fun Application.module() {
+    install(CallLogging)
+}
+"#,
+            include_str!("../../rules/kotlin/ktor-install-authentication.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match unrelated plugin installs"
+        );
+    }
+
     // -- cross_predicates tests (synthetic rules) --
 
     /// A synthetic rule shaped like ownership-check: two getters in an

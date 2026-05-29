@@ -1,0 +1,103 @@
+[rule]
+id = "kotlin-has-role-call"
+languages = ["kotlin"]
+category = "rbac"
+confidence = "high"
+description = "Spring Security hasRole/hasAuthority method call (Kotlin)"
+# Kotlin call expressions on a navigation chain look like
+# `(call_expression (navigation_expression ... (identifier) @method_name) ...)`.
+# We match the trailing identifier of the navigation as the method name and
+# the first string argument as the role value. Field-access args (e.g.
+# `Role.ADMIN`) and bare identifiers (e.g. `roleName`) are accepted too —
+# the Rego stub flags them as TODO but the finding still records.
+query = """
+(call_expression
+  (navigation_expression
+    (_)
+    (identifier) @method_name)
+  (value_arguments
+    (value_argument
+      [
+        (string_literal (string_content) @role_value)
+        (navigation_expression) @role_value
+        (identifier) @role_value
+      ]))
+) @match
+"""
+
+[rule.predicates.method_name]
+match = "^(hasRole|hasAnyRole|hasAuthority|hasAnyAuthority)$"
+
+[rule.rego_template]
+template = """
+default allow := false
+
+# granted_authority covers both roles (e.g. "ROLE_ADMIN") and
+# authorities/permissions (e.g. "SCOPE_read") per Spring Security's
+# GrantedAuthority abstraction.
+allow if {
+    input.user.granted_authority in {"{{role_value}}"}
+}
+"""
+
+
+[rule.cedar_template]
+template = """
+permit (
+    principal,
+    action,
+    resource
+)
+when {
+    principal.role == "{{role_value}}"
+};
+"""
+[[rule.tests]]
+input = """
+class Service {
+    fun check(acct: Account) {
+        if (!acct.hasRole("ADMIN")) { throw Forbidden() }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Service {
+    fun check(acct: Account) {
+        if (acct.hasAuthority("SCOPE_reports.read")) { allow() }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Service {
+    fun check(acct: Account) {
+        if (!acct.hasRole(Role.ADMIN)) { throw Forbidden() }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Service {
+    fun check(acct: Account, roleName: String) {
+        if (acct.hasRole(roleName)) { allow() }
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class Service {
+    fun open(req: Request) {
+        req.permitAll()
+    }
+}
+"""
+expect_match = false
