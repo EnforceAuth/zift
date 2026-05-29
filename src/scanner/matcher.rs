@@ -2175,6 +2175,23 @@ class PostController {
     }
 
     #[test]
+    fn php_symfony_is_granted_direct_call_matches() {
+        let findings = parse_and_match_php(
+            r#"<?php
+class PostController {
+    public function edit(Post $post) {
+        if ($this->isGranted('EDIT', $post)) {
+            return;
+        }
+    }
+}
+"#,
+            include_str!("../../rules/php/symfony-is-granted.toml"),
+        );
+        assert!(!findings.is_empty(), "should match $this->isGranted(...)");
+    }
+
+    #[test]
     fn php_symfony_is_granted_attribute_matches() {
         let findings = parse_and_match_php(
             r#"<?php

@@ -46,7 +46,7 @@ query = """
 match = "^(authorize|can|cannot)$"
 
 [rule.predicates.receiver]
-match = "(?i)^(\\$this|\\$(user|currentUser|current_user|account|member|principal|viewer|actor|me|admin|customer|loggedInUser|authUser|authenticatedUser|requestUser)|.+->user\\(\\)|.+::user\\(\\))$"
+match = "(?i)^(\\$this|\\$(user|currentUser|current_user|account|member|principal|viewer|actor|me|admin|customer|loggedInUser|authUser|authenticatedUser|requestUser)|.+(?:->|\\?->)user\\(\\)|.+::user\\(\\))$"
 
 [rule.rego_template]
 template = """
@@ -99,6 +99,19 @@ input = """
 function f($user, $post) {
     if ($user->can('view', $post)) {
         return true;
+    }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class PostController {
+    public function show(Request $request, Post $post) {
+        if ($request?->user()?->can('view', $post)) {
+            return view('post');
+        }
     }
 }
 """

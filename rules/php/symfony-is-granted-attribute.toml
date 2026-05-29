@@ -12,7 +12,10 @@ description = "Symfony #[IsGranted] attribute (PHP 8+)"
 # scope here; it can be picked up by the deep pass when it appears.
 query = """
 (attribute
-  (name) @attr_name
+  [
+    (name) @attr_name
+    (qualified_name (name) @attr_name)
+  ]
   parameters: (arguments
     .
     (argument
@@ -64,6 +67,16 @@ input = """
 class PostController {
     #[IsGranted('EDIT', subject: 'post')]
     public function edit(Post $post) {}
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+<?php
+class AdminController {
+    #[\\Symfony\\Component\\Security\\Http\\Attribute\\IsGranted('ROLE_ADMIN')]
+    public function dashboard() {}
 }
 """
 expect_match = true
