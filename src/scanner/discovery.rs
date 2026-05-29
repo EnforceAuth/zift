@@ -15,6 +15,9 @@ pub struct DiscoveredFile {
 /// Extension → language map for languages with structural parser support.
 /// Used by the structural scanning pass.
 pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("Rakefile") {
+        return Some((Language::Ruby, false));
+    }
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
         "ts" => Some((Language::TypeScript, false)),
@@ -36,6 +39,9 @@ pub fn detect_language(path: &Path) -> Option<(Language, bool)> {
 /// Used by the deep (semantic) scan, which can run regex-based cold-region
 /// detection on any language regardless of grammar availability.
 pub fn detect_language_for_deep(path: &Path) -> Option<(Language, bool)> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("Rakefile") {
+        return Some((Language::Ruby, false));
+    }
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
         "ts" => Some((Language::TypeScript, false)),
@@ -216,6 +222,15 @@ mod tests {
             detect_language(Path::new("Rakefile.rake")),
             Some((Language::Ruby, false))
         );
+        // Bare "Rakefile" (no extension) is the common Rails entrypoint.
+        assert_eq!(
+            detect_language(Path::new("Rakefile")),
+            Some((Language::Ruby, false))
+        );
+        assert_eq!(
+            detect_language(Path::new("project/Rakefile")),
+            Some((Language::Ruby, false))
+        );
     }
 
     #[test]
@@ -267,6 +282,10 @@ mod tests {
         );
         assert_eq!(
             detect_language_for_deep(Path::new("Rakefile.rake")),
+            Some((Language::Ruby, false))
+        );
+        assert_eq!(
+            detect_language_for_deep(Path::new("Rakefile")),
             Some((Language::Ruby, false))
         );
         assert_eq!(
