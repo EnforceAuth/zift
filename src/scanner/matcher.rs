@@ -1984,6 +1984,67 @@ class PostController { public function show($req, $post) { if ($req->user()->can
     }
 
     #[test]
+    fn php_laravel_authorize_helper_excludes_non_principal_receiver() {
+        // `can`/`cannot` are common method names well outside authz (network
+        // clients, render gates, feature toggles…). The receiver predicate is
+        // exactly what keeps this rule's high-confidence promise honest — a
+        // bare `$widget->can(...)` or `$client->cannot(...)` must NOT fire.
+        let findings = parse_and_match_php(
+            r#"<?php
+function f($widget, $client) {
+    $widget->can('render');
+    $client->cannot('disconnect');
+}
+"#,
+            include_str!("../../rules/php/laravel-authorize-helper.toml"),
+        );
+        assert!(
+            findings.is_empty(),
+            "must not match non-principal receivers; got: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn php_laravel_can_helper_matches_facade_chain() {
+        // `Auth::user()->can(...)` and `auth()->user()->can(...)` are the
+        // canonical Laravel non-controller idioms. The `.+->user\(\)` /
+        // `.+::user\(\)` receiver alternatives are what catch them.
+        let findings = parse_and_match_php(
+            r#"<?php
+function check($post) {
+    if (Auth::user()->can('view', $post)) { return true; }
+    if (auth()->user()->cannot('delete', $post)) { abort(403); }
+}
+"#,
+            include_str!("../../rules/php/laravel-authorize-helper.toml"),
+        );
+        assert_eq!(
+            findings.len(),
+            2,
+            "should match both Auth::user()->can and auth()->user()->cannot; got: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn php_laravel_can_helper_matches_nullsafe() {
+        // PHP 8 nullsafe call (`$user?->can(...)`) takes a separate grammar
+        // node (`nullsafe_member_call_expression`). The query alternation
+        // covers it explicitly so the modern idiom matches the same way.
+        let findings = parse_and_match_php(
+            r#"<?php
+function check($user, $post) {
+    return $user?->can('view', $post);
+}
+"#,
+            include_str!("../../rules/php/laravel-authorize-helper.toml"),
+        );
+        assert!(
+            !findings.is_empty(),
+            "should match $user?->can(...) nullsafe call; got: {findings:?}",
+        );
+    }
+
+    #[test]
     fn php_laravel_policy_class_matches() {
         let findings = parse_and_match_php(
             r#"<?php
