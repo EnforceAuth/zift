@@ -64,6 +64,15 @@ expect_match = true
 [[rule.tests]]
 input = """
 class UserController {
+    @Secured("ROLE_ADMIN", "ROLE_SUPERUSER")
+    fun deleteUser(id: Long) { }
+}
+"""
+expect_match = true
+
+[[rule.tests]]
+input = """
+class UserController {
     @Override
     fun deleteUser(id: Long) { }
 }
