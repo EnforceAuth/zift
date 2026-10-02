@@ -176,6 +176,8 @@ If you already use an agent host — Claude Code, Cursor, Continue, Cline, Zed, 
 zift mcp --scan-root .
 ```
 
+The repo-root `Dockerfile` runs that same command from the published linux/amd64 release: `docker build -t zift .` then `docker run -i --rm -v "$PWD":/workspace zift`.
+
 Your agent host calls Zift's tools; *its* model produces the analysis. Zift never hosts an LLM client this way — you keep your existing model relationship and Zift contributes the authz expertise (rule library, prompt, policy generation and validation for Rego and Cedar).
 
 ### Tools exposed
