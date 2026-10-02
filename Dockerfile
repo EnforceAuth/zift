@@ -2,10 +2,12 @@
 # Linux release assets are amd64 only. aarch64-apple-darwin is macOS, not linux/arm64.
 # GitHub publishes a sha256 digest on each release asset; the build checks it.
 
-FROM debian:bookworm-slim AS fetch
+# bookworm's glibc (2.36) is older than the ubuntu-latest release build (GLIBC_2.39).
+FROM debian:trixie-slim AS fetch
 
 ARG ZIFT_VERSION=0.2.3
-ARG TARGETARCH
+# BuildKit sets TARGETARCH. The default covers the legacy builder, which does not.
+ARG TARGETARCH=amd64
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl jq \
@@ -31,14 +33,14 @@ RUN set -eu; \
     tar -xzf "/tmp/${ASSET}" -C /usr/local/bin zift; \
     chmod 0755 /usr/local/bin/zift
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
-RUN groupadd --system --gid 1000 zift \
-    && useradd --system --uid 1000 --gid zift --create-home --home-dir /home/zift zift \
+RUN groupadd --gid 1000 zift \
+    && useradd --uid 1000 --gid zift --create-home --home-dir /home/zift zift \
     && mkdir -p /workspace \
     && chown zift:zift /workspace
 
-COPY --from=fetch /usr/local/bin/zift /usr/local/bin/zift
+COPY --from=fetch --chown=root:root /usr/local/bin/zift /usr/local/bin/zift
 
 USER zift
 WORKDIR /workspace
