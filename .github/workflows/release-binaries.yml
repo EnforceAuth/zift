@@ -55,7 +55,7 @@ jobs:
           Compress-Archive -Path target/${{ matrix.target }}/release/zift.exe -DestinationPath zift-${{ matrix.target }}.zip
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: zift-${{ matrix.target }}.${{ matrix.archive }}
 
